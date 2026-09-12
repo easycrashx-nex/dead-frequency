@@ -12,7 +12,7 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
   root.querySelector('.hub-navigation').insertBefore(access, root.querySelector('.nav-bank'));
   const overlay = document.createElement('div'); overlay.id = 'coop-overlay'; overlay.className = 'coop-overlay'; overlay.hidden = true;
   overlay.innerHTML = `<section class="coop-dialog" role="dialog" aria-modal="true" aria-labelledby="coop-title">
-    <header class="coop-heading"><div><span class="micro coop-blue">BLACKLINE / TEAMVERBINDUNG</span><h2 id="coop-title">ZUSAMMEN REIN<span class="orange">.</span></h2><p>Ein Einsatz. Zwei Operatoren. Eure gemeinsame Sperrzone.</p></div><button id="coop-close" class="close-button" data-coop-action="close" aria-label="Koop-Fenster schließen">×</button></header>
+    <header class="coop-heading"><div><span class="micro coop-blue">DEAD FREQUENCY / TEAMVERBINDUNG</span><h2 id="coop-title">Koop-Verbindung</h2><p>Zwei Operatoren · gemeinsame Zone</p></div><button id="coop-close" class="close-button" data-coop-action="close" aria-label="Koop-Fenster schließen">×</button></header>
     <div class="coop-body"><div class="coop-main">
       <div id="coop-entry"><div class="coop-tabs" role="group" aria-label="Koop-Verbindung"><button id="coop-mode-host" class="selected" data-coop-action="mode-host" aria-pressed="true">TEAM ERSTELLEN</button><button id="coop-mode-join" data-coop-action="mode-join" aria-pressed="false">TEAM BEITRETEN</button></div>
         <label class="coop-label" for="coop-name">DEIN RUFNAME</label><input id="coop-name" class="coop-input" autocomplete="nickname" maxlength="20" placeholder="Operator" value="Operator" spellcheck="false">
@@ -27,7 +27,7 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
       </div>
       <div id="coop-connection-status" class="coop-connection-status" role="status" aria-live="polite"><span class="coop-status-dot"></span><div><strong id="coop-status-label">BEREIT FÜR ZWEI</strong><p id="coop-status-message">Gemeinsam bergen. Gemeinsam extrahieren.</p></div></div>
       <div class="coop-bottom-actions"><button id="coop-retry" class="text-button" data-coop-action="retry" hidden>ERNEUT VERSUCHEN ↗</button><button id="coop-leave" class="text-button" data-coop-action="leave" hidden>TEAM VERLASSEN ↗</button></div>
-    </div><aside class="coop-brief"><div class="coop-diagram" aria-hidden="true"><div class="coop-signal-ring ring-a"></div><div class="coop-signal-ring ring-b"></div><span class="coop-operator operator-one">01<i></i></span><span class="coop-operator operator-two">02<i></i></span><span class="coop-diagram-coordinate">SEKTOR 07 / VERBINDUNG STEHT</span></div><span class="micro coop-blue">ZWEI OPERATOREN · EIN ZIEL</span><h3>DECKT EUCH.<br>HOLT DIE FRACHT.</h3><p>Gegner und Beute sind für euch beide dieselben. Jeder trägt seinen eigenen Rucksack und sichert seine eigene Extraktion.</p><div class="coop-rules"><span><b>01</b> Kit, Waffe und Skills wählst du in der Basis.</span><span><b>02</b> Beide bereit? Der Host startet.</span><span><b>03</b> Das Menü hält den Raid nicht an.</span></div></aside></div>
+    </div><aside class="coop-brief"><div class="coop-diagram" aria-hidden="true"><div class="coop-signal-ring ring-a"></div><div class="coop-signal-ring ring-b"></div><span class="coop-operator operator-one">01<i></i></span><span class="coop-operator operator-two">02<i></i></span><span class="coop-diagram-coordinate">SEKTOR 07 / VERBINDUNG STEHT</span></div><span class="micro coop-blue">ZWEI OPERATOREN · EIN ZIEL</span><h3>Teamprotokoll</h3><p>Gemeinsame Gegner und Beute. Eigener Rucksack, eigene Extraktion. Verwundete Partner mit einem Medkit wiederbeleben.</p><div class="coop-rules"><span><b>01</b> Kit, Waffe und Skills wählst du in der Basis.</span><span><b>02</b> Beide bereit? Der Host startet.</span><span><b>03</b> Das Menü hält den Raid nicht an.</span></div></aside></div>
   </section>`;
   root.append(overlay);
   const teamHud = document.createElement('div'); teamHud.id = 'teammate-hud'; teamHud.className = 'teammate-hud'; teamHud.hidden = true;
@@ -125,19 +125,19 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
     if (shouldOpen) open();
     const team = state.multiplayer ? state.teammates || [] : [];
     teamHud.hidden = !team.length || state.phase !== 'raid';
-    const hudData = team.map(p => ({ name: p.name, hp: Math.round(Math.max(0, p.hp || 0)), maxHp: p.maxHp || 100, dead: p.dead || p.phase === 'dead', phase: p.phase, distance: Math.round(Math.hypot(p.x - state.player.x, p.z - state.player.z)) }));
+    const hudData = team.map(p => ({ name: p.name, hp: Math.round(Math.max(0, p.hp || 0)), maxHp: p.maxHp || 100, dead: p.dead || p.phase === 'dead', downed: !!p.downed, bleedout: Math.ceil(p.bleedoutRemaining || 0), phase: p.phase, distance: Math.round(Math.hypot(p.x - state.player.x, p.z - state.player.z)) }));
     const nextHudSignature = JSON.stringify([hudData, Math.round(coop.ping || 0)]);
     if (nextHudSignature !== hudSignature) {
       hudSignature = nextHudSignature;
-      teamHud.innerHTML = hudData.map(p => `<div class="teammate-status ${p.dead ? 'is-dead' : ''}"><span class="teammate-diamond">◇</span><div><strong>${escapeHTML(p.name)}</strong><span>${p.dead ? 'GEFALLEN' : p.phase === 'extracted' ? 'EXTRAHIERT' : p.phase === 'disconnected' ? 'VERBINDUNG VERLOREN' : `${p.distance} M ENTFERNT`}<i>${p.dead || p.phase === 'extracted' ? '' : `${p.hp} HP`}</i></span><div class="teammate-health"><b style="width:${Math.min(100,p.hp / p.maxHp * 100)}%"></b></div></div></div>`).join('');
+      teamHud.innerHTML = hudData.map(p => `<div class="teammate-status ${p.dead ? 'is-dead' : p.downed ? 'is-downed' : ''}"><span class="teammate-diamond">◇</span><div><strong>${escapeHTML(p.name)}</strong><span>${p.dead ? 'GEFALLEN' : p.downed ? `VERWUNDET · ${p.bleedout} S` : p.phase === 'extracted' ? 'EXTRAHIERT' : p.phase === 'disconnected' ? 'VERBINDUNG VERLOREN' : `${p.distance} M ENTFERNT`}<i>${p.dead || p.phase === 'extracted' ? '' : `${p.hp} HP`}</i></span><div class="teammate-health"><b style="width:${Math.min(100,p.hp / p.maxHp * 100)}%"></b></div></div></div>`).join('');
     }
     setText('connection-label', status === 'offline' ? 'LOKALE OPERATION' : status === 'error' ? 'VERBINDUNG GETRENNT' : 'KOOP-TEAM');
     const online = !!state.multiplayer;
     const pauseTitle = node('pause-title');
-    const title = online ? 'LOKALES<br>MENÜ<span class="orange">.</span>' : 'EINSATZ<br>PAUSIERT<span class="orange">.</span>';
+    const title = online ? 'LOKALES MENÜ<span class="orange">.</span>' : 'EINSATZ PAUSIERT<span class="orange">.</span>';
     if (pauseTitle.innerHTML !== title) pauseTitle.innerHTML = title;
     setText('pause-description', online ? 'Der Koop-Raid läuft weiter. Dein Mitspieler und Gegner bleiben aktiv.' : 'Durchatmen. Die Zone wartet.');
-    setText('pause-coordinate', online ? 'BLACKLINE / SEKTOR 07 / KOOP LIVE' : 'BLACKLINE / SEKTOR 07 / OFFLINE');
+    setText('pause-coordinate', online ? 'DEAD FREQUENCY / SEKTOR 07 / KOOP LIVE' : 'DEAD FREQUENCY / SEKTOR 07 / OFFLINE');
     const build = root.querySelector('.build-label'); if (build) build.textContent = 'SOLO OFFLINE · 2-SPIELER-KOOP';
   }
   return { update, close, dispose() { disposed = true; root.removeEventListener('click', onClick); document.removeEventListener('keydown', onKey, true); overlay.remove(); access.remove(); teamHud.remove(); } };

@@ -9,6 +9,7 @@ import {createCoopClient,parseInvite} from './coop-client.js';
 import {sanitizeSettings,bindingAction,rebindSetting,resetSettingsCategory} from './settings.js';
 import {createGamepadInput} from './gamepad.js';
 import {resolveLoadout} from './loadouts.js';
+import {createRuntimeRecovery} from './runtime-recovery.js';
 
 const SAVE_KEY='dead-frequency.profile.v2', LEGACY_SAVE_KEY='dead-frequency.profile.v1', SETTINGS_KEY='dead-frequency.settings.v1';
 const canvas=document.querySelector('#game'),root=document.querySelector('#ui');
@@ -16,15 +17,18 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const read=(key)=>{try{return JSON.parse(localStorage.getItem(key));}catch{return null;}};
 const stored=read(SETTINGS_KEY)||{};
 const settings=sanitizeSettings(stored);
+if(new URLSearchParams(location.search).has('graphicsRecovery'))settings.renderScale=Math.min(settings.renderScale,.75);
 const keys=new Set();
 let game,view,ui,audio,lookYaw=0,lookPitch=0,fire=false,firePressed=false,aim=false,jump=false,lookDX=0,lookDY=0;
 let sprintToggle=false,crouchToggle=false,renderElapsed=0,autoReloadDelay=0;
-let mapOpen=false,inventoryOpen=false,lastContainerId=null,lastPhase='hub',savingFailed=false;
+let mapOpen=false,inventoryOpen=false,lastContainerId=null,lastPhase='hub',lastDowned=false,savingFailed=false;
 let frames=0,fps=60,fpsTime=0,uiTime=0,clock=0,raf,hidden=false;
 const recoil=createRecoil();
 const controller=createGamepadInput();
 let controllerState={connected:false,supported:false,held:{},pressed:{},menu:{x:0,y:0}},inputDevice='keyboard',lastUtilityOpen=false;
 let marketTimer;
+let contextLost=false,frameFailed=false;
+const recovery=createRuntimeRecovery({restart(){persist();settingsChanged({renderScale:.75});location.reload();}});
 let localGame,coop=null,coopBusy=false,coopGeneration=0;
 const coopStatus={status:'offline',players:[],name:read('dead-frequency.operator')||'Operator',invite:'',message:''};
 function persist() {
@@ -48,7 +52,7 @@ function setInputDevice(device){
   document.body.classList.toggle('controller-active',device==='controller');
   if(device==='controller')unlock();
 }
-function gameplayInputActive(){return game?.state.phase==='raid'&&!mapOpen&&!inventoryOpen&&!containerOpen()&&!ui?.isUtilityOpen?.()&&document.hasFocus()&&(controllerActive()||document.pointerLockElement===canvas);}
+function gameplayInputActive(){return !contextLost&&!frameFailed&&game?.state.phase==='raid'&&!mapOpen&&!inventoryOpen&&!containerOpen()&&!ui?.isUtilityOpen?.()&&document.hasFocus()&&(controllerActive()||document.pointerLockElement===canvas);}
 function containerOpen(){return !!game?.state.activeContainerId;}
 function closePanels(){mapOpen=inventoryOpen=false;game?.closeContainer?.();lastContainerId=null;ui?.closePanels();}
 function closeFieldPanel(){closePanels();clearInputs();if(game.state.phase==='raid')lock();}
@@ -101,6 +105,7 @@ function rebind(action,code){
 }
 function actionDown(action){for(const code of keys)if(bindingAction(settings.bindings,code)===action)return true;return false;}
 function onKeyDown(e){
+  if(contextLost||frameFailed)return;
   if(e.defaultPrevented)return;
   if(ui?.isUtilityOpen?.()){if(e.code==='Escape'){e.preventDefault();ui.closeUtility();}return;}
   if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;
@@ -153,7 +158,7 @@ function inputState(){
   if(!gameplayInputActive())return {yaw:lookYaw+offset.yaw,pitch:clamp(lookPitch+offset.pitch,-1.45,1.45)};
   const pad=controllerActive(),sprintMode=pad?settings.controllerSprintMode:settings.sprintMode,crouchMode=pad?settings.controllerCrouchMode:settings.crouchMode;
   if(game?.state.player.sprintExhausted&&sprintMode==='toggle')sprintToggle=false;
-  return {forward:pad?controllerState.moveY:Number(actionDown('forward'))-Number(actionDown('backward')),right:pad?controllerState.moveX:Number(actionDown('right'))-Number(actionDown('left')),yaw:lookYaw+offset.yaw,pitch:clamp(lookPitch+offset.pitch,-1.45,1.45),sprint:sprintMode==='toggle'?sprintToggle:pad?controllerState.held.sprint:actionDown('sprint'),crouch:crouchMode==='toggle'?crouchToggle:pad?controllerState.held.crouch:actionDown('crouch'),jump,aim,fire,firePressed};
+  return {forward:pad?controllerState.moveY:Number(actionDown('forward'))-Number(actionDown('backward')),right:pad?controllerState.moveX:Number(actionDown('right'))-Number(actionDown('left')),yaw:lookYaw+offset.yaw,pitch:clamp(lookPitch+offset.pitch,-1.45,1.45),sprint:sprintMode==='toggle'?sprintToggle:pad?controllerState.held.sprint:actionDown('sprint'),crouch:crouchMode==='toggle'?crouchToggle:pad?controllerState.held.crouch:actionDown('crouch'),jump,aim,fire,firePressed,reviveHeld:pad?!!controllerState.held.interact:actionDown('interact')};
 }
 function controllerBack(){
   if(ui?.isUtilityOpen?.()){ui.closeUtility();clearInputs();}
@@ -161,6 +166,7 @@ function controllerBack(){
   else if(game.state.phase==='paused')resume();
 }
 function pollController(dt){
+  if(contextLost||frameFailed)return;
   const wasConnected=controllerState.connected,wasActive=inputDevice==='controller';
   let pads=[];try{pads=navigator.getGamepads?.()||[];}catch{}
   const lostActive=wasActive&&wasConnected&&!Array.from(pads).some((pad,index)=>pad&&pad.connected!==false&&(pad.index??index)===controllerState.index&&pad.id===controllerState.id);
@@ -213,6 +219,8 @@ function pumpEvents(){
   if(events.length){view.events(events);audio.events(events,game.state);ui.events(events);}
 }
 function frame(now){
+  if(frameFailed){raf=requestAnimationFrame(frame);return;}
+  try{
   const elapsed=Math.max(0,(now-clock)/1000),dt=clamp(elapsed,0,.1);clock=now;
   pollController(dt);
   if(!hidden){
@@ -236,6 +244,7 @@ function frame(now){
     }
     pumpEvents();
     const state=game.state;
+    if(!!state.player?.downed!==lastDowned){lastDowned=!!state.player?.downed;clearInputs();recoil.reset();closePanels();}
     if((state.activeContainerId||null)!==lastContainerId){
       const wasOpen=!!lastContainerId;lastContainerId=state.activeContainerId||null;
       if(lastContainerId){mapOpen=inventoryOpen=false;ui.closePanels();clearInputs();unlock();}
@@ -248,12 +257,14 @@ function frame(now){
     }
     view.update(state,dt,{aim,crouch:input.crouch,lookDX,lookDY,time:now/1000,fov:settings.fov});
     renderElapsed+=elapsed;
-    if(!settings.fpsLimit||renderElapsed>=1/settings.fpsLimit){view.render();frames++;renderElapsed=settings.fpsLimit?renderElapsed%(1/settings.fpsLimit):0;}
+    const frameLimit=state.phase==='hub'?Math.min(settings.fpsLimit||30,30):settings.fpsLimit;
+    if(!contextLost&&(!frameLimit||renderElapsed>=1/frameLimit)){view.render();frames++;renderElapsed=frameLimit?renderElapsed%(1/frameLimit):0;}
     audio.update(state,dt);lookDX=lookDY=0;
     fpsTime+=elapsed;if(fpsTime>=.5){fps=Math.round(frames/fpsTime);frames=0;fpsTime=0;}
     uiTime+=dt;
     if(uiTime>=1/20){ui.update(state,{locked:document.pointerLockElement===canvas||controllerActive(),fps,settings,mapOpen,inventoryOpen,aim,coop:coop?.info||coopStatus,controller:{...controllerState,active:controllerPresent()},inputDevice});uiTime=0;}
   }
+  }catch(error){frameFailed=true;console.error(error);clearInputs();pause();persist();recovery.show({raid:['raid','paused'].includes(game.state.phase)});}
   raf=requestAnimationFrame(frame);
 }
 let accumulator=0;
@@ -344,9 +355,10 @@ async function boot(){
   window.platform?.onFullscreen?.(value=>{settings.fullscreen=!!value;saveSettings();});
   document.addEventListener('fullscreenchange',()=>{if(!window.platform?.setFullscreen){settings.fullscreen=!!document.fullscreenElement;saveSettings();}});
   document.addEventListener('visibilitychange',()=>{hidden=document.hidden;audio.setFocused(!hidden&&document.hasFocus());if(hidden){pause();clearInputs();audio.suspend();persist();}else{controller.reset();clock=performance.now();marketTick();audio.unlock();}});
-  canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();pause();ui.events([{type:'notice',text:'Grafikkontext verloren. Die Anzeige wird nach Wiederherstellung neu geladen.'}]);persist();});
-  canvas.addEventListener('webglcontextrestored',()=>location.reload());
-  window.addEventListener('beforeunload',()=>{marketTick();persist();clearInterval(marketTimer);cancelAnimationFrame(raf);controller.stopRumble?.();coop?.dispose();localGame.dispose();view.dispose();audio.dispose();});
+  canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();contextLost=true;pause();clearInputs();persist();recovery.show({waiting:true,raid:['raid','paused'].includes(game.state.phase)});});
+  canvas.addEventListener('webglcontextrestored',()=>{view.restoreContext();contextLost=false;frameFailed=false;recovery.hide();clock=performance.now();ui.events([{type:'notice',text:'Anzeige wiederhergestellt. Dein Spielstand ist unverändert.'}]);});
+  window.addEventListener('beforeunload',()=>{marketTick();persist();});
+  window.addEventListener('unload',()=>{clearInterval(marketTimer);cancelAnimationFrame(raf);controller.stopRumble?.();coop?.dispose();localGame.dispose();view.dispose();audio.dispose();});
   // Explicit QA mode only. Normal releases do not publish gameplay mutation controls.
   if(import.meta.env.DEV||new URLSearchParams(location.search).has('qa')){
     window.__DF={get game(){return game;},get state(){return game.state;},get coop(){return coop;},get inputDevice(){return inputDevice;},get controllerState(){return controllerState;},controller,stats:()=>({...view.stats(),renderedFps:fps}),settings,settingsChanged,inputState,start,pause,resume,ui,view,audio,persist,economy,recoil,marketTick,

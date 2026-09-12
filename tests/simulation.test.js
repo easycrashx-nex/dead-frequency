@@ -45,7 +45,7 @@ test('navigation connects spawn, both exits, relay and accessible POI approaches
     assert.ok(path.length > 0, `No route to ${target.name ?? 'relay'}`);
     for (const point of path) assert.equal(isWalkable(point.x, point.z), true);
   }
-  assert.equal(hasLineOfSight({ x: -40, z: 40 }, { x: -40, z: 0 }), false);
+  assert.equal(hasLineOfSight({ x: -44, z: 40 }, { x: -44, z: 0 }), false);
   assert.equal(hasLineOfSight({ x: -50, z: 40 }, { x: -50, z: -40 }), true);
 });
 
@@ -59,8 +59,8 @@ test('Rapier blocks solid barriers and permits lateral sliding, diagonal speed s
   assert.equal(game.teleport(-50, 0), true);
   const before = { ...game.state.player }; run(game, 1, { forward: 1, right: 1, yaw: 0 });
   assert.ok(Math.hypot(game.state.player.x - before.x, game.state.player.z - before.z) < 4.5);
-  assert.equal(game.teleport(-40, 21), false);
-  assert.equal(game.teleport(500, 0), false);
+  assert.equal(game.teleport(-47.3, 21), false);
+  assert.equal(game.teleport(800, 0), false);
 });
 
 test('jumping rises and lands, sprint consumes stamina, pause freezes all raid timers', async t => {
@@ -89,8 +89,8 @@ test('hitscan respects cover, head damage and cooldown; reload conserves ammunit
   run(game, 0.12); assert.equal(game.fire(aimAt(game, enemy)), true);
   assert.equal(enemy.dead, true); assert.equal(game.state.raid.kills, 1);
   assert.ok(game.drainEvents().some(e => e.type === 'kill' && e.headshot));
-  game.teleport(-40, 34);
-  Object.assign(enemy, { x: -40, z: 9, hp: 95, dead: false, fireTimer: 100 });
+  game.teleport(-44, 34);
+  Object.assign(enemy, { x: -44, z: 9, hp: 95, dead: false, fireTimer: 100 });
   run(game, 0.12); game.fire(aimAt(game, enemy)); assert.equal(enemy.hp, 95);
   enemy.dead = true;
   game.state.player.ammo = 3; game.state.player.reserve = 9;
@@ -181,7 +181,7 @@ test('dropping and picking up keeps one world instance and does not duplicate va
 test('relay is optional and awards its bonus only after successful extraction', async t => {
   const game = await gameFor(t); game.startRaid({ seed: 7 }); quiet(game);
   const bank = game.state.profile.credits;
-  game.teleport(RELAY.x, RELAY.z); assert.equal(game.interact(), true);
+  game.teleport(RELAY.x, RELAY.z - 1.4); assert.equal(game.interact(), true);
   assert.equal(game.state.raid.objectiveComplete, true); assert.equal(game.state.profile.credits, bank);
   assert.equal(game.interact(), false); quiet(game);
   game.state.raid.kills = 2;

@@ -127,7 +127,7 @@ test('gear transfers and death spills conserve owned instances across players wi
   session.action(b,'equip',packA.id);step(session,.15);
   assert.equal(gb.state.player.equipment.backpack.id,packA.id);
   assert.ok(gb.state.raid.loot.some(item=>item.id===packB.id),'Replaced owned backpack remains carried');
-  ga.receiveDamage(100000,{x:ga.state.player.x,z:ga.state.player.z-4});step(session,.1);
+  ga.receiveDamage(100000,{x:ga.state.player.x,z:ga.state.player.z-4});ga.receiveDamage(100000,{x:ga.state.player.x,z:ga.state.player.z-4});step(session,.1);
   assert.equal(ga.state.phase,'dead');
   const spilled=ga.state.loot.filter(item=>item.id===wa.id&&!item.taken);assert.equal(spilled.length,1);
   assert.equal(spilled[0].attachments.magazine.catalogId,'mag-fast');
@@ -148,7 +148,7 @@ test('a recovered weapon keeps its current ammunition when its new owner dies an
   session.action(b,'equip',id);step(session,.15);
   session.input(b,1,{firePressed:true,yaw:0,pitch:0});step(session,1/60);
   assert.equal(gb.state.player.ammo,29);
-  gb.receiveDamage(10000,{x:ground.x,z:ground.z-4});step(session,.15);
+  gb.receiveDamage(10000,{x:ground.x,z:ground.z-4});gb.receiveDamage(10000,{x:ground.x,z:ground.z-4});step(session,.15);
   const respilled=ga.state.loot.find(item=>item.id===id);
   assert.equal(respilled.taken,false);assert.equal(respilled.ammo,29,'The old ground copy must not restore a spent round');
   assert.equal(respilled.attachments.magazine.catalogId,'mag-fast');
@@ -180,7 +180,7 @@ test('shared damage and death occur once while teammates cannot hurt each other'
   assert.equal(ga.state.player.ammo, 23); assert.equal(gb.state.player.ammo, 30);
   session.input(a, 2, { fire: false }); session.input(b, 1, { ...angle(gb, enemy), fire: true }); session.update(1 / 60);
   assert.equal(enemy.dead, true); assert.equal(ga.state.raid.kills, 0); assert.equal(gb.state.raid.kills, 1);
-  assert.equal(ga.state.loot.filter(item => item.id === `drop-${enemy.id}`).length, 1);
+  assert.equal(ga.state.containers.filter(item => item.id === `corpse-${enemy.id}`).length, 1);
   assert.equal(ga.state.player.hp, 100); assert.equal(gb.state.player.hp, 100);
   const left = session.snapshot(a), right = session.snapshot(b);
   assert.ok(left.events.some(e => e.type === 'teammateShot' && e.playerId === b));
@@ -242,7 +242,7 @@ test('disconnect loses carried loot and releases it for the surviving partner', 
 
 test('one relay activation is shared and spawns one reinforcement', async t => {
   const { session, a, b, ga, gb } = await setup(t); quiet(ga);
-  ga.teleport(RELAY.x, RELAY.z); gb.teleport(RELAY.x, RELAY.z);
+  ga.teleport(RELAY.x, RELAY.z - 1.4); gb.teleport(RELAY.x, RELAY.z - 1.4);
   session.action(a, 'interact'); session.action(b, 'interact'); session.update(1 / 60);
   assert.equal(ga.state.raid.objectiveComplete, true); assert.equal(gb.state.raid.objectiveComplete, true);
   assert.equal(ga.state.enemies.length, 1);
@@ -300,7 +300,7 @@ test('container search belongs to each player while opened contents are shared a
 test('death creates a recoverable ground instance for a container item exactly once', async t => {
   const { session, a, b, ga, gb } = await setup(t); quiet(ga);
   const item = ga.state.containers[0].items[0]; take(session, a, ga, item);
-  ga.receiveDamage(1000, { x: 0, z: 0 }); step(session, .1);
+  ga.receiveDamage(1000, { x: 0, z: 0 }); ga.receiveDamage(1000, { x: 0, z: 0 }); step(session, .1);
   assert.equal(ga.state.phase, 'dead'); assert.equal(ga.state.activeContainerId, null);
   const dropped = ga.state.loot.find(value => value.id === item.id);
   assert.ok(dropped && !dropped.taken); assert.equal(item.taken, true);

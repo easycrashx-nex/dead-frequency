@@ -6,7 +6,7 @@ import { COLLIDERS } from '../src/layout.js';
 import { createEnemyAI } from '../src/enemy-ai.js';
 
 const DT = 1 / 60;
-const point = entity => ({ x: entity.x, z: entity.z });
+const point = entity => ({ x: entity.x, y:entity.y??0, z: entity.z });
 const separation = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 async function setup(t, difficulty = 'normal', seed = 1901) {
   const game = await createGame(null, { externalAI: true }); t.after(() => game.dispose());
@@ -58,10 +58,10 @@ function planner() {
   } };
 }
 
-test('guard and elite HP, first reaction and individual bullet damage retain their previous difficulty values', async t => {
+test('hardcore guards gain HP and armor while fair reaction time and bullet damage remain bounded', async t => {
   for (const difficulty of ['normal', 'hard']) for (const kind of ['guard', 'elite']) {
     const game = await setup(t, difficulty), guard = guardAt(game, -140, 118, { kind });
-    assert.equal(guard.hp, kind === 'elite' ? 150 : 95);
+    assert.equal(guard.hp, kind === 'elite' ? 210 : 145);
     game.state.enemies = [guard]; game.drainEvents();
     const target = targetAt(-140, 130), shotTimes = []; let time = 0;
     advance(game, 15, [target], () => {
@@ -79,7 +79,7 @@ test('guard and elite HP, first reaction and individual bullet damage retain the
 test('unseen silent movement behind a solid building cannot update the last observed position or permit damage', async t => {
   const game = await setup(t), guard = guardAt(game, -52, 25), target = targetAt(-52, 40);
   game.state.enemies = [guard]; advance(game, .5, [target]);
-  assert.deepEqual(guard.lastSeen, { x: -52, z: 40 });
+  assert.deepEqual(guard.lastSeen, { x: -52, y:0, z: 40 });
   const observed = structuredClone(guard.lastSeen), hits = target.hits.length;
   game.drainEvents();
   for (const hidden of [{ x: -40, z: 9 }, { x: -39, z: 9 }]) {
@@ -135,7 +135,7 @@ test('shared tactical AI switches to the living teammate after the host actually
   const guard = guardAt(ga, -52, 25); ga.state.enemies.splice(0, ga.state.enemies.length, guard);
   assert.equal(ga.teleport(-52, 39), true); assert.equal(gb.teleport(-52, 40), true);
   for (let frame = 0; frame < 30; frame++) session.update(DT);
-  ga.receiveDamage(10_000, guard); assert.equal(ga.state.phase, 'dead');
+  ga.receiveDamage(10_000, guard); ga.receiveDamage(10_000, guard); assert.equal(ga.state.phase, 'dead');
   const hp = gb.state.player.hp;
   for (let frame = 0; frame < 15 * 60 && gb.state.player.hp === hp; frame++) session.update(DT);
   assert.equal(gb.state.phase, 'raid'); assert.ok(gb.state.player.hp < hp, 'AI stopped with the dead host');
@@ -189,7 +189,7 @@ test('visual contact reaches at most three nearby allies and cannot broadcast th
     assert.equal(hasLineOfSight({ ...friend, y: 1.55 }, { ...target.state.player, y: 1.3 }), false);
   }
   ai.advance([reporter, ...friends, distant], .4, [target]);
-  assert.deepEqual(reporter.lastSeen, { x: -52, z: 38 });
+  assert.deepEqual(reporter.lastSeen, { x: -52, y:0, z: 38 });
   assert.equal(friends.filter(friend => friend.ai.sharedContact).length, 3);
   for (const friend of friends.slice(0, 3)) { assert.deepEqual(friend.ai.sharedContact, reporter.lastSeen); assert.equal(friend.lastSeen, null); }
   assert.equal(friends[3].ai.sharedContact, null); assert.equal(distant.ai.sharedContact, null);
@@ -233,7 +233,7 @@ test('a remembered contact is reached around containers, scanned and swept befor
   const game = await setup(t), ai = planner(), guard = guardAt(game, -7, 18, { id: 'searcher' }), remembered = { x: -7, z: 3 };
   Object.assign(guard, { lastSeen: remembered, home: { x: -7, z: 45 } });
   const tasks = new Set(), sectors = new Set(); let closest = Infinity;
-  ai.advance([guard], 75, [targetAt(-55, 55)], () => {
+  ai.advance([guard], 75, [targetAt(-140, 140)], () => {
     tasks.add(guard.ai.task); closest = Math.min(closest, separation(guard, remembered));
     if (guard.ai.task === 'sweep' && guard.ai.goal) sectors.add(`${guard.ai.goal.x.toFixed(1)},${guard.ai.goal.z.toFixed(1)}`);
     assert.deepEqual(guard.lastSeen, remembered);
@@ -247,7 +247,7 @@ test('a remembered contact is reached around containers, scanned and swept befor
 test('a stale route into solid geometry triggers recovery and a new safe route to the search location', async t => {
   const game = await setup(t), ai = planner(), guard = guardAt(game, -7, 18, { id: 'stuck-searcher' }), remembered = { x: -7, z: 3 };
   Object.assign(guard, { lastSeen: remembered, alert: 60 });
-  const distant = targetAt(-55, 55); ai.advance([guard], DT, [distant]);
+  const distant = targetAt(-140, 140); ai.advance([guard], DT, [distant]);
   // Emulate a stale waypoint left inside a blocker. Recovery must discard it,
   // not teleport through the wall or keep pushing into it for the whole raid.
   guard.path = [{ x: -7, z: 13 }]; let closest = Infinity;
@@ -257,15 +257,15 @@ test('a stale route into solid geometry triggers recovery and a new safe route t
   assert.equal(ai.shots.length, 0);
 });
 
-test('thirty-three active brains keep sensing and route work within their staggered budgets', async t => {
+test('seventy-two active brains keep sensing and route work within their staggered budgets', async t => {
   const game = await setup(t), ai = planner(), enemies = [];
-  for (let index = 0; index < 33; index++) {
+  for (let index = 0; index < 72; index++) {
     const guard = guardAt(game, -39, -30 + index * .7, { id: `budget-${index}`, flank: index % 3 === 0 });
     Object.assign(guard, { lastSeen: { x: -25, z: -15 }, alert: 60 }); enemies.push(guard);
   }
   ai.advance(enemies, 6, [targetAt(140, 140)]);
   const stats = ai.brain.stats();
-  assert.ok(stats.senses > 33); assert.ok(stats.senses <= 33 * 31, `Sensing exceeded 5 Hz: ${stats.senses}`);
-  assert.ok(stats.plans <= 33 * 9, `Planning ran every frame: ${stats.plans}`);
+  assert.ok(stats.senses > 72); assert.ok(stats.senses <= 72 * 31, `Sensing exceeded 5 Hz: ${stats.senses}`);
+  assert.ok(stats.plans <= 72 * 9, `Planning ran every frame: ${stats.plans}`);
   assert.ok(stats.routes > 0); assert.ok(stats.routes <= 122, `Global route budget exceeded: ${stats.routes}`);
 });

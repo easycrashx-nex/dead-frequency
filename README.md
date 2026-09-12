@@ -1,6 +1,8 @@
-# DEAD FREQUENCY 1.10.0
+# DEAD FREQUENCY 1.11.0
 
-Ein Extraction-Shooter aus der Ego-Perspektive für Windows x64: allein offline oder zu zweit im Koop. Durchsuche den 300 × 300 Meter großen Sektor 07, bekämpfe Patrouillen, sichere Beute und handle nach der Extraktion damit.
+Ein Hardcore-Extraction-Shooter aus der Ego-Perspektive für Windows x64: allein offline oder zu zweit im Koop. Durchsuche den **1.500 × 1.500 Meter** großen Sektor 07 mit Bergen, Fluss, Brücken und begehbaren Ortschaften. Sichere Beute und bringe deine eigene Ausrüstung lebend zurück.
+
+Die Welt umfasst 73 begehbare Gebäude, davon 46 mehrgeschossig, sechs ummauerte Ortschaften, drei Brücken, 28 Fahrzeuge und 151 logisch platzierte Kisten. Alle Häuser haben echte Eingänge; obere Stockwerke erreichst du über Treppen. Im Hauptmenü zeigt ein düsterer 3D-Ausrüstungsraum deinen Operator mit dem gewählten Loadout. Waffenwerte und Kaufknopf bleiben im Shop sichtbar, während du im Katalog blätterst.
 
 **[Windows-Spiel herunterladen](https://github.com/easycrashx-nex/dead-frequency/releases/latest)** · [Quellcode](https://github.com/easycrashx-nex/dead-frequency)
 
@@ -19,6 +21,8 @@ Das Windows-ZIP einmal vollständig entpacken und `DEAD FREQUENCY.exe` starten. 
 Beide sehen dieselben Gegner und dieselbe Beute. Jeder Gegenstand einer Kiste kann nur einmal entnommen werden. Abgeworfene Rucksackgegenstände kann der Partner aufnehmen. Gesundheit, Munition, Ausdauer, Waffen, Skills und Extraktionsrucksäcke bleiben getrennt. Es gibt kein Friendly Fire. Jeder fordert seine eigene Extraktion an und bleibt acht Sekunden in der Zone (mit Logistik-Meisterschaft sieben). Der blaue Operator mit seiner gewählten Waffe und die Teamanzeige zeigen deinen Mitspieler. Waffen und Skills vor dem Verbinden auswählen; in der Lobby ist die Ausrüstung gesperrt.
 
 **Im Koop läuft die Welt bei geöffnetem Menü oder Fensterwechsel weiter.** Bei einem Verbindungsabbruch scheidet der getrennte Spieler aus; seine ungesicherte Beute kann der Partner bergen. Wenn der Host das Team beendet oder die Anwendung schließt, endet die Verbindung für beide. Nach seiner eigenen Extraktion sollte der Host warten, bis der Kollege ebenfalls draußen ist. Beute aus einer bereits abgeschlossenen Extraktion bleibt erhalten.
+
+Beim ersten tödlichen Treffer im Koop wirst du **verwundet** und verblutest nach 60 Sekunden. Dein stehender Partner kann dich innerhalb von 2,2 Metern bei freier Sicht mit **E halten** beziehungsweise **Y / △ halten** wiederbeleben. Dafür muss er sechs Sekunden ununterbrochen helfen und ein Medkit besitzen; dieses wird erst bei erfolgreicher Hilfe verbraucht. Loslassen, zu große Entfernung oder eingehender Schaden unterbrechen die Hilfe. Du kehrst mit 35 Lebenspunkten zurück. Ein zweiter tödlicher Treffer, Verbluten oder zwei gleichzeitig verwundete Spieler beenden die Rettungsmöglichkeit. Vollständig tote Spieler können nicht wiederbelebt werden. Im Solo-Raid gibt es keine Selbstwiederbelebung.
 
 Die Internet-Einladung läuft über den mitgelieferten Cloudflare-Tunnel, benötigt keine Portfreigabe und gilt nur für die aktuelle Hostsitzung. Der Host-PC berechnet den Raid. [Cloudflare Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/) sind ein kostenloser Dienst ohne Verfügbarkeitsgarantie; bei einer Störung kann eine neue Einladung helfen. Unter **Verbindungsoptionen** lässt sich Internet ausschalten, um direkt im selben LAN/VPN zu spielen. Dann muss die Windows-Firewall die Spielverbindung im verwendeten privaten Netzwerk zulassen. Einladungen nur dem Mitspieler geben.
 
@@ -59,7 +63,9 @@ Wachen nutzen erreichbare Deckung und treten kurz zum Schießen hervor. Flankier
 
 Verlierst du den Sichtkontakt, untersuchen Gegner deine zuletzt beobachtete Position und suchen die Umgebung ab. Schüsse, Alarme und nahes Sprinten verraten eine ungefähre Geräuschposition; lautloses Bewegen hinter einer Wand verrät deinen neuen Aufenthaltsort nicht. Wege berücksichtigen Hindernisse und offene Gebäudeeingänge. Nach erfolgloser Suche kehren Wachen zur Patrouille zurück. Waffenhaltung und kurze Suchblicke machen ihre Aufmerksamkeit erkennbar.
 
-Diese Verhaltensweisen gelten auch im Koop für beide Spieler. Schaden, Lebenspunkte, Trefferwahrscheinlichkeit, Feuerrhythmus und erste Reaktionszeit wurden gegenüber Version 1.7.1 nicht erhöht.
+Diese Verhaltensweisen gelten auch im Koop für beide Spieler. Wachen und Veteranen tragen mehr Schutz und halten mehr Körpertreffer aus; präzise Kopftreffer bleiben besonders wirkungsvoll. Der Boss **Kommandant Voss** wird von vier Leibwachen begleitet. Seine Gruppe deckt den Kommandanten und sucht gemeinsame Flanken. Höherwertige Gegner sind gefährlicher und können bessere Ausrüstung bei sich tragen.
+
+Im Laufe des Raids rücken in Abständen von rund zweieinhalb Minuten weitere Patrouillen nach. Die aktive Gegnerzahl ist begrenzt; neue Gruppen erscheinen außerhalb unmittelbarer Spielernähe und sichtbarer Spawnpositionen. Schüsse veranlassen Gegner innerhalb ihrer Hörweite zur Untersuchung der Geräuschquelle. Ein Schalldämpfer reduziert diese Reichweite.
 
 ## Arsenal und Skilltree
 
@@ -99,23 +105,19 @@ Bereits gekaufte Rüstungs-, Rucksack- und Waffenränge werden beim Laden automa
 
 ## Kisten und Beute
 
-Sieben Kistentypen enthalten passende Beutepools: Werkzeug, Elektronik, Sanität, Munition, Vorräte, Industrie und Sicherheit. Sie stehen an Arbeitsplätzen, in Versorgungsbereichen, an Frachtplätzen und in den fünf begehbaren Gebäuden. Die 100 Handelsgegenstände und bisherigen neun Waren bleiben erhalten. Passende Kisten enthalten zusätzlich nutzbare Waffen, Aufsätze oder Ausrüstung; Munitions- und Sanitätskisten liefern auch Verbrauchsmaterial.
+Sieben Kistentypen enthalten passende Beutepools: Werkzeug, Elektronik, Sanität, Munition, Vorräte, Industrie und Sicherheit. Sie stehen an Arbeitsplätzen, in Versorgungsbereichen, an Frachtplätzen und in den begehbaren Gebäuden. Die 100 Handelsgegenstände und bisherigen neun Waren bleiben erhalten. Passende Kisten enthalten zusätzlich nutzbare Waffen, Aufsätze oder Ausrüstung; Munitions- und Sanitätskisten liefern auch Verbrauchsmaterial.
 
 Gehe nahe an eine Kiste und drücke **E**. Nach einer kurzen Suche kannst du Gegenstände einzeln oder mit **Alles nehmen** entnehmen. Im selben Fenster siehst du deinen Rucksack und kannst mit **Abwerfen** Platz schaffen. Escape oder die Schließen-Schaltfläche schließen die Kiste; Tab bewegt den Fokus zwischen ihren Schaltflächen. Während der Suche und beim Plündern läuft der Raid weiter.
 
 Der Inhalt wird einmal je Raid bestimmt. Wiederholtes Öffnen würfelt ihn nicht neu. Im Koop teilen beide Spieler den Kisteninhalt; ein Gegenstand landet bei genau einem Spieler. Abgeworfene Gegenstände bleiben als aufnehmbare Beute in der Welt. Alle neuen Handelsgegenstände lassen sich extrahieren, einlagern und auf dem vorhandenen Markt verkaufen.
 
+**Gefallene Gegner sind eigene durchsuchbare Behälter.** Gehe zur Leiche und drücke E oder Y / △. Munition wird aus ihrem Inventar entnommen; zusätzlich kannst du Waren, Medkits und gelegentlich nutzbare Waffen, Aufsätze oder Schutzteile finden. Normale Wachen haben geringe Chancen auf besondere Ausrüstung; Veteranen, Leibwachen und der Boss besitzen bessere Beutepools. Erneutes Öffnen erzeugt keine neue Beute.
+
 ## Begehbare Gebäude
 
-Fünf Gebäude haben offene Eingänge, eingerichtete Innenräume und zusätzliche Beute:
+Alle Häuser auf der Karte besitzen zugängliche Innenräume. Viele Gebäude haben zwei oder drei Geschosse, die über echte Treppen erreichbar sind. Laufe durch die offenen Türen hinein; ein Ladebildschirm ist nicht nötig. Wände, Geschossdecken und Einrichtung bieten Deckung. Schüsse, Sichtlinien und Beuteinteraktionen berücksichtigen die tatsächlichen Öffnungen und Höhen. Dieselben Räume stehen auch im Koop zur Verfügung.
 
-- **Wachhaus** direkt östlich vom Startpunkt.
-- **Lager 04** im zentralen Lagerbezirk.
-- **Bahnbüro** am Güterbahnhof im Nordwesten.
-- **Zollbüro** an der Zollstation im Osten.
-- **Südwerkstatt** im Südlager.
-
-Die Karte hebt diese Gebäude und ihre Eingänge hervor. Laufe durch die offenen Türen hinein; ein Ladebildschirm oder eine Interaktion ist nicht nötig. Die Räume haben jeweils einen zweiten Ausgang. Wände und Einrichtung bieten Deckung; Schüsse, Sichtlinien, Beuteinteraktionen und Gegnerwege berücksichtigen die tatsächlichen Öffnungen. Dieselben Räume und dieselbe Beute stehen auch im Koop zur Verfügung.
+Zum alten Industriekern kommen **Altdorf, Bergwerk, Nordwacht, Osthafen, Linden und Südhof**. Umfassungsmauern lenken den Zugang durch einzelne Tore. Straßen verbinden die Siedlungen über hügeliges Gelände; drei Brücken überqueren den Fluss. Tiefes Flusswasser ist keine Abkürzung: Benutze die Übergänge. Autos, Pickups, Lieferwagen und Laster haben eigene erkennbare Karosserien.
 
 ## Einstellungen
 
@@ -131,6 +133,8 @@ Die Karte hebt diese Gebäude und ihre Eingänge hervor. Laufe durch die offenen
 
 Die Suche findet Einstellungen über alle Kategorien. Änderungen wirken sofort und werden automatisch gespeichert; vorhandene Einstellungen früherer Versionen bleiben erhalten. Eine Kategorie lässt sich einzeln zurücksetzen, alle Einstellungen über einen zweiten Bestätigungsklick. Spielstände und Lager werden dabei nicht verändert. Beim Sprint-Umschalten beendet Erschöpfung den Sprint; nach Erholung erneut die Sprinttaste drücken. Im Koop läuft die Welt auch bei geöffneten Einstellungen weiter.
 
+Die Renderauflösung wird bei hohen Bildschirm- und Windows-Skalierungen durch ein Speicherlimit begrenzt. Auflösungsänderungen werden zusammengefasst; die Menüwelt wird mit maximal 30 FPS gezeichnet. Nach einem Grafikkontextverlust stellt sich die Anzeige im selben Spiel wieder her. Ein vollständiger Rendererabsturz zeigt eine separate Seite zum Neustart mit reduzierter Auflösung, statt auf einem weißen Bildschirm stehenzubleiben.
+
 ## Solo-Raid
 
 1. Scout-Kit und normale Schwierigkeit wählen, dann den Raid starten.
@@ -141,7 +145,7 @@ Die Suche findet Einstellungen über alle Kategorien. Änderungen wirken sofort 
 6. Unter **Markt** einen gelagerten Gegenstand auswählen, den Wunschpreis eingeben und eine Laufzeit von 2, 5 oder 10 Minuten wählen.
 7. Unter **Postfach** Verkaufserlöse beanspruchen oder unverkaufte Waren wieder ins Lager holen. Credits finanzieren Kits und Waffen; XP liefern die Punkte für permanente Skills.
 
-Die Runde dauert maximal zwölf Minuten. Tod, Ablauf der Zeit oder Aufgabe verlieren die ungesicherte Beute und mitgenommene eigene Ausrüstung. Erfolgreich extrahierte Gegenstände bleiben erhalten; Abschuss- und Relaisboni werden direkt gutgeschrieben. Das Scout-Kit kostet nichts. Andere Fertigkits beziehungsweise Verbrauchsmaterial für eigene Kits werden beim Raidstart bezahlt. Kontostand, Skills, XP, Loadout, Waffenumbauten, Lager, Anlieferung, Angebote und Postfach werden lokal gespeichert. Ein laufender Raid wird beim Schließen nicht gespeichert.
+Die Runde dauert maximal 30 Minuten. Tod, Ablauf der Zeit oder Aufgabe verlieren die ungesicherte Beute und mitgenommene eigene Ausrüstung. Erfolgreich extrahierte Gegenstände bleiben erhalten; Abschuss- und Relaisboni werden direkt gutgeschrieben. Das Scout-Kit kostet nichts. Andere Fertigkits beziehungsweise Verbrauchsmaterial für eigene Kits werden beim Raidstart bezahlt. Kontostand, Skills, XP, Loadout, Waffenumbauten, Lager, Anlieferung, Angebote und Postfach werden lokal gespeichert. Ein laufender Raid wird beim Schließen nicht gespeichert.
 
 ## Markt und Rucksack
 
@@ -151,7 +155,7 @@ Der Markt simuliert lokale Käufer und braucht keine Internetverbindung. Der Ric
 
 Verkaufte Angebote schicken exakt den gewählten Preis ins Postfach. Nach Ablauf unverkaufte oder manuell abgebrochene Angebote schicken den Gegenstand dorthin zurück. **Beanspruchen** übernimmt Credits bzw. lagert den Gegenstand ein. Beim nächsten Start wird verstrichene Zeit nachberechnet; dieselben Käuferprüfungen erhalten bei jedem Laden dasselbe Ergebnis. Es gibt keine echten Spieler oder externen Börsenkurse.
 
-Seit Version 1.7.1 wächst das Guthaben langsamer: Neue Beutefunde sind 35 % weniger wert, hochwertige Gegenstände werden seltener gezogen. Die Kisten enthalten weiterhin drei bis fünf Handelsgegenstände sowie gegebenenfalls Munition oder Medkits. Bei erfolgreicher Extraktion gibt es 15 CR pro Abschuss, 150 CR für das Relais und mit Rückkehrplan zusätzlich 50 CR. XP, Waffenpreise und das kostenlose Scout-Kit bleiben gleich. Vorhandene Credits, gesicherte Gegenstände und bereits abgerechnete Post bleiben erhalten; aktive Angebote folgen den neuen Käuferregeln.
+Seit Version 1.7.1 wächst das Guthaben langsamer: Neue Beutefunde sind 35 % weniger wert, hochwertige Gegenstände werden seltener gezogen. Die Kisten enthalten weiterhin drei bis fünf Handelsgegenstände sowie gegebenenfalls Munition oder Medkits. Bei erfolgreicher Extraktion gibt es 15 CR pro Abschuss, 150 CR für das Relais und mit Rückkehrplan zusätzlich 50 CR. XP und das kostenlose Scout-Kit bleiben davon unberührt. Vorhandene Credits, gesicherte Gegenstände und bereits abgerechnete Post bleiben erhalten; aktive Angebote folgen den neuen Käuferregeln.
 
 ## Steuerung
 
@@ -200,6 +204,10 @@ pnpm package
 - `src/armory-ui.js` / `src/progression-ui.js`: Kits, Ausrüstung, Waffenbank, Shop und interaktiver Skilltree.
 - `src/recoil.js`: sanfte, begrenzte Rückstoßwinkel, gemeinsam für Kamera und Trefferberechnung.
 - `src/layout.js`: gemeinsame Karte für Kollisionen, Darstellung und Übersicht.
+- `src/terrain.js`, `src/world-layout.js`: deterministisches Höhenfeld, Fluss, Straßen, Brücken und mehrgeschossige Gebäude mit gemeinsamen Kollisionen und Laufhöhen.
+- `src/world-render.js`: räumlich gebündelte Weltgeometrie und entfernungsabhängige Darstellung.
+- `src/operator-stage.js`: 3D-Ausrüstungsraum mit dem gewählten Operator-Loadout im bestehenden Grafik-Kontext.
+- `src/enemies.js`: Gegnerrollen, Verstärkungsgrenzen und Leichenbeute.
 - `src/render.js`: Three.js-Welt, Beleuchtung, Waffe, Gegneranimationen und Effekte.
 - `src/ui.js` / `src/style.css`: deutsche Menüs und HUD.
 - `src/audio.js`: aufgenommene Waffensounds und Foley, räumlicher Klang mit HRTF, Entfernungs-/Deckungsdämpfung, kurze Reflexionen und begrenzte Audiostimmen.
@@ -211,7 +219,7 @@ pnpm package
 - `platform.cjs` / `preload.cjs`: schmale Desktop-Schnittstelle, Host-Lebensdauer und Internet-Tunnel.
 - `launcher/`: automatische GitHub-Prüfung, verifizierter Download, sichere Archivextraktion und Versionsauswahl.
 
-Eine Karte mit fünf begehbaren Gebäuden, sechs festen Einsatzkits, eigenem Loadout, 32 Waffen, 36 Aufsätzen, 24 Ausrüstungsteilen, zwei Schwierigkeiten und 24 permanenten Skills. Solo gegen KI oder privater Koop für genau zwei Spieler. Lager und Markt bleiben pro Spieler lokal; es gibt keinen gemeinsamen öffentlichen Handelsmarkt oder öffentliches Matchmaking. Modelle und Texturen werden lokal erzeugt. Die Sounds verwenden mitgelieferte Aufnahmen: echte M45- und AK-47-Schüsse als bearbeitete Klangbasis der Waffen, Airsoft-Nachlademechanik, Schritte auf hartem Boden und Wind.
+Eine 1.500 × 1.500 Meter große Karte mit vollständig begehbaren Gebäuden, sechs festen Einsatzkits, eigenem Loadout, 32 Waffen, 36 Aufsätzen, 24 Ausrüstungsteilen, zwei Schwierigkeiten und 24 permanenten Skills. Solo gegen KI oder privater Koop für genau zwei Spieler. Lager und Markt bleiben pro Spieler lokal; es gibt keinen gemeinsamen öffentlichen Handelsmarkt oder öffentliches Matchmaking. Modelle und Texturen werden lokal erzeugt. Die Sounds verwenden mitgelieferte Aufnahmen: echte M45- und AK-47-Schüsse als bearbeitete Klangbasis der Waffen, Airsoft-Nachlademechanik, Schritte auf hartem Boden und Wind.
 
 Version 1.1.0 ersetzt die synthetischen Schüsse und Schritte. Schussvarianten wiederholen sich nicht unmittelbar; die beiden Waffen haben unterschiedliche Klangquellen. Gegnerklänge folgen Entfernung, Blickrichtung und Hindernissen. Schritte hängen von tatsächlicher Bewegung ab, Ducken ist leiser, Sprinten kräftiger. Pause und Tod brechen geplante Nachladegeräusche ab. Der Mixer begrenzt gleichzeitig aktive Stimmen und Spitzenpegel. `node scripts/qa-audio.mjs` prüft die echte Stereo-Ausgabe gegen den laufenden Vite-Server.
 

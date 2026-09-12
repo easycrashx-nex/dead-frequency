@@ -35,22 +35,22 @@ test('catalog contains exactly 100 new named trade goods, nine unchanged origina
 });
 
 test('physical containers occupy clear believable footprints and leave every interior center lane open', () => {
-  assert.equal(CONTAINER_SPOTS.length, 37);
+  assert.equal(CONTAINER_SPOTS.length, 151);
   assert.equal(new Set(CONTAINER_SPOTS.map(spot => spot.id)).size, CONTAINER_SPOTS.length);
   for (const spot of CONTAINER_SPOTS) {
     assert.equal(spot.rotation, 0); assert.ok(ITEM_POOLS[spot.type]);
-    assert.equal(isWalkable(spot.x, spot.z, .34), false);
+    assert.equal(isWalkable(spot.x, spot.z, .34, spot.y), false);
     const collider = COLLIDERS.find(value => value.id === spot.id);
-    assert.ok(collider && collider.y === spot.h / 2);
+    assert.ok(collider && collider.y === spot.y + spot.h / 2);
     for (const other of COLLIDERS) {
-      if (other === collider || other.y - other.h / 2 >= spot.h) continue;
+      if (other === collider || other.y - other.h / 2 >= spot.y + spot.h || other.y + other.h / 2 <= spot.y) continue;
       assert.equal(Math.abs(spot.x - other.x) < (spot.w + other.w) / 2 && Math.abs(spot.z - other.z) < (spot.d + other.d) / 2, false, `${spot.id} overlaps ${other.id}`);
     }
-    assert.ok(traceObstacle({ x: spot.x, y: spot.h / 2, z: spot.z + spot.d / 2 + .5 }, { x: 0, y: 0, z: -1 }, 2) <= .501);
+    assert.ok(traceObstacle({ x: spot.x, y: spot.y + spot.h / 2, z: spot.z + spot.d / 2 + .5 }, { x: 0, y: 0, z: -1 }, 2) <= .501);
   }
   for (const room of INTERIORS) {
     assert.ok(CONTAINER_SPOTS.some(spot => spot.interiorId === room.id));
-    for (let z = room.doors[0].z - 1; z <= room.doors[1].z + 1; z += .25) assert.ok(isWalkable(room.x, z, .34));
+    for (let z = room.doors[0].z - 1; z <= room.doors[1].z + 1; z += .25) assert.ok(isWalkable(room.x, z, .34, room.baseY));
   }
 });
 
@@ -62,7 +62,7 @@ test('seeded contents are created once per raid with short unique IDs and no sta
   const items = a.state.containers.flatMap(container => container.items);
   assert.equal(new Set(items.map(item => item.id)).size, items.length);
   assert.ok(items.every(item => item.id.length <= 100 && !item.taken));
-  assert.ok(a.state.containers.every(container => !container.opened && !container.searched && container.items.length >= 3 && container.items.length <= 6));
+  assert.ok(a.state.containers.every(container => !container.opened && !container.searched && container.items.length >= 3 && container.items.length <= 7));
   for (const container of a.state.containers) for (const item of container.items.filter(item => !item.kind)) assert.ok(ITEM_POOLS[container.type].some(entry => entry.name === item.name));
 });
 
@@ -127,7 +127,7 @@ test('wall, range and phase checks protect container search and claims', async t
 });
 
 test('every placed container can actually be approached, searched and looted through normal interaction', async t => {
-  const game = await setup(t); game.state.raid.capacity = 100;
+  const game = await setup(t); game.state.raid.capacity = 200;
   for (const container of game.state.containers) takeFirstContainerItem(game, container);
   assert.equal(game.state.raid.loot.length, CONTAINER_SPOTS.length);
   assert.equal(game.state.loot.length, 0);

@@ -89,7 +89,9 @@ try{
   await page.waitForFunction(()=>__DF.state.profile.loadout.mode==='custom');await snapshot('02-custom-loadout');
   const prepared=await profileState();await page.evaluate(()=>__DF.persist());await page.reload();await ready();
   assert.deepEqual((await profileState()).loadout,prepared.loadout);assert.deepEqual((await profileState()).stash,prepared.stash);
-  pass('The equipped custom weapon, mounted parts, four gear slots and supply selection survive native restart');
+  await page.waitForFunction(id=>__DF.stats().menuWeaponId===id,weapon);
+  const menuBuild=await page.evaluate(()=>__DF.stats());assert.deepEqual(menuBuild.menuAttachments,expected.attachments);measurements.menuBuild=menuBuild;
+  pass('The custom build and supplies survive native restart and the actual 3D menu operator holds the matching six-part weapon');
 
   // Deterministic crate contents and safe positioning are explicit QA fixtures;
   // the actual deployment button, purchasing, combat and inventory paths run.
@@ -115,9 +117,9 @@ try{
   const aiming=await page.evaluate(()=>__DF.stats());assert.equal(aiming.adsZoom,4);assert.ok(Math.abs(aiming.fov-aiming.adsTargetFov)<2);await snapshot('03-assembled-ads');await page.mouse.up({button:'right'});
   pass('Real mouse firing, enlarged-magazine reload and the mounted 4x optic work in the Windows raid');
 
-  const crate=await page.evaluate(()=>{const c=__DF.state.containers.find(c=>c.id==='arrival-medical');__DF.teleport(c.x,c.z+c.d/2+.9);return structuredClone(c);});
+  const crate=await page.evaluate(()=>{const c=__DF.state.containers.find(c=>c.items.some(item=>item.catalogId==='pack-sling'));if(!c)throw Error('Seeded world has no sling backpack fixture');__DF.teleport(c.x,c.z+c.d/2+.9,c.y+.02);return structuredClone(c);});
   const pack=crate.items.find(item=>item.catalogId==='pack-sling');assert.ok(pack);
-  await page.keyboard.press('KeyE');await page.waitForFunction(()=>__DF.state.containers.find(c=>c.id==='arrival-medical').searched);
+  await page.keyboard.press('KeyE');await page.waitForFunction(id=>__DF.state.containers.find(c=>c.id===id).searched,crate.id);
   await page.locator(`[data-take-container-item="${pack.id}"]`).click();
   await page.waitForFunction(id=>__DF.state.raid.loot.some(item=>item.id===id),pack.id);
   await page.locator(`#container-backpack-list [data-equip-raid-item="${pack.id}"]`).click();

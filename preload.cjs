@@ -9,5 +9,6 @@ contextBridge.exposeInMainWorld('platform',Object.freeze({
   onStatus:callback=>subscribe('coop:status',callback),
   setFullscreen:value=>ipcRenderer.invoke('display:fullscreen',value),
   onFullscreen:callback=>subscribe('display:fullscreen',callback),
+  recoverGraphics:()=>ipcRenderer.invoke('display:recover'),
 }));
 contextBridge.exposeInMainWorld('launcher',Object.freeze({onProgress:callback=>subscribe('launcher:progress',callback)}));

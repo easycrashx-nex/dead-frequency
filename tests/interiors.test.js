@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { INTERIORS, COLLIDERS, OBSTACLES, SPAWN, layout } from '../src/layout.js';
+import { INTERIORS, COLLIDERS, OBSTACLES, SPAWN, layout, getSupportHeight } from '../src/layout.js';
 import { createGame, findPath, hasLineOfSight, isWalkable, traceObstacle } from '../src/simulation.js';
 import { takeFirstContainerItem } from './container-helpers.js';
 
@@ -15,14 +15,14 @@ function checkRoute(from, path, label) {
   for (const next of path) {
     for (let step = 0; step <= 10; step++) {
       const fraction = step / 10;
-      assert.ok(isWalkable(from.x + (next.x - from.x) * fraction, from.z + (next.z - from.z) * fraction, .38), `Route crosses a wall: ${label}`);
+      assert.ok(isWalkable(from.x + (next.x - from.x) * fraction, from.z + (next.z - from.z) * fraction, .38, getSupportHeight(from.x + (next.x - from.x) * fraction, from.z + (next.z - from.z) * fraction, (from.y??0) + ((next.y??0)-(from.y??0))*fraction)), `Route crosses a wall: ${label}`);
     }
     from = next;
   }
 }
 
-test('five original footprints expose two unobstructed doors and height-aware shared solids', () => {
-  assert.equal(INTERIORS.length, 5); assert.equal(layout.interiors, INTERIORS); assert.equal(layout.colliders, COLLIDERS);
+test('all 73 building footprints expose two unobstructed doors and height-aware shared solids', () => {
+  assert.equal(INTERIORS.length, 73); assert.equal(layout.interiors, INTERIORS); assert.equal(layout.colliders, COLLIDERS);
   assert.equal(new Set(COLLIDERS.map(solid => solid.id)).size, COLLIDERS.length);
   for (const room of INTERIORS) {
     const footprint = OBSTACLES.find(obstacle => obstacle.id === room.id);
@@ -34,13 +34,13 @@ test('five original footprints expose two unobstructed doors and height-aware sh
       assert.ok(solid.w > 0 && solid.h > 0 && solid.d > 0 && solid.y - solid.h / 2 >= 0);
     }
     assert.ok(isWalkable(room.x, room.z), `${room.name} ceiling blocks navigation`);
-    assert.equal(isWalkable(room.x, room.z, .34, room.ceilingHeight), false, 'Elevated bodies must collide with the roof');
+    assert.equal(isWalkable(room.x, room.z, .34, room.baseY + room.ceilingHeight), false, 'Elevated bodies must collide with the roof');
     for (const door of room.doors) {
       assert.ok(door.width >= 3.2 && door.height >= 2.8);
-      for (const position of [door.outside, door, door.inside]) assert.ok(isWalkable(position.x, position.z), `${room.name}/${door.side} blocked`);
-      assert.ok(hasLineOfSight({ ...door.outside, y: 1.65 }, { ...door.inside, y: 1.65 }));
+      for (const position of [door.outside, door, door.inside]) assert.ok(isWalkable(position.x, position.z, .48, room.baseY), `${room.name}/${door.side} blocked`);
+      assert.ok(hasLineOfSight({ ...door.outside, y: room.baseY + 1.65 }, { ...door.inside, y: room.baseY + 1.65 }));
     }
-    const ceilingDistance = traceObstacle({ x: room.x, y: 1.65, z: room.z }, { x: 0, y: 1, z: 0 }, 20);
+    const ceilingDistance = traceObstacle({ x: room.x, y: room.baseY + 1.65, z: room.z }, { x: 0, y: 1, z: 0 }, 20);
     assert.ok(Math.abs(ceilingDistance - (room.ceilingHeight - 1.65)) < 1e-8);
   }
 });
@@ -50,28 +50,29 @@ test('Rapier traverses every room south to north and back without a floor or inv
   for (const room of INTERIORS) {
     const [north, south] = room.doors;
     assert.ok(game.teleport(south.outside.x, south.outside.z));
-    run(game, (room.d + 4) / 4.4 + .1, { forward: 1, yaw: 0 });
+    for(let frame=0;frame<(room.d+7)/4*60&&game.state.player.z>=north.z-1.1;frame++)game.update(1/60,{forward:1,yaw:0});
     assert.ok(game.state.player.z < north.z - 1, `${room.name}: north exit not reached`);
-    assert.ok(game.state.player.y < .08 && game.state.player.grounded);
+    assert.ok(Math.abs(game.state.player.y-room.baseY) < .08 && game.state.player.grounded);
     assert.ok(game.teleport(north.outside.x, north.outside.z));
-    run(game, (room.d + 4) / 4.4 + .1, { forward: -1, yaw: 0 });
+    for(let frame=0;frame<(room.d+7)/4*60&&game.state.player.z<=south.z+1.1;frame++)game.update(1/60,{forward:-1,yaw:0});
     assert.ok(game.state.player.z > south.z + 1, `${room.name}: south exit not reached`);
-    assert.ok(game.state.player.y < .08 && game.state.player.grounded);
+    assert.ok(Math.abs(game.state.player.y-room.baseY) < .08 && game.state.player.grounded);
   }
 });
 
 test('solid wall sections block movement, sight and hitscan while door openings stay clear', async t => {
   const game = await setup(t);
   for (const room of INTERIORS) {
+    game.state.player.ammo=game.state.player.magSize;
     const south = room.doors[1], x = south.x + south.width / 2 + .9;
-    const from = { x, y: 1.65, z: south.z + 1.2 }, to = { x, y: 1.65, z: south.z - 1.2 };
+    const from = { x, y: room.baseY + 1.65, z: south.z + 1.2 }, to = { x, y: room.baseY + 1.65, z: south.z - 1.2 };
     assert.equal(hasLineOfSight(from, to), false, room.name);
     assert.ok(traceObstacle(from, { x: 0, y: 0, z: -1 }, 5) < 1.3);
     assert.ok(game.teleport(x, from.z));
     run(game, 1, { forward: 1, yaw: 0 });
     assert.ok(game.state.player.z > south.z + .3, `${room.name}: walked through wall`);
     assert.equal(game.teleport(x, south.z - .18), false);
-    const enemy = { id: `target-${room.id}`, x, z: to.z, hp: 95, dead: false, fireTimer: 100, alert: 0, pathTimer: 1 };
+    const enemy = { id: `target-${room.id}`, x, y: room.baseY, z: to.z, hp: 95, dead: false, fireTimer: 100, alert: 0, pathTimer: 1 };
     game.state.enemies = [enemy];
     assert.equal(game.fire({ x: 0, y: 0, z: -1 }), true);
     assert.equal(enemy.hp, 95, `${room.name}: gunfire passed through wall`);
@@ -82,35 +83,36 @@ test('solid wall sections block movement, sight and hitscan while door openings 
     assert.ok(enemy.hp < 95, `${room.name}: doorway blocked gunfire`);
     game.state.enemies = []; run(game, .12, {});
     // The lintel and overhead volume block high rays, but not standing eyes.
-    assert.equal(hasLineOfSight({ ...south.outside, y: 3.2 }, { ...south.inside, y: 3.2 }), false);
+    assert.equal(hasLineOfSight({ ...south.outside, y: room.baseY + 3.2 }, { ...south.inside, y: room.baseY + 3.2 }), false);
   }
 });
 
 test('grid routes reach every entrance and container approach without cutting through thin wall segments', () => {
   for (const room of INTERIORS) {
     for (const door of room.doors) checkRoute(SPAWN, findPath(SPAWN, door.inside), `${room.name}/${door.side}`);
-    const west = { x: room.x - room.w / 2 - 2, z: room.z };
+    const west = { x: room.x - room.w / 2 - 2, y:room.baseY, z: room.z };
     checkRoute(west, findPath(west, room), `${room.name}/west approach`);
     for (const spot of layout.containers.filter(container => container.interiorId === room.id)) {
-      const route = findPath(room.doors[1].outside, spot);
+      const approach = {x:spot.x+1.6,y:spot.y,z:spot.z};
+      const route = findPath(room.doors[1].outside, approach);
       checkRoute(room.doors[1].outside, route, `${room.name}/loot`);
-      assert.ok(hasLineOfSight({ ...route.at(-1), y: 1.65 }, { ...spot, y: spot.h + .08 }), `${room.name}: container hidden from its reachable grid cell`);
+      assert.ok(hasLineOfSight({ ...route.at(-1), y: route.at(-1).y + 1.65 }, { ...spot, y: spot.y + spot.h + .08 }), `${room.name}: container hidden from its reachable grid cell`);
     }
   }
 });
 
-test('live guards follow search routes around exterior walls and enter all five rooms', async t => {
+test('live guards follow search routes around exterior walls and enter every room', async t => {
   const game = await setup(t, true), guard = game.state.enemies[0];
   game.state.enemies = [guard];
-  const distant = { id: null, state: { phase: 'raid', player: { x: 140, y: 0, z: 140, hp: 100 } }, damage() {} };
+  const distant = { id: null, state: { phase: 'raid', player: { x: -740, y: 100, z: 740, hp: 100 } }, damage() {} };
   for (const room of INTERIORS) {
     delete guard.ai;
-    Object.assign(guard, { x: room.x - room.w / 2 - 2, z: room.z, alert: 60, lastSeen: { x: room.x, z: room.z }, path: [], pathTimer: 0, mode: 'search' });
+    Object.assign(guard, { x: room.x - room.w / 2 - 2, y:room.baseY, z: room.z, alert: 60, lastSeen: { x: room.x, y:room.baseY, z: room.z }, path: [], pathTimer: 0, mode: 'search' });
     let closest = Infinity;
     for (let i = 0; i < 1200; i++) {
-      const previous = { x: guard.x, z: guard.z };
+      const previous = { x: guard.x, y:guard.y, z: guard.z };
       game.advanceEnemies(1 / 60, [distant]);
-      checkRoute(previous, [{ x: guard.x, z: guard.z }], `${room.name}/live guard`);
+      checkRoute(previous, [{ x: guard.x, y:guard.y, z: guard.z }], `${room.name}/live guard`);
       closest = Math.min(closest, Math.hypot(guard.x - room.x, guard.z - room.z));
     }
     // A guard may already be sweeping nearby rooms at the final timestamp.
@@ -129,43 +131,43 @@ test('off-grid agents and targets beside a thin wall connect to the grid on the 
   const game = await setup(t, true), guard = game.state.enemies[0];
   game.state.enemies = [guard];
   Object.assign(guard, { ...outside, alert: 60, lastSeen: inside, path: [], pathTimer: 0, mode: 'search' });
-  const distant = { id: null, state: { phase: 'raid', player: { x: 140, y: 0, z: 140, hp: 100 } }, damage() {} };
+  const distant = { id: null, state: { phase: 'raid', player: { x: -740, y: 100, z: 740, hp: 100 } }, damage() {} };
   let closest = Infinity;
   for (let i = 0; i < 1200; i++) {
-    const previous = { x: guard.x, z: guard.z };
+    const previous = { x: guard.x, y:guard.y, z: guard.z };
     game.advanceEnemies(1 / 60, [distant]);
-    checkRoute(previous, [{ x: guard.x, z: guard.z }], 'off-grid/live guard');
+    checkRoute(previous, [{ x: guard.x, y:guard.y, z: guard.z }], 'off-grid/live guard');
     closest = Math.min(closest, Math.hypot(guard.x - inside.x, guard.z - inside.z));
   }
   assert.ok(closest < 1.6, `Guard never reached the interior after the thin-wall detour (${closest}m)`);
 });
 
-test('all ten interior containers replace ground treasures and offer reachable contents', async t => {
-  const game = await setup(t); game.state.raid.capacity = 30;
+test('all interior containers replace ground treasures and offer reachable contents', async t => {
+  const game = await setup(t); game.state.raid.capacity = 200;
   assert.deepEqual(game.state.loot, []);
   for (const room of INTERIORS) {
     const containers = game.state.containers.filter(container => container.interiorId === room.id);
     assert.ok(containers.length);
     for (const container of containers) takeFirstContainerItem(game, container);
   }
-  assert.equal(game.state.raid.loot.length, 10);
+  assert.equal(game.state.raid.loot.length, game.state.containers.filter(container=>container.interiorId).length);
 });
 
 test('loot cannot be collected through thin walls or dropped across them', async t => {
-  const game = await setup(t); game.state.loot = [];
+  const game = await setup(t); game.state.loot = [];game.state.raid.capacity=200;
   for (const room of INTERIORS) {
     const left = room.x - room.w / 2, z = room.z + room.d / 2 - 1.4;
-    const item = { id: `wall-test-${room.id}`, name: 'Prüfbeute', rarity: 'common', value: 10, x: left + .8, z, taken: false };
+    const item = { id: `wall-test-${room.id}`, name: 'Prüfbeute', rarity: 'common', value: 10, x: left + .8, y:room.baseY, z, taken: false };
     game.state.loot.push(item);
     assert.ok(game.teleport(left - .8, z));
     game.state.prompt = { kind: 'loot', id: item.id };
-    assert.equal(game.interact(), false); assert.equal(item.taken, false);
+    game.interact(); assert.equal(item.taken, false, `${room.name}: item taken through wall`); game.closeContainer();
     assert.ok(game.teleport(left + .8, z));
     assert.equal(game.interact(), true);
     game.state.player.yaw = Math.PI / 2;
     assert.equal(game.dropItem(item.id), true);
     assert.ok(item.x > left + .36 && item.x < room.x + room.w / 2 - .36, `${room.name}: drop crossed exterior wall`);
-    assert.ok(hasLineOfSight({ ...game.state.player, y: 1.1 }, { ...item, y: .55 }));
+    assert.ok(hasLineOfSight({ ...game.state.player, y: game.state.player.y + 1.1 }, { ...item, y: item.y + .55 }));
     assert.equal(game.interact(), true);
   }
 });

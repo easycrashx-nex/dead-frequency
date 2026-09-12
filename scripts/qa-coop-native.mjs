@@ -4,6 +4,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {getCatalogItem} from '../src/loadouts.js';
+import {checkFrontierCoop} from './qa-frontier-coop-checks.mjs';
 const version=JSON.parse(await fs.readFile('package.json','utf8')).version;
 const exe=process.env.DF_EXE||path.resolve(`../../outputs/v${version}/DEAD FREQUENCY-win32-x64/DEAD FREQUENCY.exe`);
 const internet=process.env.DF_QA_LAN!=='1';
@@ -64,7 +65,9 @@ try{
     assert.equal(await page.evaluate(()=>__DF.state.teammates[0].equipment.backpack.catalogId),'pack-day');
   }
   pass('Owned holographic sights, magazine attachments and backpacks replicate as the same authoritative builds and visible remote models');
-  await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];global.__DF_QAEnemy=structuredClone(members[0].game.state.enemies[0]);for(const member of members)member.game.state.enemies.splice(0);});
+  // The live hardcore raid can damage idle players while loadout replication is
+  // inspected. Reset health only when entering the isolated hearing fixture.
+  await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];global.__DF_QAEnemy=structuredClone(members[0].game.state.enemies[0]);for(const member of members){member.game.state.enemies.splice(0);member.game.state.player.hp=member.game.state.player.maxHp;}});
   await host.app.evaluate(()=>{
     const members=[...global.__DF_HOST().players.values()];members[0].game.teleport(-142,130);members[1].game.teleport(-10,-15);
     const guard={...global.__DF_QAEnemy,id:'qa-listener',x:-39,z:-15,y:0,yaw:-Math.PI/2,home:{x:-39,z:-15},dead:false,hp:95,fireTimer:9999,alert:0,lastSeen:null,lastHeard:null,path:[],pathTimer:0,flank:false,mode:'patrol'};
@@ -104,6 +107,7 @@ try{
   await guest.page.waitForTimeout(350);await padButton(guest.page,7,500);
   for(const {page} of [host,guest])await page.waitForFunction(()=>__DF.state.enemies.find(e=>e.id==='qa-guard')?.dead,null,{timeout:5000});
   assert.equal(await guest.page.evaluate(()=>__DF.state.player.ammo),beforeTriggerAmmo-2);assert.equal(await host.page.evaluate(()=>__DF.state.player.ammo===__DF.state.player.magSize),true);pass('Two separate controller trigger holds fire exactly two semi-automatic shots, synchronize enemy death and preserve per-player ammunition');
+  await checkFrontierCoop({host,guest,out,pass});
   await guest.page.keyboard.press('Escape');await guest.page.waitForFunction(()=>__DF.state.phase==='paused');const raidTime=await guest.page.evaluate(()=>__DF.state.raid.timeLeft);await guest.page.waitForTimeout(700);assert.ok(await guest.page.evaluate(t=>__DF.state.raid.timeLeft<t-.4,raidTime));pass('The shared raid continues while one player opens the local menu');
   await host.app.evaluate(()=>{for(const member of global.__DF_HOST().players.values())member.game.state.enemies.splice(0);});
   const interiorDoor=await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];const room=members[0].game.layout.interiors.find(room=>room.id==='warehouse'),door=room.doors.find(door=>door.side==='south');members.forEach((member,index)=>member.game.teleport(door.outside.x+(index? .45:-.45),door.outside.z));return door;});

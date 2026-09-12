@@ -26,7 +26,7 @@ function killAt(game, id, x, kind = 'guard') {
   assert.equal(enemy.dead, true); step(game, .15); return enemy;
 }
 function activateRelay(game) {
-  assert.equal(game.teleport(RELAY.x, RELAY.z), true);
+  assert.equal(game.teleport(RELAY.x, RELAY.z - 1.4), true);
   assert.equal(game.state.prompt?.kind, 'relay'); assert.equal(game.interact(), true);
   assert.equal(game.state.raid.objectiveComplete, true);
 }
@@ -175,14 +175,14 @@ test('actual newly started normal and hard raids contain the reduced goods inste
   }
 });
 
-for (const skill of [false, true]) test(`real kills, officer drop, relay and extraction pay once${skill ? ' with the reduced extraction skill' : ' without an extraction skill'}`, async t => {
+for (const skill of [false, true]) test(`real kills, corpse loot, relay and extraction pay once${skill ? ' with the reduced extraction skill' : ' without an extraction skill'}`, async t => {
   const game = await newRaid(t, skill ? { progression: logisticsSkills } : {}), initialCredits = game.state.profile.credits, initialXP = game.state.profile.progression.xp;
   const first = takeFirstContainerItem(game); game.closeContainer();
   assert.equal(game.teleport(-140, 130), true); const elite = killAt(game, 'balance-elite', -140, 'elite'); killAt(game, 'balance-guard', -139);
-  const chip = game.state.loot.find(item => item.name === 'Offiziers-Chip'); assert.ok(chip);
-  assert.equal(chip.value, Math.round(420 * .65));
-  assert.equal(game.teleport(elite.x, elite.z), true);
-  for (let attempt = 0; attempt < 4 && !chip.taken; attempt++) assert.equal(game.interact(), true);
+  const corpse = game.state.containers.find(item => item.enemyId === elite.id); assert.ok(corpse);
+  const chip = takeFirstContainerItem(game, corpse);
+  const source = sourceByName.get(chip.name);
+  assert.equal(chip.value, Math.round(source.value * .65));
   assert.equal(chip.taken, true); assert.equal(game.state.raid.kills, 2);
   activateRelay(game); assert.equal(game.state.profile.credits, initialCredits);
   extract(game);

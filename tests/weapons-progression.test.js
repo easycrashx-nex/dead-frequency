@@ -83,7 +83,7 @@ test('shotgun traces ten pellets once, keeps cover authoritative and awards one 
   assert.equal(events.find(event => event.type === 'shot').pelletEnds.length, 10);
   assert.equal(events.filter(event => event.type === 'kill').length, 1); assert.equal(target.dead, true);
   assert.equal(game.state.player.ammo, 7); assert.equal(game.state.profile.progression.xp, 50);
-  game.teleport(-40, 34); game.state.enemies = [enemy('covered', -40, 9)]; run(game, .9);
+  game.teleport(-44, 34); game.state.enemies = [enemy('covered', -44, 9)]; run(game, .9);
   game.fire(aim(game, -40, 9)); assert.equal(game.state.enemies[0].hp, 95);
 });
 

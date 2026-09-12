@@ -13,17 +13,17 @@ const quiet = game => { game.state.enemies = []; };
 
 test('expanded map has connected outer districts, exits, loot and patrols', async t => {
   const game = await setup(t); game.startRaid({ seed: 300 });
-  assert.equal(WORLD_SIZE, 300); assert.equal(RAID_SECONDS, 720);
-  assert.equal(game.state.raid.timeLeft, 720);
+  assert.equal(WORLD_SIZE, 1500); assert.equal(RAID_SECONDS, 1800);
+  assert.equal(game.state.raid.timeLeft, 1800);
   assert.ok(OBSTACLES.length >= 100); assert.ok(POIS.length >= 14); assert.ok(EXTRACTIONS.length >= 4);
   assert.equal(game.state.loot.length, 0);
   assert.ok(game.state.containers.flatMap(container => container.items).filter(item => !item.kind).length >= 100);
   assert.ok(game.state.enemies.length >= 30);
   for (const target of [...POIS, ...EXTRACTIONS, ...game.state.loot, ...game.state.enemies]) {
     assert.ok(findPath(SPAWN, target).length, `No route to ${target.name ?? target.id}`);
-    if (!POIS.includes(target)) assert.equal(isWalkable(target.x, target.z, .25), true, `Spawned inside geometry: ${target.name ?? target.id}`);
+    if (!POIS.includes(target)) assert.equal(isWalkable(target.x, target.z, .25, target.y), true, `Spawned inside geometry: ${target.name ?? target.id}`);
   }
-  for (const container of game.state.containers) assert.ok(findPath(SPAWN, container).length, `No route to ${container.id}`);
+  for (const container of game.state.containers) assert.ok(findPath(SPAWN, {...container,x:container.x+1.6}).length, `No route to ${container.id}`);
   for (const exit of EXTRACTIONS) {
     assert.equal(game.teleport(exit.x, exit.z), true);
     assert.ok(game.state.prompt?.kind === 'extract');
@@ -36,9 +36,14 @@ test('physics crosses former world edges and stops at the actual expanded bounda
   assert.ok(game.state.player.x > 69, 'Old +60 physics wall remains');
   assert.ok(game.state.player.y < .1 && game.state.player.grounded);
   assert.equal(game.teleport(144, 0), true); run(game, 3, { right: 1, yaw: 0 });
+  assert.ok(game.state.player.x>155,'Old +150 boundary remains');
+  const edge=WORLD_SIZE/2-6,coordinates=Array.from({length:141},(_,i)=>-700+i*10);
+  const eastZ=coordinates.find(z=>[0,1,2,3,4].every(dx=>isWalkable(edge+dx,z)));assert.notEqual(eastZ,undefined);
+  assert.equal(game.teleport(edge,eastZ),true);run(game,3,{right:1,yaw:0});
   assert.ok(game.state.player.x < WORLD_SIZE / 2 - .7);
   assert.ok(game.state.player.x > WORLD_SIZE / 2 - 1.5);
-  assert.equal(game.teleport(0, 144), true); run(game, 3, { forward: -1, yaw: 0 });
+  const southX=coordinates.find(x=>[0,1,2,3,4].every(dz=>isWalkable(x,edge+dz)));assert.notEqual(southX,undefined);
+  assert.equal(game.teleport(southX,edge),true);run(game,3,{forward:-1,yaw:0});
   assert.ok(game.state.player.z < WORLD_SIZE / 2 - .7);
   assert.ok(game.state.player.grounded);
 });

@@ -18,12 +18,12 @@ export function createWeaponPreview(container, initialBuild = {}) {
   const keyLight = new THREE.DirectionalLight('#ffe2b7',4.2); keyLight.position.set(-2,3,3); scene.add(keyLight);
   const rim = new THREE.DirectionalLight('#77bedf',2.3); rim.position.set(3,1,-2); scene.add(rim);
   const front = new THREE.DirectionalLight('#f2f8ff',1.25); front.position.set(0,-1,4); scene.add(front);
-  let model, key = '', disposed = false, yaw = -Math.PI / 2 + .23, pitch = .08, distance = 2;
+  let model, key = '', disposed = false, contextLost=false, yaw = -Math.PI / 2 + .23, pitch = .08, distance = 2;
   let width=0,height=0;
   const bounds = new THREE.Box3(), center = new THREE.Vector3(), size = new THREE.Vector3();
 
   function draw() {
-    if (disposed || !model || !width || !height) return;
+    if (disposed || contextLost || !model || !width || !height) return;
     pivot.rotation.set(pitch,yaw,0);
     camera.position.set(0,.04,distance); camera.lookAt(0,0,0);
     renderer.render(scene,camera);
@@ -48,11 +48,14 @@ export function createWeaponPreview(container, initialBuild = {}) {
     yaw=Number.isFinite(nextYaw)?nextYaw:yaw;pitch=THREE.MathUtils.clamp(Number.isFinite(nextPitch)?nextPitch:pitch,-.65,.65);draw();
   }
   const observer=new ResizeObserver(resize);observer.observe(container);update(initialBuild);
+  const lost=event=>{event.preventDefault();if(!disposed){contextLost=true;canvas.dataset.context='lost';}};
+  const restored=()=>{if(!disposed){contextLost=false;canvas.dataset.context='ready';resize();}};
+  canvas.addEventListener('webglcontextlost',lost);canvas.addEventListener('webglcontextrestored',restored);
   return {
     update,resize,setRotation,
     rotate(deltaYaw,deltaPitch=0){setRotation(yaw+deltaYaw,pitch+deltaPitch);},
     reset(){setRotation();},
     stats(){return {weaponId:model?.id,buildKey:key,attachments:{...model?.attachments},drawCalls:renderer.info.render.calls,geometries:renderer.info.memory.geometries,textures:renderer.info.memory.textures,disposed,yaw,pitch};},
-    dispose(){if(disposed)return;disposed=true;observer.disconnect();if(model)disposeWeaponModel(model);model=null;renderer.dispose();renderer.forceContextLoss();canvas.remove();},
+    dispose(){if(disposed)return;disposed=true;observer.disconnect();canvas.removeEventListener('webglcontextlost',lost);canvas.removeEventListener('webglcontextrestored',restored);if(model)disposeWeaponModel(model);model=null;renderer.dispose();renderer.forceContextLoss();canvas.remove();},
   };
 }

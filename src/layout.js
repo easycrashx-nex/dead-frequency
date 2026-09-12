@@ -1,5 +1,7 @@
 // All substantial world geometry shares this collision and rendering definition.
-export const WORLD_SIZE = 300;
+import {WORLD_SIZE,SETTLEMENTS,BRIDGE_SITES,getGroundHeight,isTerrainWalkable} from './terrain.js';
+import {createInterior,createSettlements,vehicleSolids,createNaturalObstacles} from './world-layout.js';
+export {WORLD_SIZE};
 export const SPAWN = { x: -7, z: 48, yaw: 0 };
 export const POIS = [
   { name: 'ANKUNFT', x: -7, z: 46 },
@@ -144,28 +146,14 @@ export const OBSTACLES = [
   { id: 'route-south-2', kind: 'crate', x: -43, z: 76, w: 3, d: 3, h: 1.5 },
   { id: 'route-south-3', kind: 'container', x: 24, z: 101, w: 3.5, d: 12, h: 3, color: '#a75c31' },
 ];
-// Footprints remain stable for the district map and roof silhouettes. These
-// ground-floor rooms replace only their original solid collision blocks.
-function interior(id, name, type, ceilingHeight, fixtures, lootSpots) {
-  const footprint = OBSTACLES.find(obstacle => obstacle.id === id);
-  const { x, z, w, d, h } = footprint, thickness = .36;
-  const width = id === 'entry-booth' ? 3.2 : 4, height = 3;
-  const doors = ['north', 'south'].map(side => {
-    const sign = side === 'north' ? -1 : 1, doorZ = z + sign * d / 2;
-    return { side, x, z: doorZ, width, height, outside: { x, z: doorZ + sign * 2 }, inside: { x, z: doorZ - sign * 2 } };
-  });
-  const solids = [];
-  const box = (suffix, kind, sx, sy, sz, sw, sh, sd, style) => solids.push({ id: `${id}-${suffix}`, kind, x: sx, y: sy, z: sz, w: sw, h: sh, d: sd, ...(style ? { style } : {}) });
-  for (const sign of [-1, 1]) {
-    box(sign < 0 ? 'west-wall' : 'east-wall', 'wall', x + sign * (w - thickness) / 2, ceilingHeight / 2, z, thickness, ceilingHeight, d);
-    const wallZ = z + sign * (d - thickness) / 2, side = sign < 0 ? 'north' : 'south';
-    for (const segment of [-1, 1]) box(`${side}-${segment < 0 ? 'left' : 'right'}-wall`, 'wall', x + segment * (w + width) / 4, ceilingHeight / 2, wallZ, (w - width) / 2, ceilingHeight, thickness);
-    box(`${side}-lintel`, 'wall', x, (ceilingHeight + height) / 2, wallZ, width, ceilingHeight - height, thickness);
-  }
-  box('ceiling', 'ceiling', x, (h + ceilingHeight) / 2, z, w, h - ceilingHeight, d);
-  for (const [suffix, style, dx, dz, sw, sh, sd] of fixtures) box(suffix, 'fixture', x + dx, sh / 2, z + dz, sw, sh, sd, style);
-  return { id, name, type, x, z, w, d, h, ceilingHeight, doors, solids, lootSpots: lootSpots.map(([dx, dz, tier]) => ({ x: x + dx, z: z + dz, tier })) };
-}
+const expansion=createSettlements();
+OBSTACLES.push(...expansion.obstacles,...createNaturalObstacles());
+export const SETTLEMENT_WALLS=expansion.wallSolids;
+export const VEHICLES=expansion.vehicles;
+export const BRIDGES=expansion.bridges;
+POIS.push(...SETTLEMENTS.map(s=>({name:s.name,x:s.x,z:s.z,y:s.y})),...BRIDGE_SITES.map(s=>({name:s.name,x:s.x,z:s.z,y:s.y})));
+EXTRACTIONS.push(...[{id:'mountain',name:'BERGPASS',x:-670,z:-340},{id:'coast',name:'KÜSTENFUNK',x:670,z:-430},{id:'south-road',name:'SÜDSTRASSE',x:-25,z:665}].map(s=>({...s,radius:5,y:getGroundHeight(s.x,s.z)})));
+function interior(id,name,type,ceilingHeight,fixtures,lootSpots){return createInterior(OBSTACLES.find(o=>o.id===id),{name,type,ceilingHeight,fixtures,lootSpots});}
 
 export const INTERIORS = [
   interior('entry-booth', 'WACHHAUS', 'guardhouse', 3.4, [
@@ -188,11 +176,13 @@ export const INTERIORS = [
     ['parts-shelf', 'shelf', -5, 5, 4, 2.5, 1.5],
   ], [[-4, -3, 1], [4, 2, 2], [-4, 3, 2]]),
 ];
+for(const o of OBSTACLES.filter(o=>o.kind==='building'&&!INTERIORS.some(r=>r.id===o.id)))INTERIORS.push(createInterior(o,{name:o.name,type:o.theme==='residential'?'residential':o.theme==='farm'?'farm':o.theme==='military'?'guardhouse':o.theme||'warehouse',fixtures:[['storage','cabinet',-o.w/2+1.2,-o.d/2+2,1.1,2.3,2.4]]}));
+for(const o of OBSTACLES){o.baseY=getGroundHeight(o.x,o.z);const room=INTERIORS.find(r=>r.id===o.id);if(room)o.h=room.h;}
 const interiorById = new Map(INTERIORS.map(room => [room.id, room]));
 const containerDimensions = { tools: [1.1, .7, .7], electronics: [1.05, .65, .65], medical: [.95, .65, .7], ammo: [1.05, .65, .65], provisions: [1.2, .8, .75], industrial: [1.3, .85, .85], security: [1.1, .75, .8] };
 function container(id, type, x, z, interiorId) {
   const [w, d, h] = containerDimensions[type];
-  return { id, type, x, z, w, d, h, rotation: 0, ...(interiorId ? { interiorId } : {}) };
+  return { id, type, x, z, y: getGroundHeight(x,z), w, d, h, rotation: 0, ...(interiorId ? { interiorId } : {}) };
 }
 export const CONTAINER_SPOTS = [
   container('arrival-tools', 'tools', -10, 47), container('arrival-medical', 'medical', -15, 47),
@@ -213,12 +203,29 @@ export const CONTAINER_SPOTS = [
   container('customs-office-records', 'security', 86, 5, 'customs-office'), container('customs-office-medical', 'medical', 98, 6, 'customs-office'),
   container('workshop-tools', 'tools', -1, 120, 'south-workshop'), container('workshop-electronics', 'electronics', 7, 125, 'south-workshop'),
 ];
+const containerTypes=['tools','electronics','medical','ammo','provisions','industrial','security'];
+for(const [i,room] of INTERIORS.entries()){
+ if(!CONTAINER_SPOTS.some(s=>s.interiorId===room.id))CONTAINER_SPOTS.push({...container(`${room.id}-cache`,containerTypes[i%7],room.x-room.w*.22,room.z,room.id),y:room.baseY});
+ if(room.levels>1)CONTAINER_SPOTS.push({...container(`${room.id}-upper-cache`,containerTypes[(i+2)%7],room.x-room.w*.22,room.z+room.d*.2,room.id),y:room.baseY+room.floorHeight,level:1});
+}
+export const SUPPORTS=[...INTERIORS.flatMap(r=>r.supports),...BRIDGES.flatMap(b=>b.supports)];
+const supportCells=new Map(),cellSize=20;
+for(const s of SUPPORTS)for(let x=Math.floor((s.x-s.w/2)/cellSize);x<=Math.floor((s.x+s.w/2)/cellSize);x++)for(let z=Math.floor((s.z-s.d/2)/cellSize);z<=Math.floor((s.z+s.d/2)/cellSize);z++){const key=`${x}:${z}`;if(!supportCells.has(key))supportCells.set(key,[]);supportCells.get(key).push(s);}
+export function getSupportHeight(x,z,currentY=getGroundHeight(x,z)){
+ let height=getGroundHeight(x,z);
+ for(const s of supportCells.get(`${Math.floor(x/cellSize)}:${Math.floor(z/cellSize)}`)||[])if(Math.abs(x-s.x)<=s.w/2+.001&&Math.abs(z-s.z)<=s.d/2+.001&&s.y<=currentY+.305&&s.y>height)height=s.y;
+ return height;
+}
 export const COLLIDERS = [
-  ...OBSTACLES.flatMap(obstacle => interiorById.get(obstacle.id)?.solids ?? [{ ...obstacle, y: obstacle.h / 2 }]),
-  ...CONTAINER_SPOTS.map(spot => ({ ...spot, kind: 'loot-container', y: spot.h / 2 })),
+ ...OBSTACLES.flatMap(o=>interiorById.get(o.id)?.solids??[{...o,y:o.baseY+o.h/2}]),
+ ...SETTLEMENT_WALLS,...VEHICLES.flatMap(vehicleSolids),...BRIDGES.flatMap(b=>b.solids),
+ ...CONTAINER_SPOTS.map(s=>({...s,kind:'loot-container',y:s.y+s.h/2})),
+ ...[-1,1].flatMap(sx=>[-1,1].map(sz=>({id:`relay-leg-${sx}-${sz}`,kind:'fixture',x:RELAY.x+sx*1.2,y:11,z:RELAY.z+sz*1.2,w:.24,h:22,d:.24}))),
+ {id:'relay-console',kind:'fixture',x:RELAY.x,y:.65,z:RELAY.z,w:.9,h:1.3,d:.65},
 ];
-
 export const layout = {
-  size: WORLD_SIZE, obstacles: OBSTACLES, pois: POIS,
-  extractions: EXTRACTIONS, relay: RELAY, spawn: SPAWN, interiors: INTERIORS, colliders: COLLIDERS, containers: CONTAINER_SPOTS,
+ size:WORLD_SIZE,obstacles:OBSTACLES,pois:POIS,extractions:EXTRACTIONS,relay:RELAY,spawn:SPAWN,
+ interiors:INTERIORS,colliders:COLLIDERS,containers:CONTAINER_SPOTS,supports:SUPPORTS,
+ settlements:SETTLEMENTS,walls:SETTLEMENT_WALLS,vehicles:VEHICLES,bridges:BRIDGES,
+ getGroundHeight,getSupportHeight,isTerrainWalkable,
 };

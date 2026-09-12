@@ -1,4 +1,4 @@
-import { createGame, validateProfile, isWalkable, hasLineOfSight } from './simulation.js';
+import { createGame, validateProfile, isWalkable, hasLineOfSight,REVIVE_SECONDS } from './simulation.js';
 import { SPAWN } from './layout.js';
 import { resolveLoadout } from './loadouts.js';
 
@@ -8,9 +8,9 @@ export const COOP_SNAPSHOT_RATE = 20;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const copy = value => structuredClone(value);
 const neutral = player => ({ forward: 0, right: 0, yaw: player.yaw, pitch: player.pitch,
-  sprint: false, crouch: false, jump: false, aim: false, fire: false, firePressed: false });
+  sprint: false, crouch: false, jump: false, aim: false, fire: false, firePressed: false,reviveHeld:false });
 const publicEnemy = e => ({ id: e.id, x: e.x, y: e.y, z: e.z, yaw: e.yaw, hp: e.hp,
-  kind: e.kind, mode: e.mode, attackFlash: e.attackFlash, hitFlash: e.hitFlash, dead: e.dead,
+  kind: e.kind,name:e.name,maxHp:e.maxHp,armor:e.armor,maxArmor:e.maxArmor,squadId:e.squadId,leaderId:e.leaderId,role:e.role,mode: e.mode, attackFlash: e.attackFlash, hitFlash: e.hitFlash, dead: e.dead,
   ...(e.ai ? { ai: { role: e.ai.role, task: e.ai.task } } : {}),
   ...(e.targetPlayerId ? { targetPlayerId: e.targetPlayerId } : {}) });
 
@@ -23,7 +23,7 @@ export function sanitizeCoopInput(raw, player) {
   return { forward: clamp(raw.forward ?? 0, -1, 1), right: clamp(raw.right ?? 0, -1, 1),
     yaw: ((yaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2), pitch: clamp(raw.pitch ?? player.pitch, -1.5, 1.5),
     sprint: raw.sprint === true, crouch: raw.crouch === true, jump: raw.jump === true,
-    aim: raw.aim === true, fire: raw.fire === true, firePressed: raw.firePressed === true };
+    aim: raw.aim === true, fire: raw.fire === true, firePressed: raw.firePressed === true,reviveHeld:raw.reviveHeld===true };
 }
 
 // Two server-owned controllers share enemies, containers and dynamic ground drops.
@@ -51,7 +51,8 @@ export function createCoopSession({ seed } = {}) {
         for (let i = 0; i < 12; i++) {
           const x = state.player.x + Math.cos(i * Math.PI / 6) * radius;
           const z = state.player.z + Math.sin(i * Math.PI / 6) * radius;
-          if (isWalkable(x, z, .3) && hasLineOfSight({ ...state.player, y: state.player.y + 1.1 }, { x, y: .55, z })) { spot = { x, z }; break; }
+          const y=player.game.layout.getSupportHeight(x,z,state.player.y);
+          if (Math.abs(y-state.player.y)<1&&isWalkable(x, z, .3,y) && hasLineOfSight({ ...state.player, y: state.player.y + 1.1 }, { x, y:y+.55, z })) { spot = { x,y,z }; break; }
         }
         if (spot) break;
       }
@@ -99,7 +100,7 @@ export function createCoopSession({ seed } = {}) {
     players.set(id, player); // Reserve the slot before asynchronous WASM initialization.
     hostId ??= id;
     try {
-      player.game = await createGame(clean, { externalAI: true, playerId: id, loadoutLocked: true });
+      player.game = await createGame(clean, { externalAI: true, playerId: id, loadoutLocked: true,allowDowned:true });
       if (disposed || !players.has(id)) { player.game.dispose(); throw new Error('Sitzung wurde geschlossen.'); }
       player.input = neutral(player.game.state.player);
       return id;
@@ -156,7 +157,7 @@ export function createCoopSession({ seed } = {}) {
   }
   function action(id, actionName, itemId, containerId) {
     const player = member(id);
-    if (phase !== 'raid' || player.game.state.phase !== 'raid') return false;
+    if (phase !== 'raid' || player.game.state.phase !== 'raid' || player.game.state.player.downed) return false;
     if (!['reload', 'heal', 'interact', 'drop', 'take', 'takeAll', 'closeContainer', 'equip', 'dropEquipment'].includes(actionName)) throw new Error('Unbekannte Aktion.');
     const validId = value => typeof value === 'string' && value.length > 0 && value.length <= 100;
     if (['drop', 'take', 'equip'].includes(actionName) && !validId(itemId)) return false;
@@ -178,6 +179,7 @@ export function createCoopSession({ seed } = {}) {
     for (const player of players.values()) {
       if (!player.game || !player.connected) continue;
       const current = time - player.lastInputAt > .3 ? neutral(player.game.state.player) : { ...player.input, jump: player.jumpQueued, firePressed: player.fireQueued };
+      if(player.game.state.player.revivingTargetId){current.forward=current.right=0;current.fire=current.firePressed=current.sprint=false;}
       player.jumpQueued = player.fireQueued = false; currentInputs.set(player.id, current); player.game.update(dt, current);
     }
     const pending = actions; actions = [];
@@ -189,6 +191,7 @@ export function createCoopSession({ seed } = {}) {
       else if (request.actionName === 'takeAll') player.game.takeAllContainerItems(request.containerId);
       else if (request.actionName === 'equip') player.game.equipRaidItem(request.itemId);
       else if (request.actionName === 'dropEquipment') player.game.dropEquipment(request.itemId);
+      else if(request.actionName==='interact'&&reviveTarget(player)){} // Holding interact is handled continuously below.
       else player.game[request.actionName]();
       synchronizeRelay();
     }
@@ -200,8 +203,29 @@ export function createCoopSession({ seed } = {}) {
     }
     const targets = [...players.values()].filter(p => p.connected && p.game).map(p => ({ id: p.id, state: p.game.state, damage: p.game.receiveDamage }));
     primary.advanceEnemies(dt, targets);
+    updateRevives(dt,currentInputs);
+    const participating=[...players.values()].filter(player=>player.connected&&player.game?.state.phase==='raid');
+    if(participating.length&&participating.every(player=>player.game.state.player.downed))for(const player of participating)player.game.endRaid('Team vollständig kampfunfähig');
     collectEvents();
     if ([...players.values()].every(p => !p.connected || p.game.state.phase !== 'raid')) phase = 'finished';
+  }
+  function reviveTarget(helper){
+    const source=helper.game.state,p=source.player;if(source.phase!=='raid'||p.downed)return null;
+    return [...players.values()].find(other=>other!==helper&&other.connected&&other.game?.state.phase==='raid'&&other.game.state.player.downed&&Math.hypot(other.game.state.player.x-p.x,other.game.state.player.z-p.z,other.game.state.player.y-p.y)<=2.2&&hasLineOfSight({x:p.x,y:p.y+1.1,z:p.z},{x:other.game.state.player.x,y:other.game.state.player.y+.5,z:other.game.state.player.z}));
+  }
+  function updateRevives(dt,inputs){
+    const helped=new Set();
+    for(const helper of players.values()){
+      if(!helper.connected||!helper.game||helper.game.state.player.downed)continue;const state=helper.game.state,p=state.player,target=reviveTarget(helper),held=inputs.get(helper.id)?.reviveHeld;
+      if(target)state.prompt={kind:'revive',id:target.id,text:p.medkits>0?`${target.name} wiederbeleben · halten (${REVIVE_SECONDS} s · 1 Medkit)`:'Wiederbelebung benötigt ein Medkit'};
+      const other=target?.game.state.player;
+      const interrupted=p.revivingTargetId&&(p.damageSequence!==helper.reviveDamage||other?.damageSequence!==helper.targetReviveDamage);
+      if(!target||!held||p.medkits<1||p.reload>0||p.heal>0||state.activeContainerId||interrupted){p.revivingTargetId=null;p.reviveProgress=0;continue;}
+      if(p.revivingTargetId!==target.id){p.revivingTargetId=target.id;p.reviveProgress=0;helper.reviveDamage=p.damageSequence;helper.targetReviveDamage=other.damageSequence;}
+      p.reviveProgress=Math.min(REVIVE_SECONDS,p.reviveProgress+dt);other.reviveProgress=p.reviveProgress;helped.add(target.id);
+      if(p.reviveProgress>=REVIVE_SECONDS-1e-7&&target.game.revive()){p.medkits--;p.revivingTargetId=null;p.reviveProgress=0;queue(helper.id,{type:'notice',text:`${target.name} wieder kampfbereit. Ein Medkit verbraucht.`});}
+    }
+    for(const player of players.values())if(player.game?.state.player.downed&&!helped.has(player.id))player.game.state.player.reviveProgress=0;
   }
   function leave(id, reason = 'Verbindung getrennt') {
     const player = players.get(id);
@@ -223,7 +247,8 @@ export function createCoopSession({ seed } = {}) {
     const teammates = [...players.values()].filter(p => p.id !== id && p.game).map(p => ({ id: p.id, name: p.name,
       ...p.game.state.player, phase: p.connected ? p.game.state.phase : 'disconnected',
       dead: p.game.state.phase === 'dead', connected: p.connected }));
-    const state = copy({ ...s, enemies: s.enemies.map(publicEnemy), teammates,
+    const containers=s.containers.map(container=>{const nearby=container.id===s.activeContainerId||Math.hypot(container.x-s.player.x,container.z-s.player.z)<35;return{id:container.id,kind:container.kind,type:container.type,name:container.name,enemyId:container.enemyId,role:container.role,x:container.x,y:container.y,z:container.z,w:container.w,d:container.d,h:container.h,opened:container.opened,searched:container.searched,searchSeconds:container.searchSeconds,items:nearby?container.items:[]};});
+    const state = copy({ ...s,containers,enemies: s.enemies.map(publicEnemy), teammates,
       multiplayer: true, playerId: id, hostId, coopPhase: phase });
     const events = player.events; player.events = [];
     return { type: 'snapshot', seq: tick, ack: player.lastSeq, state, events: copy(events) };

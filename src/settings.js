@@ -12,7 +12,7 @@ const toggle=(key,category,label,description,value=true)=>({key,category,label,d
 const select=(key,category,label,description,value,options)=>({key,category,label,description,type:'select',default:value,options:options.map(([value,label])=>({value,label}))});
 export const SETTINGS_FIELDS = [
   select('quality','grafik','Qualitätsprofil','Basis für Auflösung, automatische Schatten und Partikel.','high',[['low','Niedrig'],['medium','Mittel'],['high','Hoch']]),
-  range('renderScale','grafik','Renderauflösung','Niedrigere Werte entlasten die Grafikkarte; das Menü bleibt scharf.',1,.5,1.5,.05),
+  range('renderScale','grafik','Renderauflösung','Grafikauflösung bis maximal 8,3 Megapixel. Das Menü bleibt scharf.',1,.5,1.5,.05),
   select('shadows','grafik','Schattenqualität','Automatisch folgt dem Qualitätsprofil.','auto',[['auto','Automatisch'],['off','Aus'],['medium','Mittel'],['high','Hoch']]),
   toggle('particles','grafik','Partikel','Atmosphärischer Staub und kleine Trefferpartikel.'),
   range('brightness','grafik','Helligkeit','Helligkeit der Spielwelt; die Bedienoberfläche bleibt unverändert.',1,.7,1.4,.05),
