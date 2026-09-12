@@ -38,6 +38,23 @@ try{
   assert.equal(await host.page.evaluate(()=>__DF.state.player.weapon),'SG-8');assert.equal(await guest.page.evaluate(()=>__DF.state.player.weapon),'DMR-7');
   assert.equal(await host.page.evaluate(()=>__DF.state.teammates[0].weapon),'DMR-7');assert.equal(await guest.page.evaluate(()=>__DF.state.teammates[0].weapon),'SG-8');pass('Distinct shotgun and marksman loadouts selected in the arsenal survive the Internet lobby and replicate to the teammate');
   await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];global.__DF_QAEnemy=structuredClone(members[0].game.state.enemies[0]);for(const member of members)member.game.state.enemies.splice(0);});
+  await host.app.evaluate(()=>{
+    const members=[...global.__DF_HOST().players.values()];members[0].game.teleport(-142,130);members[1].game.teleport(-10,-15);
+    const guard={...global.__DF_QAEnemy,id:'qa-listener',x:-39,z:-15,y:0,yaw:-Math.PI/2,home:{x:-39,z:-15},dead:false,hp:95,fireTimer:9999,alert:0,lastSeen:null,lastHeard:null,path:[],pathTimer:0,flank:false,mode:'patrol'};
+    delete guard.ai;delete guard.targetPlayerId;members[0].game.state.enemies.push(guard);
+  });
+  await guest.page.bringToFront();await guest.page.evaluate(()=>{__DF.resume();__DF.state.player.yaw=0;__DF.state.player.pitch=0;__DF.syncLook();});
+  await guest.page.locator('#game').click().catch(()=>{});await guest.page.waitForFunction(()=>document.pointerLockElement);await guest.page.waitForTimeout(450);
+  await guest.page.mouse.down();await guest.page.waitForTimeout(100);await guest.page.mouse.up();
+  for(const {page} of [host,guest])await page.waitForFunction(()=>__DF.state.enemies.find(e=>e.id==='qa-listener')?.ai?.task==='investigate',null,{timeout:5000});
+  const heard=await host.app.evaluate(()=>{const e=[...global.__DF_HOST().players.values()][0].game.state.enemies[0];return {lastSeen:e.lastSeen,lastHeard:e.lastHeard,x:e.x,z:e.z};});
+  assert.equal(heard.lastSeen,null);assert.ok(heard.lastHeard);assert.equal(await guest.page.evaluate(()=>__DF.state.player.hp),100);
+  await guest.page.waitForTimeout(1100);
+  const searched=await host.app.evaluate(()=>{const e=[...global.__DF_HOST().players.values()][0].game.state.enemies[0];return {lastSeen:e.lastSeen,x:e.x,z:e.z};});
+  assert.equal(searched.lastSeen,null);assert.ok(Math.hypot(searched.x-heard.x,searched.z-heard.z)>.5);
+  const publicAI=await guest.page.evaluate(()=>__DF.state.enemies[0].ai);assert.deepEqual(Object.keys(publicAI).sort(),['role','task']);
+  pass('A real shot by the second Windows player reaches the host AI through cover; both clients see its investigation without invented visual contact or exposed private memory');
+  await host.app.evaluate(()=>{for(const member of global.__DF_HOST().players.values()){member.game.state.enemies.splice(0);member.game.teleport(-142,130);}});
   await guest.page.bringToFront();await guest.page.evaluate(()=>__DF.resume());await guest.page.locator('#game').click().catch(()=>{});
   await guest.page.waitForTimeout(350);const before=await guest.page.evaluate(()=>__DF.state.player.z);
   await guest.page.keyboard.down('KeyW');await guest.page.keyboard.down('ShiftLeft');await guest.page.waitForTimeout(800);await guest.page.keyboard.up('KeyW');await guest.page.keyboard.up('ShiftLeft');

@@ -17,6 +17,14 @@ A Windows 3D FPS extraction shooter: offline solo and private two-player coopera
 - Player state carries actual `maxHp`, `maxStamina`, `reloadDuration`, `healDuration`, `recoilMultiplier`, `shotTimer` and `cycleDuration`. UI meters, audio and weapon animation consume effective values. The rendered camera and authoritative shot direction retain identical recoil angles.
 - Package both shared catalog/progression modules into the native host, as well as the browser bundle. Preserve old releases and verify new Windows binaries, two-client Internet play, saved progress migration and automatic launcher handoff.
 
+## Version 1.8 tactical enemies
+- `enemy-ai.js` owns tactical planning, separate visual/heard/shared memories, local contact sharing, cover/peek pairs, flanking, investigation and collision-safe navigation. Simulation injects geometry, seeded randomness and the existing shooting callback; damage, HP, accuracy, fire intervals and initial reaction floors remain at 1.7.1 values.
+- Each enemy stores a serializable `ai` brain with relative timers. In co-op, every player can deliver sounds/hits into the same enemy objects; only the primary game advances their AI against all living raid participants, including after the host dies or extracts. No private per-game clock may timestamp shared contacts.
+- `lastSeen` changes only on unobstructed visual observation. `lastHeard` is an approximate position. The newest usable contact guides investigation; expired contacts lead back to patrol. Cached perception never bypasses current eye and muzzle visibility checks before shooting.
+- Cover candidates use shared solid geometry and reachable hiding/peeking endpoints. Routes append exact physical goals to navigation-grid paths; movement segments must remain walkable. Bound expensive route and perception work across the 33 guards.
+- Co-op snapshots expose only `ai.role` and `ai.task`; private contacts, cover goals, paths and planner caches stay with the host. Renderer poses consume these public states without changing hitboxes or authoritative body direction.
+- Include `enemy-ai.js` in native host package sources as well as the renderer bundle. Verify tactical behavior, real-time native performance, second-player sound propagation and the released launcher's automatic update handoff.
+
 ## Version 1.6 loot containers
 - `loot-catalog.js` defines seven container types, exactly 100 new named trade items and the nine legacy items. Pools are keyed by container type; consumable ammo/medical supplies are additional and do not count toward the 100 new trade items.
 - `layout.CONTAINER_SPOTS` supplies logical shared positions and solid crate dimensions, including all five interiors. Static raid loot lives in `state.containers`; `state.loot` contains dynamic backpack/enemy drops.

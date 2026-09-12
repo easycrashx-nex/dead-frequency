@@ -918,7 +918,7 @@ function makeEnemy(kind = 'scav', teammate = false) {
     marker.position.y = 2.15; root.add(marker);
     coloredPart(torso, (b, c) => b.box(c('#79c9e2'), [0, .28, .375], [.22, .065, .015]));
   }
-  const operator = { root, head, torso, legs, arms, gun, flash, marker, death: 0, lastX: 0, lastZ: 0, stride: 0, hit: 0, shotTime: 0, move: 0, crouch: 0, weaponId: null };
+  const operator = { root, head, torso, legs, arms, gun, flash, marker, death: 0, lastX: 0, lastZ: 0, stride: 0, hit: 0, shotTime: 0, move: 0, crouch: 0, weaponId: null, aiTask: 'patrol', scanClock: 0 };
   operator.selectWeapon = id => {
     if (!weaponModels) return;
     const active = weaponModels.get(id) || weaponModels.get('VX-9'); if (operator.weaponId === active.id) return;
@@ -1504,9 +1504,21 @@ export function createRenderer(canvas, layout) {
       const stride = Math.min(speed / 2, 1) * .53 * (1 - model.death);
       model.legs[0].rotation.x = Math.sin(model.stride) * stride; model.legs[1].rotation.x = -Math.sin(model.stride) * stride;
       model.torso.position.y = 1.12 + Math.cos(model.stride * 2) * stride * .022;
-      model.head.rotation.y = Math.sin(elapsed * 1.3 + en.x) * .03;
       model.flash.visible = !en.dead && !!en.attackFlash;
-      model.gun.rotation.x = model.flash.visible ? -.08 : 0;
+      // Task presentation only: the authoritative body yaw and every hitbox
+      // height remain unchanged. Search glances never rotate the whole agent.
+      const task = en.ai?.task || en.mode || 'patrol';
+      const searching = ['investigate', 'scan', 'sweep', 'search'].includes(task);
+      const poseDt = phase === 'paused' && !state.multiplayer ? 0 : dt;
+      if (model.aiTask !== task) model.scanClock = 0;
+      model.aiTask = task; model.scanClock = searching && !en.dead ? model.scanClock + poseDt : 0;
+      const scanCycle = model.scanClock % 4.4;
+      const glance = !searching ? 0 : scanCycle < 1.1 ? Math.sin(scanCycle / 1.1 * Math.PI) * .12
+        : scanCycle > 2.2 && scanCycle < 3.3 ? -Math.sin((scanCycle - 2.2) / 1.1 * Math.PI) * .12 : 0;
+      model.head.rotation.y = damp(model.head.rotation.y, en.dead ? 0 : glance, 9, poseDt);
+      const readyPitch = ['patrol', 'return'].includes(task) ? -.14 : searching ? -.045 : 0;
+      model.gun.rotation.x = damp(model.gun.rotation.x, (en.dead ? 0 : readyPitch) - (model.flash.visible ? .06 : 0), 11, poseDt);
+      for (const arm of model.arms) arm.rotation.x = model.gun.rotation.x * .65;
       model.hit = Math.max(0, model.hit - dt);
       model.root.scale.setScalar(model.hit > 0 ? 1.008 : 1);
     }
@@ -1597,7 +1609,7 @@ export function createRenderer(canvas, layout) {
     setQuality,
     setFov(value) { setSettings({ fov: Number.isFinite(value) ? value : 82 }); },
     getAimDirection() { const p = lastState?.player; if (p) return { x: -Math.sin(p.yaw || 0) * Math.cos(p.pitch || 0), y: Math.sin(p.pitch || 0), z: -Math.cos(p.yaw || 0) * Math.cos(p.pitch || 0) }; camera.getWorldDirection(dir); return { x: dir.x, y: dir.y, z: dir.z }; },
-    stats() { return { settings: { ...settings }, pixelRatio: renderer.getPixelRatio(), renderWidth: canvas.width, renderHeight: canvas.height, shadowsEnabled: renderer.shadowMap.enabled, shadowMapSize: renderer.shadowMap.enabled ? sun.shadow.mapSize.x : 0, dustVisible: dust.visible, exposure: renderer.toneMappingExposure, colorFilter: canvas.style.filter, weaponVisible: weapon.rig.visible, cameraRoll: camera.rotation.z, weaponX: weapon.rig.position.x, weaponY: weapon.rig.position.y, teammates: teammates.size, teammateWeapons: [...teammates.values()].map(model => model.weaponId), drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, fps: Math.round(fps), quality, frameMs: Math.round(frameDt * 10000) / 10, cameraPitch: camera.rotation.x, cameraYaw: camera.rotation.y, cameraY: camera.position.y, fov: camera.fov, sprintBlend: weapon.sprintBlend, moveBlend: weapon.moveBlend, weaponPitch: weapon.rig.rotation.x, weaponRoll: weapon.rig.rotation.z, bobAmplitude: weapon.bobAmplitude, headBobAmplitude: weapon.bobAmplitude * settings.headBob, weaponBobAmplitude: weapon.bobAmplitude * settings.weaponSway, ...weapon.stats(), ...lootField.stats(), ...containerField.stats() }; },
+    stats() { return { settings: { ...settings }, pixelRatio: renderer.getPixelRatio(), renderWidth: canvas.width, renderHeight: canvas.height, shadowsEnabled: renderer.shadowMap.enabled, shadowMapSize: renderer.shadowMap.enabled ? sun.shadow.mapSize.x : 0, dustVisible: dust.visible, exposure: renderer.toneMappingExposure, colorFilter: canvas.style.filter, weaponVisible: weapon.rig.visible, cameraRoll: camera.rotation.z, weaponX: weapon.rig.position.x, weaponY: weapon.rig.position.y, enemyPoses: [...enemies.entries()].map(([id, model]) => ({ id, task: model.aiTask, weaponPitch: model.gun.rotation.x, headYaw: model.head.rotation.y, bodyYaw: model.root.rotation.y })), teammates: teammates.size, teammateWeapons: [...teammates.values()].map(model => model.weaponId), drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, fps: Math.round(fps), quality, frameMs: Math.round(frameDt * 10000) / 10, cameraPitch: camera.rotation.x, cameraYaw: camera.rotation.y, cameraY: camera.position.y, fov: camera.fov, sprintBlend: weapon.sprintBlend, moveBlend: weapon.moveBlend, weaponPitch: weapon.rig.rotation.x, weaponRoll: weapon.rig.rotation.z, bobAmplitude: weapon.bobAmplitude, headBobAmplitude: weapon.bobAmplitude * settings.headBob, weaponBobAmplitude: weapon.bobAmplitude * settings.weaponSway, ...weapon.stats(), ...lootField.stats(), ...containerField.stats() }; },
     dispose() { if (disposed) return; disposed = true; disposeGroup(scene); environment.dispose(); renderer.dispose(); canvas.style.filter = ''; },
   };
 }

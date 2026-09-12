@@ -1,4 +1,4 @@
-# DEAD FREQUENCY 1.7.1
+# DEAD FREQUENCY 1.8.0
 
 Ein Extraction-Shooter aus der Ego-Perspektive für Windows x64: allein offline oder zu zweit im Koop. Durchsuche den 300 × 300 Meter großen Sektor 07, bekämpfe Patrouillen, sichere Beute und handle nach der Extraktion damit.
 
@@ -27,6 +27,14 @@ Die Internet-Einladung läuft über den mitgelieferten Cloudflare-Tunnel, benöt
 Bei jedem normalen Start prüft der Launcher das neueste stabile [GitHub-Release](https://github.com/easycrashx-nex/dead-frequency/releases/latest). Eine neuere Version wird ohne Bestätigung heruntergeladen, anhand von SHA-256 geprüft und in einem separaten Versionsordner vorbereitet. Anschließend startet automatisch die neue Version. Es muss kein ZIP von Hand heruntergeladen oder entpackt werden. Während eines Raids wird kein Update eingespielt.
 
 Bei fehlendem Internet oder einem fehlerhaften Download startet die vorhandene Version. Frühere vollständige Installationen bleiben erhalten; ältere Releases ersetzen keine neuere Version. Spielstände liegen getrennt von den Programmdateien im Windows-Benutzerprofil. Für Updates werden ausschließlich öffentliche GitHub-Release-Dateien dieses Projekts verwendet; Zugangstoken werden nicht mitgeliefert.
+
+## Gegnerverhalten
+
+Wachen nutzen erreichbare Deckung und treten kurz zum Schießen hervor. Flankierende Gegner versuchen seitliche Schusswinkel, während andere ihre Position halten. Nahe Wachen können einen beobachteten Kontakt weitergeben und verteilen sich bei der Suche. Treffer können einen Stellungswechsel auslösen.
+
+Verlierst du den Sichtkontakt, untersuchen Gegner deine zuletzt beobachtete Position und suchen die Umgebung ab. Schüsse, Alarme und nahes Sprinten verraten eine ungefähre Geräuschposition; lautloses Bewegen hinter einer Wand verrät deinen neuen Aufenthaltsort nicht. Wege berücksichtigen Hindernisse und offene Gebäudeeingänge. Nach erfolgloser Suche kehren Wachen zur Patrouille zurück. Waffenhaltung und kurze Suchblicke machen ihre Aufmerksamkeit erkennbar.
+
+Diese Verhaltensweisen gelten auch im Koop für beide Spieler. Schaden, Lebenspunkte, Trefferwahrscheinlichkeit, Feuerrhythmus und erste Reaktionszeit wurden gegenüber Version 1.7.1 nicht erhöht.
 
 ## Arsenal und Skilltree
 

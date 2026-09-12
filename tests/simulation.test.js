@@ -244,7 +244,10 @@ test('solid cover blocks guard fire while gunshots trigger an obstacle-safe sear
   assert.equal(hasLineOfSight(guard, game.state.player), false);
   assert.equal(game.fire({ x: 0, y: 0, z: 1 }), true);
   assert.ok(guard.alert >= 7, 'Gunshot was not heard through nearby cover');
-  assert.deepEqual(guard.lastSeen, { x: game.state.player.x, z: game.state.player.z });
+  assert.equal(guard.lastSeen, null, 'Hearing a shot must not become visual knowledge');
+  assert.ok(guard.lastHeard);
+  assert.ok(Math.hypot(guard.lastHeard.x - game.state.player.x, guard.lastHeard.z - game.state.player.z) <= Math.sqrt(4.5));
+  assert.equal(Math.abs(guard.lastHeard.x % 3), 0); assert.equal(Math.abs(guard.lastHeard.z % 3), 0);
   const original = { x: guard.x, z: guard.z };
   const routeBefore = findPath(guard, game.state.player).length;
   for (let i = 0; i < 240; i++) {

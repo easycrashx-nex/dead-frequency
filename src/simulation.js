@@ -4,6 +4,7 @@ import { validateEconomy, createItem, ECONOMY_BALANCE } from './economy.js';
 import { CONTAINER_TYPES, CONTAINER_SEARCH_SECONDS, LEGACY_ITEMS, rollContainerItems } from './loot-catalog.js';
 import { getWeapon, defaultWeapon } from './weapons.js';
 import { validateProgression, getSkillEffects, canUnlockSkill } from './progression.js';
+import { createEnemyAI } from './enemy-ai.js';
 export { ITEM_CATALOG } from './loot-catalog.js';
 
 export const KIT_COSTS = { scout: 0, assault: 350 };
@@ -255,6 +256,7 @@ export async function createGame(saved = null, options = {}) {
   const notice = text => emit({ type: 'notice', text });
   const alive = () => !disposed && state.phase === 'raid';
   const eye = () => ({ x: state.player.x, y: state.player.y + (state.player.crouching ? 1.17 : 1.65), z: state.player.z });
+  const enemyAI = createEnemyAI({ isWalkable, findPath, hasLineOfSight, walkSegmentClear, colliders: COLLIDERS, random: () => random(), shoot: shootEnemy });
   function grantXP(amount, reason) {
     if (!alive()) return;
     const before = state.profile.progression.xp;
@@ -285,6 +287,7 @@ export async function createGame(saved = null, options = {}) {
     // Explicit seeds support reproducible QA/replays; regular raids get fresh seeds.
     const seed = Number.isFinite(options.seed) ? options.seed >>> 0 : ((Date.now() ^ ++raidSerial * 2654435761) >>> 0);
     random = seededRandom(seed);
+    enemyAI.reset();
     skillEffects = getSkillEffects(state.profile);
     state.player = { ...emptyPlayer(), armor: (kit === 'assault' ? 55 : 30) + skillEffects.armorBonus,
       weapon: weapon.id, ammo: weapon.magSize, magSize: weapon.magSize, reserve: Math.round(weapon.reserve * skillEffects.reserveMultiplier),
@@ -384,19 +387,15 @@ export async function createGame(saved = null, options = {}) {
       state.raid.objectiveComplete = true;
       emit({ type: 'relay', x: RELAY.x, z: RELAY.z });
       notice(`Relais gesichert. Verstärkung unterwegs. Extrahiere für +${ECONOMY_BALANCE.relayBonus} CR.`);
-      for (const enemy of state.enemies) if (!enemy.dead && distance(enemy, RELAY) < 36) {
-        enemy.alert = 10; enemy.lastSeen = { ...RELAY }; enemy.pathTimer = 0;
-      }
+      enemyAI.hear(state.enemies, RELAY, { kind: 'alarm', radius: 36 });
       const reinforcements = spawnEnemy(21, -49, 100 + state.enemies.length, 'elite');
-      reinforcements.alert = 20; reinforcements.lastSeen = { ...RELAY };
+      enemyAI.hear([reinforcements], RELAY, { kind: 'alarm', radius: 80 });
       state.enemies.push(reinforcements);
     } else {
       extraction = EXTRACTIONS.find(ex => ex.id === prompt.id);
       state.raid.extractionName = extraction.name; state.raid.extractionProgress = 0;
       notice(`Signal gesendet. Bleibe ${state.raid.extractionDuration} Sekunden in der Extraktionszone.`);
-      for (const enemy of state.enemies) if (!enemy.dead && distance(enemy, extraction) < 35) {
-        enemy.alert = 14; enemy.lastSeen = { x: state.player.x, z: state.player.z }; enemy.pathTimer = 0;
-      }
+      enemyAI.hear(state.enemies, extraction, { kind: 'alarm', radius: 35 });
     }
     updatePrompt(); return true;
   }
@@ -528,13 +527,10 @@ export async function createGame(saved = null, options = {}) {
     }
     const to = pelletEnds[0];
     emit({ type: 'shot', from: origin, to, ...to, weapon: p.weapon, ...(weapon.pellets > 1 ? { pelletEnds } : {}) });
-    for (const e of state.enemies) if (!e.dead && distance(e, p) < 36) {
-      e.alert = Math.max(e.alert, 7); e.lastSeen = { x: p.x, z: p.z }; e.pathTimer = Math.min(e.pathTimer, 0.15);
-      if (options.playerId) e.targetPlayerId = options.playerId;
-    }
+    enemyAI.hear(state.enemies, origin, { kind: 'shot', playerId: options.playerId, radius: 36 });
     for (const [victim, { damage, headshot, point: to }] of hits) {
       victim.hp -= damage; victim.hitFlash = 0.16; victim.fireTimer = Math.max(victim.fireTimer, 0.27);
-      victim.alert = 12; victim.lastSeen = { x: p.x, z: p.z };
+      victim.alert = Math.max(victim.alert, 12); enemyAI.hit(victim);
       emit({ type: 'hit', ...to, headshot, damage, enemyId: victim.id });
       if (victim.hp <= 0) {
         victim.hp = 0; victim.dead = true; victim.mode = 'dead'; victim.attackFlash = 0;
@@ -547,73 +543,20 @@ export async function createGame(saved = null, options = {}) {
     return true;
   }
 
-  function moveEnemy(enemy, target, speed, dt) {
-    enemy.pathTimer -= dt;
-    if (enemy.pathTimer <= 0) {
-      enemy.path = findPath(enemy, target); enemy.pathTimer = 0.95 + random() * 0.35;
-    }
-    const next = enemy.path[0];
-    if (!next) return;
-    const dx = next.x - enemy.x, dz = next.z - enemy.z, len = Math.hypot(dx, dz);
-    // Stay within the .20 m clearance margin between grid and agent radii.
-    if (len < 0.15) { enemy.path.shift(); return; }
-    const step = Math.min(speed * dt, len), nx = enemy.x + dx / len * step, nz = enemy.z + dz / len * step;
-    if (isWalkable(nx, nz, 0.38)) { enemy.x = nx; enemy.z = nz; }
-    else { enemy.pathTimer = 0; enemy.path = []; }
-    if (enemy.mode === 'patrol' || enemy.mode === 'search') enemy.yaw = Math.atan2(-dx, -dz);
+  function shootEnemy(e, victim) {
+    const p = victim.state.player, dist = distance(e, p);
+    const playerTarget = { x: p.x, y: p.y + (p.crouching ? .95 : 1.3), z: p.z };
+    e.fireTimer = (e.kind === 'elite' ? .65 : .92) + random() * .4;
+    e.attackFlash = .1;
+    const from = { x: e.x, y: 1.43, z: e.z };
+    const accuracy = clamp((state.raid.difficulty === 'hard' ? .77 : .63) - dist * .009 - (p.sprinting ? .15 : 0) - (p.crouching ? .1 : 0), .18, .82);
+    const hit = random() < accuracy;
+    const to = hit ? { ...playerTarget } : { x: p.x + (random() - .5) * 3, y: 1 + random(), z: p.z + (random() - .5) * 3 };
+    emit({ type: 'enemyShot', from, to, ...from, enemyId: e.id, ...(victim.id ? { targetPlayerId: victim.id } : {}) });
+    if (hit && hasLineOfSight(from, playerTarget)) victim.damage((e.kind === 'elite' ? 18 : 13) * (state.raid.difficulty === 'hard' ? 1.15 : 1), e);
   }
-
   function updateEnemies(dt, targets = [{ id: null, state, damage: applyDamage }]) {
-    for (const e of state.enemies) {
-      e.attackFlash = Math.max(0, e.attackFlash - dt); e.hitFlash = Math.max(0, e.hitFlash - dt);
-      if (e.dead) continue;
-      const activeTargets = targets.filter(target => target.state.phase === 'raid' && target.state.player.hp > 0);
-      if (!activeTargets.length) break;
-      e.fireTimer -= dt; e.alert = Math.max(0, e.alert - dt);
-      const candidates = activeTargets.map(target => {
-        const p = target.state.player, dist = distance(e, p), dx = p.x - e.x, dz = p.z - e.z;
-        const point = { x: p.x, y: p.y + (p.crouching ? .95 : 1.3), z: p.z };
-        const dot = dist > 0 ? (-Math.sin(e.yaw) * dx - Math.cos(e.yaw) * dz) / dist : 1;
-        const range = (state.raid.difficulty === 'hard' ? 36 : 30) * (p.crouching && !p.moving ? .65 : 1);
-        const visible = dist < range && (e.alert > 0 || dot > .12 || dist < 7) && hasLineOfSight({ x: e.x, y: 1.55, z: e.z }, point);
-        return { target, p, dist, dx, dz, point, visible };
-      });
-      candidates.sort((a, b) => Number(b.visible) - Number(a.visible) || a.dist - b.dist);
-      const { target: victim, p, dist, dx, dz, point: playerTarget, visible } = candidates[0];
-      if (visible) {
-        if (e.alert <= 0) e.fireTimer = Math.max(e.fireTimer, state.raid.difficulty === 'hard' ? 0.65 : 0.95);
-        e.alert = 8; e.lastSeen = { x: p.x, z: p.z };
-        if (victim.id) e.targetPlayerId = victim.id;
-        e.mode = e.flank && dist > 11 ? 'flank' : 'attack';
-        e.yaw = Math.atan2(-dx, -dz);
-        if (e.fireTimer <= 0 && dist < 30) {
-          e.fireTimer = (e.kind === 'elite' ? 0.65 : 0.92) + random() * 0.4;
-          e.attackFlash = 0.1;
-          const from = { x: e.x, y: 1.43, z: e.z };
-          const accuracy = clamp((state.raid.difficulty === 'hard' ? 0.77 : 0.63) - dist * 0.009 - (p.sprinting ? 0.15 : 0) - (p.crouching ? 0.1 : 0), 0.18, 0.82);
-          const hit = random() < accuracy;
-          const to = hit ? { ...playerTarget } : { x: p.x + (random() - 0.5) * 3, y: 1 + random(), z: p.z + (random() - 0.5) * 3 };
-          emit({ type: 'enemyShot', from, to, ...from, enemyId: e.id, ...(victim.id ? { targetPlayerId: victim.id } : {}) });
-          if (hit && hasLineOfSight(from, playerTarget)) victim.damage((e.kind === 'elite' ? 18 : 13) * (state.raid.difficulty === 'hard' ? 1.15 : 1), e);
-          if (victim.state.phase !== 'raid') continue;
-        }
-        if (dist > 10) {
-          const side = e.flank ? 7 * e.side : 1.8 * e.side;
-          const target = { x: p.x + (dist ? -dz / dist * side : 0), z: p.z + (dist ? dx / dist * side : 0) };
-          moveEnemy(e, target, e.flank ? 3.1 : 2.35, dt);
-        } else e.path = [];
-      } else if (e.alert > 0 && e.lastSeen) {
-        e.mode = 'search'; moveEnemy(e, e.lastSeen, 2.8, dt);
-      } else {
-        e.mode = 'patrol';
-        if (!e.patrol || distance(e, e.patrol) < 1.6) {
-          const angle = random() * Math.PI * 2, length = 5 + random() * 9;
-          e.patrol = gridPoint(closestFree({ x: e.home.x + Math.cos(angle) * length, z: e.home.z + Math.sin(angle) * length }));
-          e.pathTimer = 0;
-        }
-        moveEnemy(e, e.patrol, 1.35, dt);
-      }
-    }
+    enemyAI.update(dt, state.enemies, targets, state.raid.difficulty);
   }
 
   function update(dt, input = {}) {
@@ -701,6 +644,7 @@ export async function createGame(saved = null, options = {}) {
       if (!disposed && options.externalAI && Number.isFinite(dt) && dt > 0) updateEnemies(Math.min(dt, .05), targets);
     },
     receiveDamage: applyDamage,
+    aiStats: () => enemyAI.stats(),
     endRaid(reason = 'Einsatz abgebrochen') { finish(false, reason); },
     // Reconcile physics and state for deterministic replay setup and QA tooling.
     teleport(x, z, y = 0.02) {

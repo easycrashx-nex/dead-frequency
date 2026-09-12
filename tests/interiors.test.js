@@ -104,12 +104,17 @@ test('live guards follow search routes around exterior walls and enter all five 
   game.state.enemies = [guard];
   const distant = { id: null, state: { phase: 'raid', player: { x: 140, y: 0, z: 140, hp: 100 } }, damage() {} };
   for (const room of INTERIORS) {
+    delete guard.ai;
     Object.assign(guard, { x: room.x - room.w / 2 - 2, z: room.z, alert: 60, lastSeen: { x: room.x, z: room.z }, path: [], pathTimer: 0, mode: 'search' });
+    let closest = Infinity;
     for (let i = 0; i < 1200; i++) {
+      const previous = { x: guard.x, z: guard.z };
       game.advanceEnemies(1 / 60, [distant]);
-      assert.ok(isWalkable(guard.x, guard.z, .38), `${room.name}: guard entered solid geometry`);
+      checkRoute(previous, [{ x: guard.x, z: guard.z }], `${room.name}/live guard`);
+      closest = Math.min(closest, Math.hypot(guard.x - room.x, guard.z - room.z));
     }
-    assert.ok(Math.hypot(guard.x - room.x, guard.z - room.z) < 1.6, `${room.name}: guard did not enter (${guard.x},${guard.z})`);
+    // A guard may already be sweeping nearby rooms at the final timestamp.
+    assert.ok(closest < 1.6, `${room.name}: guard never investigated the interior (${closest}m)`);
   }
 });
 
@@ -125,11 +130,14 @@ test('off-grid agents and targets beside a thin wall connect to the grid on the 
   game.state.enemies = [guard];
   Object.assign(guard, { ...outside, alert: 60, lastSeen: inside, path: [], pathTimer: 0, mode: 'search' });
   const distant = { id: null, state: { phase: 'raid', player: { x: 140, y: 0, z: 140, hp: 100 } }, damage() {} };
+  let closest = Infinity;
   for (let i = 0; i < 1200; i++) {
+    const previous = { x: guard.x, z: guard.z };
     game.advanceEnemies(1 / 60, [distant]);
-    assert.ok(isWalkable(guard.x, guard.z, .38));
+    checkRoute(previous, [{ x: guard.x, z: guard.z }], 'off-grid/live guard');
+    closest = Math.min(closest, Math.hypot(guard.x - inside.x, guard.z - inside.z));
   }
-  assert.ok(Math.hypot(guard.x - inside.x, guard.z - inside.z) < 1.6, `Guard remained stuck at ${guard.x},${guard.z}`);
+  assert.ok(closest < 1.6, `Guard never reached the interior after the thin-wall detour (${closest}m)`);
 });
 
 test('all ten interior containers replace ground treasures and offer reachable contents', async t => {

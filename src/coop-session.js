@@ -11,6 +11,7 @@ const neutral = player => ({ forward: 0, right: 0, yaw: player.yaw, pitch: playe
   sprint: false, crouch: false, jump: false, aim: false, fire: false, firePressed: false });
 const publicEnemy = e => ({ id: e.id, x: e.x, y: e.y, z: e.z, yaw: e.yaw, hp: e.hp,
   kind: e.kind, mode: e.mode, attackFlash: e.attackFlash, hitFlash: e.hitFlash, dead: e.dead,
+  ...(e.ai ? { ai: { role: e.ai.role, task: e.ai.task } } : {}),
   ...(e.targetPlayerId ? { targetPlayerId: e.targetPlayerId } : {}) });
 
 export function sanitizeCoopInput(raw, player) {
