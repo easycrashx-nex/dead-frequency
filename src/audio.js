@@ -230,6 +230,10 @@ export function createAudio(options = {}) {
         case 'hit': play('reload-bolt', { gain: event.headshot ? .12 : .08, rate: 1.4, cutoff: 5300, duration: .065 }); break;
         case 'damage': play(variant('footstep', 6), { gain: .36, rate: .72, cutoff: 1000 }); break;
         case 'loot': play('reload-out', { gain: .13, rate: 1.08, cutoff: 6500, bus: 'ui' }); break;
+        case 'containerOpen':
+          play('reload-bolt', { gain: .2, rate: .7, cutoff: 4200, position: {x:event.x,y:.7,z:event.z}, send: .08 });
+          play('reload-out', { gain: .12, rate: .75, cutoff: 2900, delay: .13, position: {x:event.x,y:.7,z:event.z} }); break;
+        case 'containerSearched': play('reload-in', { gain: .09, rate: .85, cutoff: 3600, position: {x:event.x,y:.7,z:event.z} }); break;
         case 'relay': play('reload-bolt', { gain: .16, rate: .85, bus: 'ui' }); break;
         case 'extract': play('reload-in', { gain: .17, rate: .9, tag: 'result' }); break;
         case 'death': play(variant('footstep', 6), { gain: .34, rate: .64, cutoff: 700, tag: 'result' }); break;

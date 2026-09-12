@@ -2,6 +2,13 @@
 
 A Windows 3D FPS extraction shooter: offline solo and private two-player cooperative raids. German interface. Industrial coastal exclusion zone at warm sunset, olive concrete, orange industrial accents, teal shadows. Twelve-minute repeatable raids on a 300×300 metre map. Extraction sends loot into a personal intake; manual stash, local real-time market and mailbox. GitHub Releases provide automatic verified updates. Internet co-op uses a temporary cloudflared tunnel; LAN mode connects directly. Current implementation and tests take precedence over historical notes below.
 
+## Version 1.6 loot containers
+- `loot-catalog.js` defines seven container types, exactly 100 new named trade items and the nine legacy items. Pools are keyed by container type; consumable ammo/medical supplies are additional and do not count toward the 100 new trade items.
+- `layout.CONTAINER_SPOTS` supplies logical shared positions and solid crate dimensions, including all five interiors. Static raid loot lives in `state.containers`; `state.loot` contains dynamic backpack/enemy drops.
+- Containers have shared `opened`, `searched` and one seeded item array per raid. Each player owns `activeContainerId` and `containerSearchRemaining`. Validated take actions check phase, reach, visibility, search state, item membership and capacity. Taken items cannot be claimed twice.
+- `game.takeContainerItem(containerId,itemId)`, `takeAllContainerItems(containerId)` and `closeContainer()` are exposed through the authoritative co-op action path. Panels block gameplay input while simulation continues. Session death/disconnect spills container-sourced backpack items into recoverable shared ground drops.
+- Include the catalog module in packaged native host sources as well as the browser bundle.
+
 ## Version 1.5 interiors
 - Five existing building footprints contain accessible interiors: entry-booth, warehouse, rail-office, customs-office and south-workshop. `OBSTACLES` still describes outer map footprints; `INTERIORS` describes doors, shared solid parts and loot locations; `COLLIDERS` replaces those five monolithic boxes for physics and traces.
 - Interior solid y values are box centers. Navigation ignores overhead solids and uses only geometry intersecting standing characters. Rendering consumes the same wall, ceiling and fixture dimensions; decoration must leave door openings and walkways clear.

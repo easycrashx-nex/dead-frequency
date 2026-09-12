@@ -1,6 +1,8 @@
 import RAPIER from '@dimforge/rapier3d-compat';
-import { layout, COLLIDERS, INTERIORS, SPAWN, EXTRACTIONS, RELAY, WORLD_SIZE } from './layout.js';
+import { layout, COLLIDERS, CONTAINER_SPOTS, SPAWN, EXTRACTIONS, RELAY, WORLD_SIZE } from './layout.js';
 import { validateEconomy, createItem } from './economy.js';
+import { CONTAINER_TYPES, CONTAINER_SEARCH_SECONDS, LEGACY_ITEMS, rollContainerItems } from './loot-catalog.js';
+export { ITEM_CATALOG } from './loot-catalog.js';
 
 export const KIT_COSTS = { scout: 0, assault: 350 };
 export const UPGRADE_COSTS = {
@@ -200,28 +202,8 @@ export function findPath(from, to) {
   return path;
 }
 
-const LOOT_SPOTS = [
-  [-10, 47, 0], [-29, 34, 0], [2, 29, 0], [-29, 11, 1], [-46, 9, 1],
-  [-10, 18, 1], [-1, 5, 1], [17, 25, 1], [42, 30, 1], [43, 1, 1],
-  [-40, -29, 2], [-12, -26, 2], [-1, -17, 2], [12, -24, 2],
-  [22, -33, 2], [-7, -41, 2], [19, -46, 2], [43, -38, 2],
-  [-103, -87, 2], [-129, -91, 2], [-79, -94, 3], [-95, -115, 3], [-110, -70, 1],
-  [-103, 84, 2], [-126, 84, 2], [-93, 95, 3], [-79, 112, 2], [-132, 111, 1],
-  [-8, -106, 2], [-35, -104, 3], [6, -120, 3], [22, -101, 2], [-38, -126, 1],
-  [97, -86, 3], [113, -108, 3], [67, -112, 2], [88, -73, 2], [123, -109, 3],
-  [104, 25, 2], [88, 25, 2], [114, 39, 3], [116, 11, 2], [98, 49, 1],
-  [72, 99, 2], [97, 104, 3], [60, 101, 1], [106, 125, 3], [117, 102, 2],
-  [-18, 119, 2], [-23, 104, 1], [-4, 110, 1], [-39, 122, 2],
-  [-111, -4, 2], [-104, -23, 3], [-136, 0, 2], [-111, 20, 1],
-  [-68, -51, 1], [-59, 17, 1], [41, -89, 1], [63, 52, 1], [16, 77, 1],
-  ...INTERIORS.flatMap(room => room.lootSpots.map(({ x, z, tier }) => [x, z, tier])),
-];
-export const TREASURES = [
-  [{ name: 'Kupferspulen', value: 120 }, { name: 'Werkzeugset', value: 160 }, { name: 'Industriefilter', value: 140 }],
-  [{ name: 'Militärsensor', value: 290 }, { name: 'Funkmodul', value: 340 }, { name: 'Titanlegierung', value: 270 }],
-  [{ name: 'Verschlüsselter Datenträger', value: 650 }, { name: 'Quantenprozessor', value: 780 }, { name: 'Prototyp-Optik', value: 590 }],
-];
-export const ITEM_CATALOG = TREASURES.flatMap((tier, index) => tier.map(item => ({ ...item, rarity: ['common', 'rare', 'epic'][index] })));
+export const TREASURES = ['common', 'rare', 'epic'].map(rarity => LEGACY_ITEMS.filter(item => item.rarity === rarity).map(({ name, value }) => ({ name, value })));
+const containerNames = Object.fromEntries(CONTAINER_TYPES.map(type => [type.id, type.name]));
 const PATROLS = [
   [-26, 19], [10, 17], [43, 33], [-41, -2], [-7, -4], [28, 1],
   [7, -29], [18, -20], [-41, -38], [21, -43], [44, -27],
@@ -260,7 +242,7 @@ export async function createGame(saved = null, options = {}) {
   controller.enableAutostep(0.25, 0.2, false);
   controller.enableSnapToGround(0.3);
   world.timestep = 1 / 60; world.step();
-  const state = { phase: 'hub', profile: validateProfile(saved), player: emptyPlayer(), raid: emptyRaid(), enemies: [], loot: [], prompt: null, result: null };
+  const state = { phase: 'hub', profile: validateProfile(saved), player: emptyPlayer(), raid: emptyRaid(), enemies: [], loot: [], containers: [], activeContainerId: null, containerSearchRemaining: 0, prompt: null, result: null };
   let events = [], random = seededRandom(1), cooldown = 0, velocityY = 0, jumpHeld = false;
   let extraction = null, raidSerial = 0, disposed = false, lowTimeWarned = false, sprintNeedsRelease = false;
   const emit = event => events.push(event);
@@ -295,18 +277,9 @@ export async function createGame(saved = null, options = {}) {
     body.setNextKinematicTranslation({ x: SPAWN.x, y: PLAYER_CENTER + 0.02, z: SPAWN.z });
     world.step();
     state.enemies = PATROLS.map(([x, z], i) => spawnEnemy(x, z, i, (difficulty === 'hard' && i % 3 === 0) || i === 9 ? 'elite' : 'guard'));
-    state.loot = LOOT_SPOTS.map(([x, z, tier], i) => {
-      const rarity = tier >= 3 ? 2 : tier === 2 && random() < 0.45 ? 2 : tier === 2 ? 1 : tier;
-      const item = TREASURES[rarity][Math.floor(random() * TREASURES[rarity].length)];
-      return { id: `raid-${state.profile.raids}-loot-${i}`, x, z, ...item, value: Math.round(item.value * (difficulty === 'hard' ? 1.35 : 1)),
-        rarity: ['common', 'rare', 'epic'][rarity], taken: false };
-    });
-    state.loot.push({ id: 'supply-ammo', x: -30, z: 31, name: 'Munition · +36', value: 0, rarity: 'common', taken: false, kind: 'ammo', amount: 36 });
-    state.loot.push({ id: 'supply-med', x: 16, z: 20, name: 'Medkit · +1', value: 0, rarity: 'rare', taken: false, kind: 'medkit', amount: 1 });
-    for (const [i, x, z] of [[0, -104, -93], [1, -109, 111], [2, -2, -104], [3, 113, -74], [4, 102, 40], [5, 76, 109]]) {
-      state.loot.push({ id: `outer-ammo-${i}`, x, z, name: 'Munition · +36', value: 0, rarity: 'common', taken: false, kind: 'ammo', amount: 36 });
-      if (i % 2 === 0) state.loot.push({ id: `outer-med-${i}`, x: x + 1, z: z + 1, name: 'Medkit · +1', value: 0, rarity: 'rare', taken: false, kind: 'medkit', amount: 1 });
-    }
+    state.loot = [];
+    state.containers = CONTAINER_SPOTS.map(spot => ({ ...spot, opened: false, searched: false, items: rollContainerItems(spot, random, state.profile.raids, difficulty) }));
+    closeContainer();
     events = []; state.phase = 'raid';
     notice('Beute sichern. Lebend extrahieren. Das Relais ist optional.');
     updatePrompt();
@@ -315,6 +288,7 @@ export async function createGame(saved = null, options = {}) {
 
   function finish(success, reason) {
     if (!alive()) return;
+    closeContainer();
     const bonus = success ? state.raid.kills * 40 + (state.raid.objectiveComplete ? 450 : 0) : 0;
     const total = bonus;
     const itemCount = state.raid.loot.length;
@@ -354,6 +328,15 @@ export async function createGame(saved = null, options = {}) {
       state.prompt = { kind: 'loot', id: closest.id,
         text: closest.kind ? closest.name : state.raid.loot.length >= state.raid.capacity ? 'Rucksack voll · Tab zum Aussortieren' : `${closest.name} · ${closest.value} CR` }; return;
     }
+    let container, containerDistance = 3;
+    for (const candidate of state.containers) {
+      const d = distance(p, candidate);
+      if (d <= containerDistance && canReachContainer(candidate)) { container = candidate; containerDistance = d; }
+    }
+    if (container) {
+      const empty = container.searched && container.items.every(item => item.taken);
+      state.prompt = { kind: 'container', id: container.id, text: `${containerNames[container.type]} · ${empty ? 'Leer' : container.searched ? 'Öffnen' : 'Durchsuchen'}` }; return;
+    }
     const zone = EXTRACTIONS.find(ex => distance(p, ex) <= ex.radius);
     if (zone && !extraction) state.prompt = { kind: 'extract', id: zone.id, text: `${zone.name} · Extraktion anfordern (8 s)` };
   }
@@ -365,14 +348,15 @@ export async function createGame(saved = null, options = {}) {
     if (prompt.kind === 'loot') {
       const item = state.loot.find(it => it.id === prompt.id && !it.taken);
       if (!item) return false;
-      if (item.kind === 'ammo') state.player.reserve += item.amount;
-      else if (item.kind === 'medkit') state.player.medkits += item.amount;
-      else {
-        if (state.raid.loot.length >= state.raid.capacity) { notice('Rucksack voll. Öffne mit Tab den Rucksack und wirf etwas ab.'); return false; }
-        state.raid.loot.push({ id: item.id, name: item.name, value: item.value, rarity: item.rarity });
-        state.raid.value += item.value;
-      }
-      item.taken = true; emit({ type: 'loot', name: item.name, value: item.value, rarity: item.rarity });
+      if (!collectItem(item)) return false;
+    } else if (prompt.kind === 'container') {
+      const container = state.containers.find(value => value.id === prompt.id);
+      if (!container || !canReachContainer(container)) return false;
+      if (state.activeContainerId === container.id) return true;
+      state.activeContainerId = container.id;
+      state.containerSearchRemaining = container.searched ? 0 : CONTAINER_SEARCH_SECONDS;
+      container.opened = true;
+      emit({ type: 'containerOpen', containerId: container.id, x: container.x, z: container.z });
     } else if (prompt.kind === 'relay') {
       state.raid.objectiveComplete = true;
       emit({ type: 'relay', x: RELAY.x, z: RELAY.z });
@@ -392,6 +376,49 @@ export async function createGame(saved = null, options = {}) {
       }
     }
     updatePrompt(); return true;
+  }
+
+  function canReachContainer(container) {
+    const p = state.player;
+    return Math.hypot(p.x - container.x, p.z - container.z, p.y) <= 3
+      && hasLineOfSight(eye(), { x: container.x, y: container.h + .08, z: container.z });
+  }
+  function closeContainer() { state.activeContainerId = null; state.containerSearchRemaining = 0; return true; }
+  function collectItem(item) {
+    if (!item || item.taken) return false;
+    if (item.kind === 'ammo') state.player.reserve += item.amount;
+    else if (item.kind === 'medkit') state.player.medkits += item.amount;
+    else {
+      if (state.raid.loot.length >= state.raid.capacity) { notice('Rucksack voll. Öffne mit Tab den Rucksack und wirf etwas ab.'); return false; }
+      state.raid.loot.push({ id: item.id, name: item.name, value: item.value, rarity: item.rarity });
+      state.raid.value += item.value;
+    }
+    item.taken = true; emit({ type: 'loot', name: item.name, value: item.value, rarity: item.rarity });
+    return true;
+  }
+  function takeContainerItem(containerId, itemId) {
+    if (!alive() || state.activeContainerId !== containerId || typeof containerId !== 'string' || typeof itemId !== 'string' || containerId.length > 100 || itemId.length > 100) return false;
+    const container = state.containers.find(value => value.id === containerId);
+    if (!container?.searched || !canReachContainer(container)) return false;
+    return collectItem(container.items.find(item => item.id === itemId));
+  }
+  function takeAllContainerItems(containerId) {
+    const container = state.containers.find(value => value.id === containerId);
+    if (!container) return 0;
+    let count = 0;
+    for (const item of container.items.slice(0, 8)) if (!item.taken && takeContainerItem(containerId, item.id)) count++;
+    return count;
+  }
+  function updateContainer(dt) {
+    if (!state.activeContainerId) return;
+    const container = state.containers.find(value => value.id === state.activeContainerId);
+    if (!container || !alive() || !canReachContainer(container)) { closeContainer(); return; }
+    if (container.searched) { state.containerSearchRemaining = 0; return; }
+    state.containerSearchRemaining = Math.max(0, state.containerSearchRemaining - dt);
+    if (state.containerSearchRemaining < 1e-7) {
+      state.containerSearchRemaining = 0; container.searched = true;
+      emit({ type: 'containerSearched', containerId: container.id, x: container.x, z: container.z });
+    }
   }
 
   function dropItem(id) {
@@ -599,7 +626,7 @@ export async function createGame(saved = null, options = {}) {
         if (state.raid.extractionProgress >= state.raid.extractionDuration - 1e-6) { finish(true, 'Erfolgreich extrahiert'); return; }
       }
     }
-    updatePrompt();
+    updateContainer(dt); updatePrompt();
   }
 
   function buyUpgrade(kind) {
@@ -611,7 +638,7 @@ export async function createGame(saved = null, options = {}) {
   }
 
   return {
-    state, layout, startRaid, update, fire, reload, heal, interact, dropItem, buyUpgrade,
+    state, layout, startRaid, update, fire, reload, heal, interact, dropItem, buyUpgrade, takeContainerItem, takeAllContainerItems, closeContainer,
     // Trusted host adapters. The WebSocket protocol never exposes these methods.
     advanceEnemies(dt, targets) {
       if (!disposed && options.externalAI && Number.isFinite(dt) && dt > 0) updateEnemies(Math.min(dt, .05), targets);
@@ -625,10 +652,10 @@ export async function createGame(saved = null, options = {}) {
       body.setNextKinematicTranslation({ x, y: y + PLAYER_CENTER, z });
       world.step();
       Object.assign(state.player, { x, y, z, grounded: y < 0.05 }); velocityY = 0;
-      updatePrompt(); return true;
+      updateContainer(0); updatePrompt(); return true;
     },
     pause(paused = true) {
-      if (paused && state.phase === 'raid') { state.phase = 'paused'; pStop(); }
+      if (paused && state.phase === 'raid') { closeContainer(); state.phase = 'paused'; pStop(); }
       else if (!paused && state.phase === 'paused') state.phase = 'raid';
     },
     returnToHub() {

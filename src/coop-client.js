@@ -12,6 +12,7 @@ export function parseInvite(value){
 export function createCoopClient({localGame,onChange=()=>{},onRaid=()=>{},onProfile=()=>{},onDisconnect=()=>{}}){
   let socket=null,events=[],sequence=0,lastSnapshot=-1,sendTime=0,paused=false,target=null,closed=false,lastMessage=0,watchdog,pendingJump=false;
   let state=structuredClone(localGame.state);
+  let closingContainerId=null;
   const info={status:'offline',name:'',invite:'',players:[],id:null,hostId:null,message:'',ping:0};
   function change(values){Object.assign(info,values);onChange(info);}
   function send(message){if(socket?.readyState===WebSocket.OPEN){socket.send(JSON.stringify(message));return true;}return false;}
@@ -31,6 +32,10 @@ export function createCoopClient({localGame,onChange=()=>{},onRaid=()=>{},onProf
     else if(message.type==='snapshot'){
       if(!message.state||message.seq<=lastSnapshot)return;lastSnapshot=message.seq;
       const incoming=message.state,oldPhase=state.phase,oldPlayer=state.player;
+      if(closingContainerId){
+        if(incoming.activeContainerId===closingContainerId){incoming.activeContainerId=null;incoming.containerSearchRemaining=0;}
+        else closingContainerId=null;
+      }
       target={x:incoming.player.x,y:incoming.player.y,z:incoming.player.z};
       if(['raid','paused'].includes(oldPhase)&&incoming.phase==='raid')Object.assign(incoming.player,{x:oldPlayer.x,y:oldPlayer.y,z:oldPlayer.z,yaw:oldPlayer.yaw,pitch:oldPlayer.pitch});
       state=incoming;state.multiplayer=true;
@@ -81,7 +86,10 @@ export function createCoopClient({localGame,onChange=()=>{},onRaid=()=>{},onProf
     },
     fire(){return false;},
     reload(){return send({type:'action',action:'reload'});},heal(){return send({type:'action',action:'heal'});},
-    interact(){return send({type:'action',action:'interact'});},dropItem(id){return send({type:'action',action:'drop',id});},
+    interact(){closingContainerId=null;return send({type:'action',action:'interact'});},dropItem(id){return send({type:'action',action:'drop',id});},
+    takeContainerItem(containerId,id){return send({type:'action',action:'take',id,containerId});},
+    takeAllContainerItems(containerId){return send({type:'action',action:'takeAll',containerId});},
+    closeContainer(){if(!state.activeContainerId)return false;closingContainerId=state.activeContainerId;state.activeContainerId=null;state.containerSearchRemaining=0;return send({type:'action',action:'closeContainer'});},
     pause(value=true){paused=value;if(value&&state.phase==='raid')state.phase='paused';else if(!value&&state.phase==='paused')state.phase='raid';send({type:'input',seq:++sequence,input:{yaw:state.player.yaw,pitch:state.player.pitch}});},
     ready(ready){send({type:'ready',ready:!!ready});},start(){send({type:'start',difficulty:info.difficulty||'normal'});},
     leave(){closed=true;clearInterval(watchdog);send({type:'leave'});socket?.close();change({status:'offline',players:[],message:'',id:null,hostId:null});},

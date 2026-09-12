@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCoopSession, sanitizeCoopInput } from '../src/coop-session.js';
 import { EXTRACTIONS, RELAY } from '../src/layout.js';
+import { approachContainer } from './container-helpers.js';
 
 const step = (session, seconds) => { for (let i = 0; i < Math.ceil(seconds * 60); i++) session.update(1 / 60); };
 async function setup(t, started = true) {
@@ -17,7 +18,11 @@ function angle(game, enemy) {
   return { yaw: Math.atan2(-dx, -dz), pitch: Math.atan2(1.69 - p.y - 1.65, Math.hypot(dx, dz)) };
 }
 function take(session, id, game, item) {
-  game.teleport(item.x, item.z); session.action(id, 'interact'); step(session, .1);
+  const container = game.state.containers.find(value => value.items.includes(item));
+  if (container) {
+    approachContainer(game, container); session.action(id, 'interact'); step(session, 1.6);
+    session.action(id, 'take', item.id, container.id); step(session, .1);
+  } else { game.teleport(item.x, item.z); session.action(id, 'interact'); step(session, .1); }
 }
 
 test('lobby reserves exactly two slots, requires both ready and starts kits only once', async t => {
@@ -30,6 +35,7 @@ test('lobby reserves exactly two slots, requires both ready and starts kits only
   assert.equal(ga.state.profile.credits, 750); assert.equal(gb.state.profile.credits, 1150);
   assert.equal(ga.state.profile.raids, 3); assert.equal(gb.state.profile.raids, 9);
   assert.equal(ga.state.enemies, gb.state.enemies); assert.equal(ga.state.loot, gb.state.loot);
+  assert.equal(ga.state.containers, gb.state.containers);
   assert.throws(() => session.start(a), /bereits/);
   assert.equal(gb.state.profile.credits, 1150);
   assert.ok(Math.hypot(ga.state.player.x - gb.state.player.x, ga.state.player.z - gb.state.player.z) > 2);
@@ -70,14 +76,17 @@ test('shared damage and death occur once while teammates cannot hurt each other'
 
 test('simultaneous looting has one owner and a dropped item can be passed to the partner', async t => {
   const { session, a, b, ga, gb } = await setup(t); quiet(ga);
-  const item = ga.state.loot[0]; ga.teleport(item.x, item.z); gb.teleport(item.x, item.z);
-  session.action(a, 'interact'); session.action(b, 'interact'); step(session, .1);
+  const container = ga.state.containers[0], item = container.items[0];
+  approachContainer(ga, container); approachContainer(gb, container);
+  session.action(a, 'interact'); session.action(b, 'interact'); step(session, 1.6);
+  session.action(a, 'take', item.id, container.id); session.action(b, 'take', item.id, container.id); step(session, .1);
   assert.equal(ga.state.raid.loot.length, 1); assert.equal(gb.state.raid.loot.length, 0);
   assert.equal(ga.state.raid.value + gb.state.raid.value, item.value);
   assert.equal(session.action(b, 'drop', item.id), true); step(session, .1);
   assert.equal(item.taken, true, 'A partner cannot drop another player’s item');
   session.action(a, 'drop', item.id); step(session, .1);
-  assert.equal(item.taken, false); assert.equal(ga.state.raid.value, 0);
+  const dropped = ga.state.loot.find(value => value.id === item.id);
+  assert.equal(dropped.taken, false); assert.equal(item.taken, true); assert.equal(ga.state.raid.value, 0);
   session.action(b, 'interact'); step(session, .1);
   assert.equal(ga.state.raid.loot.length, 0); assert.equal(gb.state.raid.loot[0].id, item.id);
   assert.equal(ga.state.loot.filter(value => value.id === item.id).length, 1);
@@ -85,7 +94,7 @@ test('simultaneous looting has one owner and a dropped item can be passed to the
 
 test('each player extracts personal goods and bonus independently; the other raid continues', async t => {
   const { session, a, b, ga, gb } = await setup(t); quiet(ga);
-  const [first, second] = ga.state.loot;
+  const [first, second] = ga.state.containers[0].items;
   take(session, a, ga, first); take(session, b, gb, second);
   ga.state.raid.kills = 2;
   const exit = EXTRACTIONS[0]; ga.teleport(exit.x, exit.z); session.action(a, 'interact'); step(session, 8.2);
@@ -103,12 +112,13 @@ test('each player extracts personal goods and bonus independently; the other rai
 
 test('disconnect loses carried loot and releases it for the surviving partner', async t => {
   const { session, a, b, ga, gb } = await setup(t); quiet(ga);
-  const item = ga.state.loot[0]; take(session, a, ga, item);
+  const item = ga.state.containers[0].items[0]; take(session, a, ga, item);
   assert.equal(session.leave(a), true); assert.equal(session.leave(a), false);
   assert.equal(ga.state.phase, 'dead'); assert.equal(ga.state.profile.intake.length, 0);
-  assert.equal(ga.state.raid.loot.length, 0); assert.equal(item.taken, false);
+  const dropped = ga.state.loot.find(value => value.id === item.id);
+  assert.equal(ga.state.raid.loot.length, 0); assert.equal(item.taken, true); assert.equal(dropped.taken, false);
   assert.equal(session.phase, 'raid'); assert.equal(gb.state.phase, 'raid');
-  take(session, b, gb, item); assert.equal(gb.state.raid.loot.length, 1);
+  take(session, b, gb, dropped); assert.equal(gb.state.raid.loot.length, 1);
   assert.equal(session.snapshot(b).state.teammates[0].phase, 'disconnected');
 });
 
@@ -139,7 +149,45 @@ test('snapshots expose only own profile and copies cannot mutate authoritative s
   const snap = session.snapshot(a);
   assert.equal(snap.state.multiplayer, true); assert.equal(snap.state.playerId, a);
   assert.equal('profile' in snap.state.teammates[0], false);
-  snap.state.player.hp = 0; snap.state.profile.credits = 9999; snap.state.loot[0].taken = true;
-  assert.equal(ga.state.player.hp, 100); assert.equal(ga.state.profile.credits, 750); assert.equal(ga.state.loot[0].taken, false);
+  snap.state.player.hp = 0; snap.state.profile.credits = 9999; snap.state.containers[0].items[0].taken = true;
+  assert.equal(ga.state.player.hp, 100); assert.equal(ga.state.profile.credits, 750); assert.equal(ga.state.containers[0].items[0].taken, false);
   assert.deepEqual(session.snapshot(a).events, []);
+});
+
+test('container search belongs to each player while opened contents are shared and close preserves queued claims', async t => {
+  const { session, a, b, ga, gb } = await setup(t); quiet(ga);
+  const container = ga.state.containers[0], item = container.items[0];
+  approachContainer(ga, container); approachContainer(gb, container);
+  session.action(a, 'interact'); step(session, .5);
+  assert.equal(session.snapshot(a).state.activeContainerId, container.id);
+  assert.ok(session.snapshot(a).state.containerSearchRemaining > .9);
+  assert.equal(session.snapshot(b).state.activeContainerId, null);
+  assert.equal(session.snapshot(b).state.containerSearchRemaining, 0);
+  assert.equal(session.snapshot(b).state.containers[0].opened, true);
+  assert.equal(ga.takeContainerItem(container.id, item.id), false);
+  step(session, 1.1);
+  assert.equal(container.searched, true);
+  assert.equal(session.action(a, 'take', item.id, container.id), true);
+  assert.equal(session.action(a, 'closeContainer'), true, 'Close must bypass the claim cadence');
+  step(session, .1);
+  assert.equal(ga.state.activeContainerId, null); assert.equal(ga.state.raid.loot[0].id, item.id);
+  assert.equal(gb.state.raid.loot.length, 0);
+  assert.equal(session.action(b, 'interact'), true); step(session, .1);
+  assert.equal(gb.state.containerSearchRemaining, 0);
+  assert.equal(session.action(b, 'takeAll', undefined, container.id), true); step(session, .1);
+  assert.equal(gb.state.raid.loot.length, container.items.length - 1);
+  assert.equal(new Set([...ga.state.raid.loot, ...gb.state.raid.loot].map(value => value.id)).size, container.items.length);
+});
+
+test('death creates a recoverable ground instance for a container item exactly once', async t => {
+  const { session, a, b, ga, gb } = await setup(t); quiet(ga);
+  const item = ga.state.containers[0].items[0]; take(session, a, ga, item);
+  ga.receiveDamage(1000, { x: 0, z: 0 }); step(session, .1);
+  assert.equal(ga.state.phase, 'dead'); assert.equal(ga.state.activeContainerId, null);
+  const dropped = ga.state.loot.find(value => value.id === item.id);
+  assert.ok(dropped && !dropped.taken); assert.equal(item.taken, true);
+  assert.equal(ga.state.loot.filter(value => value.id === item.id).length, 1);
+  session.leave(a); step(session, .1);
+  assert.equal(ga.state.loot.filter(value => value.id === item.id).length, 1);
+  take(session, b, gb, dropped); assert.equal(gb.state.raid.loot[0].id, item.id);
 });

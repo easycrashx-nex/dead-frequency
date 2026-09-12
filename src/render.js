@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { CONTAINER_TYPES } from './loot-catalog.js';
 
 // The renderer is deliberately a view adapter. No simulation objects are mutated.
 const UP = new THREE.Vector3(0, 1, 0);
@@ -927,6 +928,137 @@ function makeLootField(scene) {
   };
 }
 
+function makeContainerField(scene, spots = []) {
+  const group = new THREE.Group(); group.name = 'searchable-containers'; scene.add(group);
+  const models = new Map(), entries = new Map();
+  const transform = new THREE.Object3D(), hinge = new THREE.Object3D();
+  const baseMatrix = new THREE.Matrix4(), lidMatrix = new THREE.Matrix4(), hiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+  const indicatorColor = new THREE.Color();
+  const statusMaterial = new THREE.MeshStandardMaterial({ map: signTexture('DURCHSUCHT', 'BESTAND GEPRÜFT', '#c7c5ae', '#364540'), roughness: .9 });
+  const indicatorMaterial = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#9bbcb0', emissiveIntensity: .24, roughness: .6 });
+
+  function marking(type, top = false) {
+    return canvasTexture(top ? 512 : 1024, top ? 512 : 320, (ctx, w, h) => {
+      ctx.fillStyle = '#243531'; ctx.fillRect(0, 0, w, h); ctx.fillStyle = type.color; ctx.fillRect(0, 0, top ? 15 : 24, h);
+      const size = top ? 218 : 122, cx = top ? 256 : 114, cy = top ? 212 : 151;
+      ctx.save(); ctx.translate(cx, cy); ctx.scale(size / 100, size / 100); ctx.strokeStyle = '#e1e5cc'; ctx.fillStyle = '#e1e5cc'; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
+      if (type.id === 'tools') { ctx.moveTo(-30, 32); ctx.lineTo(20, -18); ctx.moveTo(5, -36); ctx.lineTo(4, -18); ctx.lineTo(22, -1); ctx.lineTo(39, -4); ctx.stroke(); }
+      else if (type.id === 'electronics') {
+        ctx.strokeRect(-24, -24, 48, 48); ctx.fillRect(-11, -11, 22, 22);
+        for (const p of [-15, 0, 15]) { ctx.beginPath(); ctx.moveTo(p, -37); ctx.lineTo(p, -26); ctx.moveTo(p, 26); ctx.lineTo(p, 37); ctx.moveTo(-37, p); ctx.lineTo(-26, p); ctx.moveTo(26, p); ctx.lineTo(37, p); ctx.stroke(); }
+      } else if (type.id === 'medical') { ctx.fillRect(-12, -37, 24, 74); ctx.fillRect(-37, -12, 74, 24); }
+      else if (type.id === 'ammo') {
+        for (const x of [-24, 0, 24]) { ctx.beginPath(); ctx.moveTo(x - 7, 31); ctx.lineTo(x - 7, -13); ctx.lineTo(x, -32); ctx.lineTo(x + 7, -13); ctx.lineTo(x + 7, 31); ctx.closePath(); ctx.fill(); }
+      } else if (type.id === 'provisions') { ctx.arc(0, 0, 29, 0, TAU); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-41, -34); ctx.lineTo(-41, 34); ctx.moveTo(42, -34); ctx.lineTo(42, 34); ctx.moveTo(-48, -34); ctx.lineTo(-48, -13); ctx.lineTo(-35, -13); ctx.lineTo(-35, -34); ctx.stroke(); }
+      else if (type.id === 'industrial') {
+        ctx.arc(0, 0, 26, 0, TAU); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 0, 9, 0, TAU); ctx.stroke();
+        for (let i = 0; i < 8; i++) { ctx.save(); ctx.rotate(i * TAU / 8); ctx.fillRect(-6, -39, 12, 16); ctx.restore(); }
+      } else { ctx.moveTo(0, -39); ctx.lineTo(32, -25); ctx.lineTo(27, 14); ctx.lineTo(0, 38); ctx.lineTo(-27, 14); ctx.lineTo(-32, -25); ctx.closePath(); ctx.stroke(); ctx.fillRect(-6, -14, 12, 27); }
+      ctx.restore(); ctx.fillStyle = '#e1e5cc'; ctx.font = `700 ${top ? 36 : 71}px Bahnschrift, Arial`; ctx.textAlign = top ? 'center' : 'left';
+      ctx.fillText(type.name.toUpperCase(), top ? w / 2 : 224, top ? 394 : 148, top ? w - 58 : w - 255);
+      ctx.fillStyle = type.color; ctx.font = `${top ? 22 : 29}px Bahnschrift, Arial`;
+      ctx.fillText(top ? 'NORDWERK / VERSORGUNG' : type.description.toUpperCase(), top ? w / 2 : 227, top ? 444 : 218, top ? w - 50 : w - 265);
+      if (!top) { ctx.fillStyle = '#9aa895'; for (let i = 0; i < 28; i++) ctx.fillRect(228 + i * 11, 261, i % 3 ? 5 : 8, 22); }
+    });
+  }
+  function instanced(geometry, material, count, shadows = true) {
+    const mesh = new THREE.InstancedMesh(geometry, material, count); mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.castShadow = shadows; mesh.receiveShadow = true; mesh.frustumCulled = false; group.add(mesh); return mesh;
+  }
+  for (const type of CONTAINER_TYPES) {
+    const locations = spots.filter(spot => spot.type === type.id); if (!locations.length) continue;
+    const count = locations.length, template = new THREE.Group();
+    const bodyColor = { tools: '#ab622f', electronics: '#375965', medical: '#c9d3bb', ammo: '#687951', provisions: '#9e8158', industrial: '#ab8535', security: '#313c45' }[type.id];
+    const body = coloredPart(template, (b, c) => {
+      b.box(c('#263831'), [0, .105, 0], [.97, .13, .97]);
+      for (const s of [-1, 1]) {
+        b.box(c(bodyColor), [s * .46, .455, 0], [.08, .67, .98]);
+        b.box(c(bodyColor), [0, .455, s * .46], [.86, .67, .08]);
+        b.box(c('#222f2b'), [s * .41, .79, 0], [.09, .045, .91]);
+        b.box(c('#222f2b'), [0, .79, s * .41], [.84, .045, .09]);
+        for (const z of [-.38, .38]) b.box(c('#2c3831'), [s * .39, .035, z], [.16, .07, .16]);
+        b.box(c('#bcc2ac'), [s * .32, .69, .516], [.105, .23, .055]);
+        b.box(c('#303e36'), [s * .32, .69, .553], [.055, .11, .026]);
+        b.box(c('#b1bba8'), [s * .514, .55, 0], [.06, .15, .36]);
+        b.box(c('#293930'), [s * .548, .55, 0], [.025, .055, .23]);
+      }
+      b.box(c('#172820'), [0, .177, 0], [.82, .035, .82]);
+      if (type.id === 'tools') for (const y of [.28, .42]) { b.box(c('#543d29'), [0, y, .511], [.8, .015, .012]); b.box(c('#b9c0aa'), [0, y + .07, .525], [.24, .025, .026]); }
+      if (type.id === 'electronics' || type.id === 'security') for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(c('#222d2b'), [sx * .443, .47, sz * .445], [.13, .65, .13]);
+      if (type.id === 'medical') for (const s of [-1, 1]) { b.box(c(type.color), [s * .506, .45, 0], [.018, .39, .13]); b.box(c(type.color), [s * .507, .45, 0], [.02, .13, .39]); }
+      if (type.id === 'ammo') for (const x of [-.36, .36]) b.box(c('#9f9b61'), [x, .44, .514], [.07, .6, .014]);
+      if (type.id === 'provisions') for (let y = .25; y < .75; y += .16) for (const s of [-1, 1]) b.box(c('#635d40'), [s * .506, y, 0], [.018, .018, .82]);
+      if (type.id === 'industrial') for (let x = -.4; x < .45; x += .16) b.box(c('#343b2b'), [x, .28, .518], [.08, .16, .018], [0, 0, -.36]);
+      if (type.id === 'security') { b.box(c('#8995a0'), [-.41, .43, .519], [.14, .33, .039]); b.box(c('#262e34'), [-.41, .48, .547], [.07, .12, .026]); }
+    });
+    const lid = coloredPart(template, (b, c) => {
+      b.box(c('#26342d'), [0, .018, .47], [.99, .04, .99]);
+      b.box(c(bodyColor), [0, .082, .47], [.995, .106, .995]);
+      b.box(c('#536157'), [0, .149, .47], [.81, .027, .77]);
+      for (const x of [-.34, .34]) {
+        b.box(c(type.id === 'security' ? '#85929a' : '#293a32'), [x, .105, .47], [.065, .17, 1.005]);
+        b.cylinder(c('#9ba796'), [x, .015, 0], .042, .16, .042, [0, 0, Math.PI / 2], 8);
+      }
+      if (type.id === 'provisions') for (let z = .12; z < .92; z += .17) b.box(c('#b09a6a'), [0, .17, z], [.91, .035, .12]);
+      b.box(c('#243531'), [0, type.id === 'provisions' ? .198 : .167, .405], [.575, .012, .525]);
+      if (type.id === 'industrial' || type.id === 'electronics') for (const x of [-.46, .46]) for (const z of [.065, .88]) b.box(c('#263630'), [x, .12, z], [.13, .18, .17]);
+      for (const x of [-.12, .12]) b.box(c('#29372f'), [x, .157, .79], [.045, .08, .095]);
+      b.box(c('#bdc0aa'), [0, .182, .79], [.24, .035, .048]);
+    });
+    const cargo = coloredPart(template, (b, c) => {
+      if (type.id === 'ammo') for (let x = -.29; x < .3; x += .115) for (const z of [-.2, .05, .28]) { b.cylinder(c('#ab9658'), [x, .4, z], .04, .37, .037, [0, 0, 0], 8); b.cylinder(c('#bcbbaa'), [x, .62, z], .036, .1, .002, [0, 0, 0], 8); }
+      else if (type.id === 'provisions') for (const x of [-.23, .07, .29]) for (const z of [-.22, .19]) { b.cylinder(c(x > 0 ? '#a07f4b' : '#56716c'), [x, .38, z], .105, .34, .105, [0, 0, 0], 12); b.cylinder(c('#afb6a0'), [x, .558, z], .108, .025, .108, [0, 0, 0], 12); }
+      else if (type.id === 'tools') for (let i = 0; i < 4; i++) { const x = -.27 + i * .17; b.box(c('#94a79a'), [x, .31, 0], [.045, .055, .57], [0, i % 2 ? .15 : -.1, 0]); b.cylinder(c('#a6b5a3'), [x, .31, -.27], .078, .052, .078, [0, 0, 0], 8); b.box(c('#9d653c'), [x, .33, .23], [.08, .075, .22]); }
+      else if (type.id === 'industrial') for (const x of [-.22, .23]) { b.cylinder(c('#607267'), [x, .33, 0], .19, .28, .19, [0, 0, 0], 12); b.cylinder(c('#a3aa92'), [x, .485, 0], .14, .035, .14, [0, 0, 0], 12); b.cylinder(c('#26382c'), [x, .51, 0], .055, .03, .055, [0, 0, 0], 10); }
+      else for (let i = 0; i < 3; i++) {
+        const x = -.27 + i * .27, tone = type.id === 'medical' ? '#cbd3b7' : type.id === 'electronics' ? '#47765c' : '#aaab87';
+        b.box(c(tone), [x, .4, 0], [.23, .34, .58]);
+        if (type.id === 'medical') { b.box(c('#a85d51'), [x, .577, 0], [.07, .016, .22]); b.box(c('#a85d51'), [x, .578, 0], [.17, .018, .07]); }
+        else if (type.id === 'electronics') for (const z of [-.16, .09]) b.box(c('#263a31'), [x, .586, z], [.13, .035, .15]);
+        else b.box(c('#777e68'), [x, .577, 0], [.24, .018, .065]);
+      }
+    });
+    const frontGeometry = new THREE.PlaneGeometry(.67, .205); frontGeometry.translate(0, .483, .522);
+    const topGeometry = new THREE.PlaneGeometry(.55, .5); topGeometry.rotateX(-Math.PI / 2); topGeometry.translate(0, type.id === 'provisions' ? .206 : .175, .405);
+    const frontMaterial = new THREE.MeshStandardMaterial({ map: marking(type), roughness: .8, emissive: '#b3c6a3', emissiveIntensity: .09 });
+    const topMaterial = new THREE.MeshStandardMaterial({ map: marking(type, true), roughness: .83, emissive: '#b3c6a3', emissiveIntensity: .06 });
+    const statusGeometry = new THREE.PlaneGeometry(.46, .09); statusGeometry.translate(0, .235, .529);
+    const indicatorGeometry = new THREE.BoxGeometry(.13, .025, .016); indicatorGeometry.translate(.32, .605, .537);
+    const meshes = { body: instanced(body.geometry, body.material, count), lid: instanced(lid.geometry, lid.material, count), cargo: instanced(cargo.geometry, cargo.material, count), front: instanced(frontGeometry, frontMaterial, count, false), top: instanced(topGeometry, topMaterial, count, false), status: instanced(statusGeometry, statusMaterial, count, false), indicator: instanced(indicatorGeometry, indicatorMaterial, count, false) };
+    models.set(type.id, meshes);
+    locations.forEach((spot, index) => entries.set(spot.id, { spot, index, meshes, open: 0, type }));
+  }
+  let visibleCount = 0, openedCount = 0, emptyCount = 0;
+  function reset() { for (const entry of entries.values()) entry.open = 0; }
+  return {
+    reset,
+    stats() { return { containerTypes: models.size, renderedContainers: visibleCount, openedContainers: openedCount, emptyContainers: emptyCount,
+      containerPoses: [...entries].filter(([, entry]) => entry.open > .001).map(([id, entry]) => ({ id, open: entry.open, lidAngle: -entry.open * Math.PI * .61 })) }; },
+    update(containers, dt, visible, paused = false) {
+      group.visible = visible; visibleCount = openedCount = emptyCount = 0;
+      const present = new Set();
+      for (const state of containers || []) {
+        const entry = entries.get(state.id); if (!entry) continue;
+        present.add(state.id); const { spot, index, meshes, type } = entry;
+        if (!paused) entry.open = damp(entry.open, state.opened ? 1 : 0, 10, dt);
+        const empty = !!state.searched && !(state.items || []).some(item => !item.taken);
+        if (visible) { visibleCount++; if (state.opened) openedCount++; if (empty) emptyCount++; }
+        transform.position.set(spot.x, .003, spot.z); transform.rotation.set(0, spot.rotation || 0, 0); transform.scale.set(spot.w, spot.h, spot.d); transform.updateMatrix(); baseMatrix.copy(transform.matrix);
+        meshes.body.setMatrixAt(index, baseMatrix); meshes.front.setMatrixAt(index, baseMatrix); meshes.indicator.setMatrixAt(index, baseMatrix);
+        meshes.status.setMatrixAt(index, state.searched ? baseMatrix : hiddenMatrix);
+        meshes.cargo.setMatrixAt(index, !empty && entry.open > .08 ? baseMatrix : hiddenMatrix);
+        indicatorColor.set(empty ? '#4a5750' : state.searched ? '#b6ae76' : type.color); meshes.indicator.setColorAt(index, indicatorColor);
+        // Scale the physical lid before rotating it around the northern hinge.
+        transform.scale.set(1, 1, 1); transform.updateMatrix();
+        hinge.position.set(0, spot.h * .82, -spot.d * .47); hinge.rotation.set(-entry.open * Math.PI * .61, 0, 0); hinge.scale.set(spot.w, spot.h, spot.d); hinge.updateMatrix();
+        lidMatrix.multiplyMatrices(transform.matrix, hinge.matrix); meshes.lid.setMatrixAt(index, lidMatrix); meshes.top.setMatrixAt(index, lidMatrix);
+      }
+      for (const [id, entry] of entries) if (!present.has(id)) for (const mesh of Object.values(entry.meshes)) mesh.setMatrixAt(entry.index, hiddenMatrix);
+      for (const meshes of models.values()) for (const mesh of Object.values(meshes)) { mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; }
+    },
+  };
+}
+
 export function createRenderer(canvas, layout) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance', stencil: false });
   renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -947,6 +1079,7 @@ export function createRenderer(canvas, layout) {
   const fill = new THREE.DirectionalLight('#b9dcda', .65); fill.position.set(35, 20, 35); scene.add(fill);
   const world = buildWorld(scene, layout, mats); const weapon = makeWeapon(camera, mats); const effects = makeEffects(scene);
   const enemies = new Map(); const teammates = new Map(); const lootField = makeLootField(scene);
+  const containerField = makeContainerField(scene, layout.containers);
   const dir = new THREE.Vector3(); const tmp = new THREE.Vector3(); const hubTarget = new THREE.Vector3();
   let elapsed = 0; let lastState = null; let lastPhase = ''; let fps = 60; let shake = 0; let quality = 'high';
   const settings = { quality: 'high', renderScale: 1, shadows: 'auto', particles: true, brightness: 1, contrast: 1, saturation: 1,
@@ -1019,6 +1152,7 @@ export function createRenderer(canvas, layout) {
     const p = state.player || {}; const phase = state.phase; const isRaidView = ['raid', 'paused', 'dead', 'extracted'].includes(phase);
     if (phase === 'raid' && ['hub', '', 'extracted', 'dead'].includes(lastPhase)) {
       clearEntities();
+      containerField.reset();
       weapon.recoil = weapon.kick = weapon.flashTime = weapon.aim = weapon.crouch = weapon.bob = weapon.reloadClock = 0;
       weapon.sprintBlend = weapon.moveBlend = weapon.bobAmplitude = 0;
       weapon.rig.position.set(.265, -.315, -.49); weapon.rig.rotation.set(0, 0, 0);
@@ -1151,6 +1285,7 @@ export function createRenderer(canvas, layout) {
     }
     for (const [id, model] of teammates) if (!teamPresent.has(id)) { scene.remove(model.root); disposeGroup(model.root); teammates.delete(id); }
     lootField.update(state.loot, elapsed, phase !== 'hub');
+    containerField.update(state.containers, dt, phase !== 'hub', phase === 'paused' && !state.multiplayer);
     effects.update(dt);
   }
 
@@ -1196,7 +1331,7 @@ export function createRenderer(canvas, layout) {
     setQuality,
     setFov(value) { setSettings({ fov: Number.isFinite(value) ? value : 82 }); },
     getAimDirection() { const p = lastState?.player; if (p) return { x: -Math.sin(p.yaw || 0) * Math.cos(p.pitch || 0), y: Math.sin(p.pitch || 0), z: -Math.cos(p.yaw || 0) * Math.cos(p.pitch || 0) }; camera.getWorldDirection(dir); return { x: dir.x, y: dir.y, z: dir.z }; },
-    stats() { return { settings: { ...settings }, pixelRatio: renderer.getPixelRatio(), renderWidth: canvas.width, renderHeight: canvas.height, shadowsEnabled: renderer.shadowMap.enabled, shadowMapSize: renderer.shadowMap.enabled ? sun.shadow.mapSize.x : 0, dustVisible: dust.visible, exposure: renderer.toneMappingExposure, colorFilter: canvas.style.filter, weaponVisible: weapon.rig.visible, cameraRoll: camera.rotation.z, weaponX: weapon.rig.position.x, weaponY: weapon.rig.position.y, teammates: teammates.size, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, fps: Math.round(fps), quality, frameMs: Math.round(frameDt * 10000) / 10, cameraPitch: camera.rotation.x, cameraYaw: camera.rotation.y, cameraY: camera.position.y, fov: camera.fov, sprintBlend: weapon.sprintBlend, moveBlend: weapon.moveBlend, weaponPitch: weapon.rig.rotation.x, weaponRoll: weapon.rig.rotation.z, bobAmplitude: weapon.bobAmplitude, headBobAmplitude: weapon.bobAmplitude * settings.headBob, weaponBobAmplitude: weapon.bobAmplitude * settings.weaponSway, ...lootField.stats() }; },
+    stats() { return { settings: { ...settings }, pixelRatio: renderer.getPixelRatio(), renderWidth: canvas.width, renderHeight: canvas.height, shadowsEnabled: renderer.shadowMap.enabled, shadowMapSize: renderer.shadowMap.enabled ? sun.shadow.mapSize.x : 0, dustVisible: dust.visible, exposure: renderer.toneMappingExposure, colorFilter: canvas.style.filter, weaponVisible: weapon.rig.visible, cameraRoll: camera.rotation.z, weaponX: weapon.rig.position.x, weaponY: weapon.rig.position.y, teammates: teammates.size, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, fps: Math.round(fps), quality, frameMs: Math.round(frameDt * 10000) / 10, cameraPitch: camera.rotation.x, cameraYaw: camera.rotation.y, cameraY: camera.position.y, fov: camera.fov, sprintBlend: weapon.sprintBlend, moveBlend: weapon.moveBlend, weaponPitch: weapon.rig.rotation.x, weaponRoll: weapon.rig.rotation.z, bobAmplitude: weapon.bobAmplitude, headBobAmplitude: weapon.bobAmplitude * settings.headBob, weaponBobAmplitude: weapon.bobAmplitude * settings.weaponSway, ...lootField.stats(), ...containerField.stats() }; },
     dispose() { if (disposed) return; disposed = true; disposeGroup(scene); environment.dispose(); renderer.dispose(); canvas.style.filter = ''; },
   };
 }

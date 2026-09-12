@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { INTERIORS, COLLIDERS, OBSTACLES, SPAWN, layout } from '../src/layout.js';
 import { createGame, findPath, hasLineOfSight, isWalkable, traceObstacle } from '../src/simulation.js';
+import { takeFirstContainerItem } from './container-helpers.js';
 
 async function setup(t, externalAI = false) {
   const game = await createGame(null, { externalAI }); t.after(() => game.dispose());
@@ -85,15 +86,15 @@ test('solid wall sections block movement, sight and hitscan while door openings 
   }
 });
 
-test('grid routes reach every entrance and loot spot without cutting through thin wall segments', () => {
+test('grid routes reach every entrance and container approach without cutting through thin wall segments', () => {
   for (const room of INTERIORS) {
     for (const door of room.doors) checkRoute(SPAWN, findPath(SPAWN, door.inside), `${room.name}/${door.side}`);
     const west = { x: room.x - room.w / 2 - 2, z: room.z };
     checkRoute(west, findPath(west, room), `${room.name}/west approach`);
-    for (const spot of room.lootSpots) {
+    for (const spot of layout.containers.filter(container => container.interiorId === room.id)) {
       const route = findPath(room.doors[1].outside, spot);
       checkRoute(room.doors[1].outside, route, `${room.name}/loot`);
-      assert.ok(hasLineOfSight({ ...route.at(-1), y: 1.1 }, { ...spot, y: .55 }), `${room.name}: loot hidden from its reachable grid cell`);
+      assert.ok(hasLineOfSight({ ...route.at(-1), y: 1.65 }, { ...spot, y: spot.h + .08 }), `${room.name}: container hidden from its reachable grid cell`);
     }
   }
 });
@@ -131,16 +132,15 @@ test('off-grid agents and targets beside a thin wall connect to the grid on the 
   assert.ok(Math.hypot(guard.x - inside.x, guard.z - inside.z) < 1.6, `Guard remained stuck at ${guard.x},${guard.z}`);
 });
 
-test('all fourteen interior treasures spawn on reachable ground and can be collected', async t => {
+test('all ten interior containers replace ground treasures and offer reachable contents', async t => {
   const game = await setup(t); game.state.raid.capacity = 30;
-  for (const room of INTERIORS) for (const spot of room.lootSpots) {
-    const items = game.state.loot.filter(item => item.x === spot.x && item.z === spot.z);
-    assert.equal(items.length, 1); const item = items[0];
-    assert.ok(game.teleport(spot.x, spot.z), `${room.name}: loot inside a fixture`);
-    assert.equal(game.state.prompt?.id, item.id);
-    assert.equal(game.interact(), true); assert.equal(item.taken, true);
+  assert.deepEqual(game.state.loot, []);
+  for (const room of INTERIORS) {
+    const containers = game.state.containers.filter(container => container.interiorId === room.id);
+    assert.ok(containers.length);
+    for (const container of containers) takeFirstContainerItem(game, container);
   }
-  assert.equal(game.state.raid.loot.length, 14);
+  assert.equal(game.state.raid.loot.length, 10);
 });
 
 test('loot cannot be collected through thin walls or dropped across them', async t => {

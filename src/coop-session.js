@@ -1,4 +1,4 @@
-import { createGame, validateProfile, KIT_COSTS, isWalkable } from './simulation.js';
+import { createGame, validateProfile, KIT_COSTS, isWalkable, hasLineOfSight } from './simulation.js';
 import { SPAWN } from './layout.js';
 
 export const COOP_PROTOCOL = 1;
@@ -24,7 +24,7 @@ export function sanitizeCoopInput(raw, player) {
     aim: raw.aim === true, fire: raw.fire === true };
 }
 
-// Two server-owned player controllers share one enemy array and one loot array.
+// Two server-owned controllers share enemies, containers and dynamic ground drops.
 // Only this coordinator advances AI. Clients never provide position or damage.
 export function createCoopSession({ seed } = {}) {
   const players = new Map();
@@ -42,17 +42,17 @@ export function createCoopSession({ seed } = {}) {
   function spillLoot(player) {
     const { state } = player.game;
     for (const item of state.raid.loot) {
-      const worldItem = state.loot.find(value => value.id === item.id);
-      if (!worldItem) continue;
+      let worldItem = state.loot.find(value => value.id === item.id);
       let spot = null;
       for (const radius of [0, 1, 2, 3, 5]) {
         for (let i = 0; i < 12; i++) {
           const x = state.player.x + Math.cos(i * Math.PI / 6) * radius;
           const z = state.player.z + Math.sin(i * Math.PI / 6) * radius;
-          if (isWalkable(x, z, .3)) { spot = { x, z }; break; }
+          if (isWalkable(x, z, .3) && hasLineOfSight({ ...state.player, y: state.player.y + 1.1 }, { x, y: .55, z })) { spot = { x, z }; break; }
         }
         if (spot) break;
       }
+      if (!worldItem) { worldItem = { ...item, x: state.player.x, z: state.player.z }; state.loot.push(worldItem); }
       Object.assign(worldItem, spot ?? {}, { taken: false });
     }
     state.raid.loot = []; state.raid.value = 0;
@@ -74,7 +74,7 @@ export function createCoopSession({ seed } = {}) {
         for (const other of players.values()) {
           if (other.id === source.id) continue;
           if (event.type === 'shot') queue(other.id, { ...event, type: 'teammateShot', playerId: source.id });
-          else if (['enemyShot', 'relay', 'drop'].includes(event.type)) queue(other.id, { ...event, playerId: source.id });
+          else if (['enemyShot', 'relay', 'drop', 'containerOpen', 'containerSearched'].includes(event.type)) queue(other.id, { ...event, playerId: source.id });
           else if (event.type === 'extract') queue(other.id, { type: 'notice', text: `${source.name} hat erfolgreich extrahiert.` });
         }
       }
@@ -126,7 +126,7 @@ export function createCoopSession({ seed } = {}) {
     for (const p of players.values()) {
       if (!p.game.startRaid({ difficulty, kit: p.kit, seed: raidSeed })) throw new Error('Raid konnte nicht gestartet werden.');
       if (!primary) primary = p.game;
-      else { p.game.state.enemies = primary.state.enemies; p.game.state.loot = primary.state.loot; }
+      else { p.game.state.enemies = primary.state.enemies; p.game.state.loot = primary.state.loot; p.game.state.containers = primary.state.containers; }
       p.game.teleport(SPAWN.x + index * 2.2, SPAWN.z + index * .8);
       p.input = neutral(p.game.state.player); p.jumpQueued = p.jumpHeld = false; p.lastInputAt = time;
       index++;
@@ -143,13 +143,21 @@ export function createCoopSession({ seed } = {}) {
     player.jumpHeld = sanitized.jump;
     return true;
   }
-  function action(id, actionName, itemId) {
+  function action(id, actionName, itemId, containerId) {
     const player = member(id);
     if (phase !== 'raid' || player.game.state.phase !== 'raid') return false;
-    if (!['reload', 'heal', 'interact', 'drop'].includes(actionName)) throw new Error('Unbekannte Aktion.');
-    if (actionName === 'drop' && (typeof itemId !== 'string' || itemId.length > 100)) return false;
+    if (!['reload', 'heal', 'interact', 'drop', 'take', 'takeAll', 'closeContainer'].includes(actionName)) throw new Error('Unbekannte Aktion.');
+    const validId = value => typeof value === 'string' && value.length > 0 && value.length <= 100;
+    if (['drop', 'take'].includes(actionName) && !validId(itemId)) return false;
+    if (['take', 'takeAll'].includes(actionName) && !validId(containerId)) return false;
+    // One pending close per player, after earlier claims, bypasses click cadence.
+    // The normal queue has 16 requests; these two reserved closes keep it bounded.
+    if (actionName === 'closeContainer') {
+      actions = actions.filter(request => request.id !== id || request.actionName !== 'closeContainer');
+      actions.push({ id, actionName }); return true;
+    }
     if (actions.length >= 16 || time - player.lastActionAt < .075) return false;
-    player.lastActionAt = time; actions.push({ id, actionName, itemId }); return true;
+    player.lastActionAt = time; actions.push({ id, actionName, itemId, containerId }); return true;
   }
   function update(dt = 1 / COOP_TICK_RATE) {
     if (disposed || phase !== 'raid' || !Number.isFinite(dt) || dt <= 0) return;
@@ -165,6 +173,8 @@ export function createCoopSession({ seed } = {}) {
       const player = players.get(request.id);
       if (!player?.connected || player.game.state.phase !== 'raid') continue;
       if (request.actionName === 'drop') player.game.dropItem(request.itemId);
+      else if (request.actionName === 'take') player.game.takeContainerItem(request.containerId, request.itemId);
+      else if (request.actionName === 'takeAll') player.game.takeAllContainerItems(request.containerId);
       else player.game[request.actionName]();
       synchronizeRelay();
     }

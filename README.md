@@ -1,4 +1,4 @@
-# DEAD FREQUENCY 1.5.0
+# DEAD FREQUENCY 1.6.0
 
 Ein Extraction-Shooter aus der Ego-Perspektive für Windows x64: allein offline oder zu zweit im Koop. Durchsuche den 300 × 300 Meter großen Sektor 07, bekämpfe Patrouillen, sichere Beute und handle nach der Extraktion damit.
 
@@ -16,7 +16,7 @@ Das Windows-ZIP einmal vollständig entpacken und `DEAD FREQUENCY.exe` starten. 
 4. Der Freund öffnet **05 KOOP → TEAM BEITRETEN**, fügt die Einladung ein und verbindet sich.
 5. Beide klicken **BEREIT MELDEN**; der Host klickt **KOOP-RAID STARTEN**. Falls das Spiel die Maus noch nicht übernommen hat, **FORTSETZEN** drücken.
 
-Beide sehen dieselben Gegner und dieselbe Beute. Eine Kiste kann nur einmal geplündert werden. Abgeworfene Rucksackgegenstände kann der Partner aufnehmen. Gesundheit, Munition, Ausdauer, Kits und Extraktionsrucksäcke bleiben getrennt. Es gibt kein Friendly Fire. Jeder fordert seine eigene Extraktion an und bleibt acht Sekunden in der Zone. Der blaue Operator und die Teamanzeige zeigen deinen Mitspieler.
+Beide sehen dieselben Gegner und dieselbe Beute. Jeder Gegenstand einer Kiste kann nur einmal entnommen werden. Abgeworfene Rucksackgegenstände kann der Partner aufnehmen. Gesundheit, Munition, Ausdauer, Kits und Extraktionsrucksäcke bleiben getrennt. Es gibt kein Friendly Fire. Jeder fordert seine eigene Extraktion an und bleibt acht Sekunden in der Zone. Der blaue Operator und die Teamanzeige zeigen deinen Mitspieler.
 
 **Im Koop läuft die Welt bei geöffnetem Menü oder Fensterwechsel weiter.** Bei einem Verbindungsabbruch scheidet der getrennte Spieler aus; seine ungesicherte Beute kann der Partner bergen. Wenn der Host das Team beendet oder die Anwendung schließt, endet die Verbindung für beide. Nach seiner eigenen Extraktion sollte der Host warten, bis der Kollege ebenfalls draußen ist. Beute aus einer bereits abgeschlossenen Extraktion bleibt erhalten.
 
@@ -27,6 +27,14 @@ Die Internet-Einladung läuft über den mitgelieferten Cloudflare-Tunnel, benöt
 Bei jedem normalen Start prüft der Launcher das neueste stabile [GitHub-Release](https://github.com/easycrashx-nex/dead-frequency/releases/latest). Eine neuere Version wird ohne Bestätigung heruntergeladen, anhand von SHA-256 geprüft und in einem separaten Versionsordner vorbereitet. Anschließend startet automatisch die neue Version. Es muss kein ZIP von Hand heruntergeladen oder entpackt werden. Während eines Raids wird kein Update eingespielt.
 
 Bei fehlendem Internet oder einem fehlerhaften Download startet die vorhandene Version. Frühere vollständige Installationen bleiben erhalten; ältere Releases ersetzen keine neuere Version. Spielstände liegen getrennt von den Programmdateien im Windows-Benutzerprofil. Für Updates werden ausschließlich öffentliche GitHub-Release-Dateien dieses Projekts verwendet; Zugangstoken werden nicht mitgeliefert.
+
+## Kisten und Beute
+
+Sieben Kistentypen enthalten passende Beutepools: Werkzeug, Elektronik, Sanität, Munition, Vorräte, Industrie und Sicherheit. Sie stehen an Arbeitsplätzen, in Versorgungsbereichen, an Frachtplätzen und in den fünf begehbaren Gebäuden. Insgesamt kommen genau 100 neue Handelsgegenstände zu den bisherigen neun hinzu; Munitions- und Sanitätskisten liefern zusätzlich Verbrauchsmaterial.
+
+Gehe nahe an eine Kiste und drücke **E**. Nach einer kurzen Suche kannst du Gegenstände einzeln oder mit **Alles nehmen** entnehmen. Im selben Fenster siehst du deinen Rucksack und kannst mit **Abwerfen** Platz schaffen. Escape oder die Schließen-Schaltfläche schließen die Kiste; Tab bewegt den Fokus zwischen ihren Schaltflächen. Während der Suche und beim Plündern läuft der Raid weiter.
+
+Der Inhalt wird einmal je Raid bestimmt. Wiederholtes Öffnen würfelt ihn nicht neu. Im Koop teilen beide Spieler den Kisteninhalt; ein Gegenstand landet bei genau einem Spieler. Abgeworfene Gegenstände bleiben als aufnehmbare Beute in der Welt. Alle neuen Handelsgegenstände lassen sich extrahieren, einlagern und auf dem vorhandenen Markt verkaufen.
 
 ## Begehbare Gebäude
 

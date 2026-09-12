@@ -1,4 +1,5 @@
 import { layout } from './layout.js';
+import { CONTAINER_TYPES, CONTAINER_SEARCH_SECONDS } from './loot-catalog.js';
 import { createCoopUI } from './coop-ui.js';
 import { createSettingsUI } from './settings-ui.js';
 import { BINDING_ACTIONS, defaultSettings, keyLabel } from './settings.js';
@@ -11,6 +12,7 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const rarityLabel = rarity => ({ common: 'STANDARD', uncommon: 'INDUSTRIE', rare: 'SELTEN', epic: 'HOCHWERTIG', legendary: 'KRITISCH' })[rarity] || 'FUNDSTÜCK';
 const emptyRows = (title, description) => `<div class="logistics-empty"><span aria-hidden="true">▤</span><strong>${title}</strong><p>${description}</p></div>`;
+const carriedItemsMarkup = items => items.length ? items.map((item, index) => `<div class="inventory-item rarity-${escapeHTML(item.rarity || 'common')}"><span class="inventory-slot">${String(index+1).padStart(2,'0')}</span><div><strong>${escapeHTML(item.name || 'Fracht')}</strong><small>${rarityLabel(item.rarity)}</small></div><span class="carried-value">${number(item.value)} <small>CR</small></span><button class="drop-item-button" data-drop-item="${escapeHTML(item.id)}" aria-label="${escapeHTML(item.name)} abwerfen">ABWERFEN <span>↓</span></button></div>`).join('') : `<div class="inventory-empty"><span>▤</span><strong>NOCH KEINE FRACHT.</strong><p>Öffne Kisten in der Zone.<br>Wähle aus, was du mitnehmen möchtest.</p></div>`;
 const hubNavigation = `<nav class="hub-navigation" aria-label="Basisbereiche"><button id="tab-deploy" data-hub-tab="deploy" class="selected" aria-pressed="true"><span>01</span> EINSATZ</button><button id="tab-storage" data-hub-tab="storage" aria-pressed="false"><span>02</span> LAGER <b id="nav-storage-count">0</b></button><button id="tab-market" data-hub-tab="market" aria-pressed="false"><span>03</span> MARKT <b id="nav-market-count">0</b></button><button id="tab-mailbox" data-hub-tab="mailbox" aria-pressed="false"><span>04</span> POSTFACH <b id="nav-mail-count">0</b></button><div class="nav-bank"><span>GUTHABEN</span><strong id="nav-bank">750 CR</strong></div></nav>`;
 const logisticsPanels = `<section id="hub-logistics" class="hub-logistics" hidden>
   <header class="logistics-heading"><div><span class="eyebrow"><span class="orange-dash"></span> BLACKLINE / BASIS</span><h2 id="logistics-title">DEIN LAGER<span class="orange">.</span></h2><p id="logistics-description">Beute einlagern. Vorräte behalten. Den nächsten Einsatz vorbereiten.</p></div><span class="logistics-stamp">SEKTOR 07<br><b>LOKAL GESICHERT</b></span></header>
@@ -31,7 +33,7 @@ export function createUI(root, actions) {
         <h1><span>DEAD</span><span>FREQUENCY<span class="title-period">.</span></span></h1>
         <div class="hero-meta"><span>SEKTOR 07</span><i></i><span>KÜSTENSPERRZONE</span><i></i><span>17:42 LOKAL</span></div>
         <p class="hero-description">Geh rein. Hol die Fracht.<br><strong>Komm lebend wieder raus.</strong></p>
-        <div class="mission-brief"><span class="micro orange">DEIN AUFTRAG</span><p>Plündere die Sperrzone. Aktiviere das Funkrelais für den Bonus. Erreiche einen Extraktionspunkt, bevor die Zeit abläuft.</p></div>
+        <div class="mission-brief"><span class="micro orange">DEIN AUFTRAG</span><p>Durchsuche sieben Kistentypen mit 100 neuen Fundstücken. Aktiviere das Funkrelais für den Bonus. Erreiche einen Extraktionspunkt, bevor die Zeit abläuft.</p></div>
         <div class="start-row"><button id="start-raid" data-action="start" class="primary-button"><span id="start-label">RAID STARTEN</span><span class="button-arrow">↗</span></button><span class="raid-duration">${clock(RAID_SECONDS)} <small>ZEITFENSTER</small></span></div>
         <p class="loss-warning" id="deployment-note"><span>!</span> Was du nicht extrahierst, bleibt in der Zone.</p>
       </div>
@@ -57,11 +59,19 @@ export function createUI(root, actions) {
       <div class="ammo-hud"><div class="loot-mini"><span class="dim">BEUTE</span> <strong id="hud-loot-value">0 CR</strong><span id="hud-loot-space" class="dim">0 / 6</span></div><div class="weapon-name" id="hud-weapon">MX-4 / 5.56</div><div class="ammo-line"><strong id="hud-ammo">30</strong><span>/ <b id="hud-reserve">90</b></span></div><div class="ammo-detail"><span id="hud-firemode">AUTO</span><span><kbd data-binding-code="reload">R</kbd> NACHLADEN</span></div></div>
       <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
       <div class="field-panel" id="map-panel" data-panel="map" hidden><div class="field-panel-header"><div><span class="micro orange">TAKTISCHE ÜBERSICHT</span><h2>SEKTOR 07</h2></div><button class="field-close" data-action="close-field"><kbd data-binding-code="map">M</kbd> / ESC <span>×</span></button></div><div class="map-container"><canvas id="tactical-map" width="720" height="720" aria-label="Taktische Karte mit deiner Position, Funkrelais, Extraktionspunkten sowie begehbaren Gebäuden und ihren Eingängen"></canvas><span class="map-north">N ↑</span></div><div class="map-legend"><span><i class="legend-player"></i>DU</span><span id="map-team-legend" hidden><i class="legend-teammate"></i>TEAM</span><span><i class="legend-relay"></i>FUNKRELAIS</span><span><i class="legend-exfil"></i>EXTRAKTION</span><span><i class="legend-interior"></i>BEGEHBARES GEBÄUDE</span><span><i class="legend-entrance"></i>EINGANG</span></div><p class="field-footnote">Die Zeit läuft weiter. Suche Deckung, bevor du die Karte öffnest.</p></div>
+      <section id="container-panel" class="field-panel container-panel" data-panel="container" role="dialog" aria-modal="true" aria-labelledby="container-title" hidden>
+        <header class="field-panel-header"><div><span id="container-type" class="micro orange">VERSORGUNG / FUNDSTELLE</span><h2 id="container-title">KISTE DURCHSUCHEN</h2></div><button id="close-container" class="field-close" data-action="close-container" aria-label="Kiste schließen">ESC <span>×</span></button></header>
+        <div class="container-workspace"><section class="container-source"><div class="container-section-heading"><span class="micro">KISTENINHALT</span><span id="container-item-count" class="tiny dim">UNBEKANNT</span></div>
+          <div id="container-search" class="container-search"><span class="search-crate-icon" aria-hidden="true">▤</span><strong>INHALT WIRD DURCHSUCHT</strong><p>Du bist weiterhin in der Zone. Bleib aufmerksam.</p><div id="container-search-track" class="container-search-track" role="progressbar" aria-label="Kiste durchsuchen" aria-valuemin="0" aria-valuemax="100"><i id="container-search-fill"></i></div><span id="container-search-time" class="micro">…</span></div>
+          <div id="container-items" class="container-item-list" aria-label="Kisteninhalt" hidden></div><button id="take-all-container" class="secondary-button container-take-all" data-action="take-all-container" disabled>ALLES NEHMEN <span>↗</span></button>
+        </section><section class="container-backpack"><div class="container-section-heading"><span class="micro">DEIN RUCKSACK</span><strong id="container-capacity">0 / 8</strong></div><div class="container-capacity-track"><i id="container-capacity-fill"></i></div><p id="container-space-hint" class="container-space-hint">Platz für neue Funde.</p><div id="container-backpack-list" class="container-item-list" aria-label="Rucksack mit Abwerfen"></div><div class="container-backpack-total"><span class="tiny dim">MITGEFÜHRTER WERT</span><strong id="container-backpack-value">0 CR</strong></div></section></div>
+        <footer class="container-footer"><span class="live-dot"></span><p>Der Raid läuft weiter. Abgeworfene Gegenstände bleiben in der Zone.</p><span id="container-sync-note" class="tiny dim"></span></footer>
+      </section>
       <div class="field-panel inventory-panel" id="inventory-panel" data-panel="inventory" hidden><div class="field-panel-header"><div><span class="micro orange">MITGEFÜHRTE AUSRÜSTUNG</span><h2>RUCKSACK</h2></div><button id="close-inventory" class="field-close" data-action="close-field"><kbd data-binding-code="inventory">TAB</kbd> / ESC <span>×</span></button></div><div class="inventory-summary"><span id="inventory-value">0 CR</span><span id="inventory-capacity" class="micro dim">0 / 6 PLÄTZE</span></div><div id="inventory-list" class="inventory-list"></div><div class="inventory-supplies"><span>RESERVEMUNITION <b id="inventory-reserve">90</b></span><span>MEDKITS <b id="inventory-medkits">1</b></span></div><p class="field-footnote">Der Raid läuft weiter. Abgeworfene Ware bleibt hier in der Zone.</p></div>
     </section>
     <section id="pause-screen" class="screen pause-screen" hidden><div class="pause-content"><span class="eyebrow"><span class="orange-dash"></span> VERBINDUNG GEHALTEN</span><h2 id="pause-title">EINSATZ<br>PAUSIERT<span class="orange">.</span></h2><p class="dim" id="pause-description">Durchatmen. Die Zone wartet.</p><button id="resume-raid" class="primary-button" data-action="resume"><span>FORTSETZEN</span><span>↗</span></button><div class="pause-secondary"><button class="secondary-button" data-action="settings">EINSTELLUNGEN</button><button class="secondary-button" data-action="help">STEUERUNG</button></div><button id="abandon-raid" class="text-button abandon-button" data-action="abandon">EINSATZ ABBRECHEN <span>↗</span></button><p id="abandon-note" class="tiny dim">Mitgeführte Beute geht beim Abbruch verloren.</p></div><div id="pause-coordinate" class="pause-coordinate micro dim">BLACKLINE / SEKTOR 07 / OFFLINE</div></section>
     <section id="result-screen" class="screen result-screen" hidden><div class="result-content"><span class="eyebrow" id="result-eyebrow"><span class="orange-dash"></span> OPERATION ABGESCHLOSSEN</span><h2 id="result-title">ERFOLGREICH<br>EXTRAHIERT<span class="orange">.</span></h2><p id="result-description" class="result-description">Die Fracht ist sicher.</p><div class="result-stats"><div><span class="micro dim">WARENRICHTWERT</span><strong id="result-loot">0 <small>CR</small></strong></div><div><span class="micro dim">BONUS</span><strong id="result-bonus">0 <small>CR</small></strong></div><div><span class="micro dim">ABSCHÜSSE</span><strong id="result-kills">0</strong></div></div><div class="result-total"><span class="micro">BONUS DIREKT GUTGESCHRIEBEN</span><strong id="result-total">0 CR</strong></div><button id="result-hub" class="primary-button" data-action="hub"><span id="result-hub-label">ZURÜCK ZUR BASIS</span><span>↗</span></button><p id="result-storage-note" class="tiny dim">Extrahierte Gegenstände warten unter Lager → Anlieferung.</p></div></section>
-    <div id="utility-overlay" class="utility-overlay" hidden><section class="utility-dialog" role="dialog" aria-modal="true" aria-labelledby="utility-title"><div class="utility-heading"><div><span class="micro orange">BLACKLINE / FELDHANDBUCH</span><h2 id="utility-title">STEUERUNG</h2></div><button class="close-button" data-action="close-utility" aria-label="Schließen">×</button></div><div id="help-content"><p class="help-intro">Zwölf Minuten in der Sperrzone. Extrahiere Beute, lagere sie zu Hause ein und verkaufe sie auf dem lokalen Markt.</p><p id="help-interiors" class="help-interiors"><b>FÜNF GEBÄUDE SIND BEGEHBAR.</b> Wachhaus bei Ankunft · Lager 04 nördlich des Frachthofs · Bahnbüro am Güterbahnhof · Zollbüro an der Zollstation · Südwerkstatt im Südlager. Helle Umrisse auf der Karte markieren diese Gebäude, helle Punkte ihre Eingänge.</p>${controls}<div class="help-rules"><p><b>01 / SICHERN</b> Beutekisten durchsuchen. Mit <span data-binding-code="interact">E</span> aufnehmen, solange Platz im Rucksack ist.</p><p><b>02 / SENDEN</b> Das optionale Funkrelais auf der Karte aktivieren und den Bonus sichern.</p><p><b>03 / VERSCHWINDEN</b> Einen markierten Extraktionspunkt erreichen. <span data-binding-code="interact">E</span> drücken und 8 Sekunden in der Zone bleiben.</p></div></div><div id="settings-content" hidden></div><button data-action="close-utility" class="secondary-button utility-done">ZURÜCK</button></section></div>
+    <div id="utility-overlay" class="utility-overlay" hidden><section class="utility-dialog" role="dialog" aria-modal="true" aria-labelledby="utility-title"><div class="utility-heading"><div><span class="micro orange">BLACKLINE / FELDHANDBUCH</span><h2 id="utility-title">STEUERUNG</h2></div><button class="close-button" data-action="close-utility" aria-label="Schließen">×</button></div><div id="help-content"><p class="help-intro">Zwölf Minuten in der Sperrzone. Sieben Kistentypen, 100 neue Fundstücke. Extrahiere deine Funde, lagere sie zu Hause ein und verkaufe sie auf dem lokalen Markt.</p><p id="help-interiors" class="help-interiors"><b>FÜNF GEBÄUDE SIND BEGEHBAR.</b> Wachhaus bei Ankunft · Lager 04 nördlich des Frachthofs · Bahnbüro am Güterbahnhof · Zollbüro an der Zollstation · Südwerkstatt im Südlager. Helle Umrisse auf der Karte markieren diese Gebäude, helle Punkte ihre Eingänge.</p>${controls}<div class="help-rules"><p><b>01 / SICHERN</b> Werkzeug, Elektronik, Medizin, Munition, Proviant, Industrie und Sicherheit: Mit <span data-binding-code="interact">E</span> eine Kiste öffnen und kurz durchsuchen. Gegenstände im Kistenfenster nehmen; rechts kannst du Rucksackware abwerfen und Platz schaffen.</p><p><b>02 / SENDEN</b> Das optionale Funkrelais auf der Karte aktivieren und den Bonus sichern.</p><p><b>03 / VERSCHWINDEN</b> Einen markierten Extraktionspunkt erreichen. <span data-binding-code="interact">E</span> drücken und 8 Sekunden in der Zone bleiben.</p></div></div><div id="settings-content" hidden></div><button data-action="close-utility" class="secondary-button utility-done">ZURÜCK</button></section></div>
     <div id="menu-notice" class="menu-notice" role="status" hidden></div>
   `;
 
@@ -79,6 +89,7 @@ export function createUI(root, actions) {
   let lastExternalMap;
   let lastExternalInventory;
   let previousInventory = '';
+  let currentContainerId = null, containerSignature = '', containerBackpackSignature = '', searchDuration = 0;
   let hubTab = 'deploy', selectedMarketItem = '', lastHomeTick = 0;
   const homeSignatures = new Map();
   let abandonArmed = false, resultExitArmed = false;
@@ -245,6 +256,7 @@ export function createUI(root, actions) {
     if (button.dataset.cancelListing) return economyAction('cancelListing',button.dataset.cancelListing);
     if (button.dataset.claimMail) return economyAction('claimMail',button.dataset.claimMail);
     if (button.dataset.dropItem) { actions.dropItem?.(button.dataset.dropItem); previousInventory=''; return; }
+    if (button.dataset.takeContainerItem) return actions.takeContainerItem?.(button.dataset.containerId, button.dataset.takeContainerItem);
     switch (button.dataset.action) {
       case 'start': if(state?.profile?.intake?.length){selectHubTab('storage');return;} if (selectedKit === 'assault' && (state?.profile?.credits || 0) < economy.assault) { notice(`Assault benötigt ${number(economy.assault)} CR. Das Scout-Kit ist kostenlos.`); return; } closePanels(); actions.start({ difficulty: selectedDifficulty, kit: selectedKit }); break;
       case 'resume': closePanels(); actions.resume(); break;
@@ -256,6 +268,8 @@ export function createUI(root, actions) {
       case 'quote-price': { const item=state?.profile?.stash?.find(item=>String(item.id)===selectedMarketItem); if(item)nodes['market-price'].value=marketQuote(item,homeNow()); updateMarketForm(); break; }
       case 'list-item': if(!nodes['create-listing'].disabled) { const result=economyAction('listItem',selectedMarketItem,Number(nodes['market-price'].value),Number(nodes['market-duration'].value)); if(result!==false){selectedMarketItem='';nodes['market-price'].value='';} } break;
       case 'close-field': closePanels(); actions.closeFieldPanel?.(); break;
+      case 'close-container': actions.closeContainer?.(); break;
+      case 'take-all-container': if (state?.activeContainerId) actions.takeAllContainerItems?.(state.activeContainerId); break;
       case 'abandon': if (!abandonArmed) { abandonArmed = true; setText('abandon-raid', 'ABBRUCH BESTÄTIGEN →'); setText('abandon-note', hostPartnerActive() ? 'Mitspieler noch im Einsatz – Team wirklich beenden? Erneut klicken beendet beide Raids.' : 'Erneut klicken: Raid beenden und mitgeführte Beute verlieren.'); } else { closePanels(); actions.hub(); } break;
       case 'help': showUtility('help'); break;
       case 'settings': showUtility('settings'); break;
@@ -275,6 +289,12 @@ export function createUI(root, actions) {
       const first = items[0], last = items.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+    if (!utility && currentContainerId && event.key === 'Tab') {
+      event.preventDefault(); event.stopImmediatePropagation();
+      const buttons = [...nodes['container-panel'].querySelectorAll('button')].filter(node => !node.disabled && node.offsetParent !== null);
+      const index = buttons.indexOf(document.activeElement);
+      buttons[(index + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length]?.focus();
     }
     if (utility) event.stopPropagation();
   };
@@ -356,6 +376,64 @@ export function createUI(root, actions) {
     }
   }
 
+  function renderContainer() {
+    const container = state.phase === 'raid' ? state.containers?.find(value => value.id === state.activeContainerId) : null;
+    show('container-panel', !!container);
+    if (!container) { currentContainerId = null; return; }
+    const changed = currentContainerId !== container.id;
+    if (changed) {
+      currentContainerId = container.id; containerSignature = ''; containerBackpackSignature = '';
+      searchDuration = CONTAINER_SEARCH_SECONDS;
+      nodes['container-items'].scrollTop = 0; nodes['container-backpack-list'].scrollTop = 0;
+    }
+    const type = CONTAINER_TYPES.find(value => value.id === container.type);
+    const remaining = Math.max(0, state.containerSearchRemaining || 0), searched = !!container.searched;
+    const items = (container.items || []).filter(item => !item.taken);
+    const carried = state.raid?.loot || [], capacity = state.raid?.capacity || 0, full = carried.length >= capacity;
+    const available = items.filter(item => item.kind || !full);
+    nodes['container-panel'].dataset.containerId = container.id;
+    nodes['container-panel'].dataset.containerType = container.type;
+    nodes['container-panel'].style.setProperty('--container-color', type?.color || '#d28a52');
+    setText('container-title', type?.name.toUpperCase() || 'VERSORGUNGSKISTE');
+    setText('container-type', type?.description.toUpperCase() || 'VERSORGUNG / FUNDSTELLE');
+    setText('container-item-count', searched ? `${items.length} ${items.length === 1 ? 'FUND' : 'FUNDE'}` : 'INHALT UNBEKANNT');
+    show('container-search', !searched); show('container-items', searched);
+    searchDuration = Math.max(searchDuration, remaining);
+    const progress = searched ? 100 : clamp((1 - remaining / searchDuration) * 100, 0, 100);
+    nodes['container-search-fill'].style.width = `${progress}%`;
+    nodes['container-search-track'].setAttribute('aria-valuenow', String(Math.round(progress)));
+    setText('container-search-time', remaining > 0 ? `${remaining.toFixed(1).replace('.', ',')} S` : 'SUCHE WIRD ABGESCHLOSSEN …');
+    nodes['take-all-container'].disabled = !searched || !available.length;
+    setText('container-capacity', `${carried.length} / ${capacity} PLÄTZE`);
+    nodes['container-capacity'].classList.toggle('full', full);
+    nodes['container-capacity-fill'].style.width = `${capacity ? clamp(carried.length / capacity * 100, 0, 100) : 0}%`;
+    const free = Math.max(0, capacity - carried.length);
+    setText('container-space-hint', full ? 'Rucksack voll. Wirf einen Gegenstand ab, um Platz zu schaffen.' : `${free} ${free === 1 ? 'freier Platz' : 'freie Plätze'}. Munition und Medkits werden direkt aufgefüllt.`);
+    nodes['container-space-hint'].classList.toggle('full', full);
+    setText('container-backpack-value', `${number(state.raid?.value)} CR`);
+    setText('container-sync-note', state.multiplayer ? 'GETEILTE KISTE · TEAM' : 'LOKALE OPERATION');
+    const replaceRows = (node, html) => {
+      const buttons = [...node.querySelectorAll('button')], focused = buttons.indexOf(document.activeElement);
+      node.innerHTML = html;
+      if (focused >= 0) {
+        const next = [...node.querySelectorAll('button')].filter(button => !button.disabled);
+        (next[Math.min(focused, next.length - 1)] || nodes['close-container']).focus({ preventScroll: true });
+      }
+    };
+    const signature = JSON.stringify([container.id, searched, items, full]);
+    if (signature !== containerSignature) {
+      containerSignature = signature;
+      const rows = searched && items.length ? items.map((item, index) => `<article class="container-item rarity-${escapeHTML(item.rarity || 'common')}" data-container-item="${escapeHTML(item.id)}"><span class="inventory-slot">${String(index+1).padStart(2, '0')}</span><div class="container-item-copy"><strong>${escapeHTML(item.name)}</strong><small>${item.kind ? 'VERSORGUNG · KEIN RUCKSACKPLATZ' : rarityLabel(item.rarity)}</small></div><span class="container-item-value">${item.kind ? 'VORRAT' : `${number(item.value)} <small>CR</small>`}</span><button class="container-take-button" data-container-id="${escapeHTML(container.id)}" data-take-container-item="${escapeHTML(item.id)}" aria-label="${escapeHTML(item.name)} nehmen" ${full && !item.kind ? 'disabled title="Rucksack voll – rechts Platz schaffen"' : ''}>NEHMEN <span>↗</span></button></article>`).join('') : searched ? '<div class="container-empty"><span aria-hidden="true">▤</span><strong>LEERGERÄUMT.</strong><p>Diese Kiste enthält keine weiteren Gegenstände.</p></div>' : '';
+      replaceRows(nodes['container-items'], rows);
+    }
+    const backpackSignature = JSON.stringify(carried);
+    if (backpackSignature !== containerBackpackSignature) {
+      containerBackpackSignature = backpackSignature;
+      replaceRows(nodes['container-backpack-list'], carriedItemsMarkup(carried));
+    }
+    if (changed) nodes['close-container'].focus({ preventScroll: true });
+  }
+
   function renderInventory() {
     const raid = state?.raid || {}, player = state?.player || {};
     setText('inventory-value', `${number(raid.value)} CR`);
@@ -365,7 +443,7 @@ export function createUI(root, actions) {
     const signature = JSON.stringify(raid.loot || []);
     if (signature !== previousInventory) {
       previousInventory = signature;
-      nodes['inventory-list'].innerHTML = raid.loot?.length ? raid.loot.map((item, index) => `<div class="inventory-item rarity-${escapeHTML(item.rarity || 'common')}"><span class="inventory-slot">${String(index+1).padStart(2,'0')}</span><div><strong>${escapeHTML(item.name || 'Fracht')}</strong><small>${rarityLabel(item.rarity)}</small></div><span class="carried-value">${number(item.value)} <small>CR</small></span><button class="drop-item-button" data-drop-item="${escapeHTML(item.id)}" aria-label="${escapeHTML(item.name)} abwerfen">ABWERFEN <span>↓</span></button></div>`).join('') : `<div class="inventory-empty"><span>▤</span><strong>NOCH KEINE FRACHT.</strong><p>Durchsuche die Zone.<br>Beutekisten sind mit Licht markiert.</p></div>`;
+      nodes['inventory-list'].innerHTML = carriedItemsMarkup(raid.loot || []);
     }
   }
 
@@ -391,7 +469,9 @@ export function createUI(root, actions) {
     show('map-team-legend', !!state.multiplayer);
     if (typeof info.mapOpen === 'boolean' && info.mapOpen !== lastExternalMap) { lastExternalMap = info.mapOpen; if (info.mapOpen) panel = 'map'; else if (panel === 'map') panel = null; }
     if (typeof info.inventoryOpen === 'boolean' && info.inventoryOpen !== lastExternalInventory) { lastExternalInventory = info.inventoryOpen; if (info.inventoryOpen) panel = 'inventory'; else if (panel === 'inventory') panel = null; }
-    show('map-panel', phase === 'raid' && panel === 'map'); show('inventory-panel', phase === 'raid' && panel === 'inventory');
+    const containerOpen = phase === 'raid' && !!state.activeContainerId;
+    show('map-panel', phase === 'raid' && panel === 'map' && !containerOpen); show('inventory-panel', phase === 'raid' && panel === 'inventory' && !containerOpen);
+    renderContainer();
     settings = { ...defaultSettings(), ...info.settings, bindings: { ...defaultSettings().bindings, ...info.settings?.bindings } };
     settingsUI.update(settings);
     root.style.setProperty('--hud-scale', settings.hudScale);
@@ -444,10 +524,10 @@ export function createUI(root, actions) {
       nodes['compass-labels'].innerHTML = [-2,-1,0,1,2].map(offset => `<span class="${offset === 0 ? 'active' : ''}">${directions[((center+offset)%8+8)%8]}</span>`).join('');
       nodes['crosshair'].classList.toggle('aiming', !!(info.aim ?? p.aim));
       nodes['crosshair'].classList.toggle('moving', !!p.moving);
-      show('crosshair', settings.crosshair && !!info.locked && !panel && !(p.reload > 0) && !(p.heal > 0));
+      show('crosshair', settings.crosshair && !!info.locked && !panel && !containerOpen && !(p.reload > 0) && !(p.heal > 0));
       const prompt = state.prompt;
-      show('interaction', settings.prompts && !!prompt && !panel && !(raid.extractionProgress > 0));
-      if (prompt) { setText('interaction-label', prompt.text); setText('interaction-detail', prompt.kind === 'extract' ? 'EXTRAKTION ANFORDERN' : prompt.kind === 'relay' ? 'OPTIONALES EINSATZZIEL' : 'AUFNEHMEN'); }
+      show('interaction', settings.prompts && !!prompt && !panel && !containerOpen && !(raid.extractionProgress > 0));
+      if (prompt) { setText('interaction-label', prompt.text); setText('interaction-detail', prompt.kind === 'extract' ? 'EXTRAKTION ANFORDERN' : prompt.kind === 'relay' ? 'OPTIONALES EINSATZZIEL' : prompt.kind === 'container' ? 'KISTE ÖFFNEN / DURCHSUCHEN' : 'AUFNEHMEN'); }
       show('extraction-hud', raid.extractionProgress > 0);
       if (raid.extractionProgress > 0) { nodes['extraction-fill'].style.width = `${clamp(raid.extractionProgress / (raid.extractionDuration || 8)*100,0,100)}%`; setText('extraction-seconds', Math.max(0,(raid.extractionDuration || 8)-raid.extractionProgress).toFixed(1)); }
       if (panel === 'map') drawMap();

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createGame, findPath, isWalkable, RAID_SECONDS } from '../src/simulation.js';
 import { WORLD_SIZE, OBSTACLES, SPAWN, POIS, EXTRACTIONS } from '../src/layout.js';
 import { storeAll, listItem } from '../src/economy.js';
+import { takeFirstContainerItem } from './container-helpers.js';
 
 async function setup(t, saved) {
   const game = await createGame(saved); t.after(() => game.dispose()); return game;
@@ -15,12 +16,14 @@ test('expanded map has connected outer districts, exits, loot and patrols', asyn
   assert.equal(WORLD_SIZE, 300); assert.equal(RAID_SECONDS, 720);
   assert.equal(game.state.raid.timeLeft, 720);
   assert.ok(OBSTACLES.length >= 100); assert.ok(POIS.length >= 14); assert.ok(EXTRACTIONS.length >= 4);
-  assert.ok(game.state.loot.filter(item => !item.kind).length >= 60);
+  assert.equal(game.state.loot.length, 0);
+  assert.ok(game.state.containers.flatMap(container => container.items).filter(item => !item.kind).length >= 100);
   assert.ok(game.state.enemies.length >= 30);
   for (const target of [...POIS, ...EXTRACTIONS, ...game.state.loot, ...game.state.enemies]) {
     assert.ok(findPath(SPAWN, target).length, `No route to ${target.name ?? target.id}`);
     if (!POIS.includes(target)) assert.equal(isWalkable(target.x, target.z, .25), true, `Spawned inside geometry: ${target.name ?? target.id}`);
   }
+  for (const container of game.state.containers) assert.ok(findPath(SPAWN, container).length, `No route to ${container.id}`);
   for (const exit of EXTRACTIONS) {
     assert.equal(game.teleport(exit.x, exit.z), true);
     assert.ok(game.state.prompt?.kind === 'extract');
@@ -45,7 +48,7 @@ test('v1 saves migrate with credits intact and v2 item IDs survive multiple raid
   assert.equal(game.state.profile.credits, 2400);
   assert.deepEqual(game.state.profile.intake, []); assert.deepEqual(game.state.profile.stash, []);
   game.startRaid({ seed: 302 }); quiet(game);
-  const first = game.state.loot[0]; game.teleport(first.x, first.z); game.interact();
+  takeFirstContainerItem(game);
   const exit = EXTRACTIONS[0]; game.teleport(exit.x, exit.z); game.interact(); run(game, 8.1);
   const extractedId = game.state.profile.intake[0].id;
   assert.equal(game.state.profile.credits, 2400);
@@ -53,7 +56,7 @@ test('v1 saves migrate with credits intact and v2 item IDs survive multiple raid
   assert.equal(restored.state.profile.intake[0].id, extractedId);
   assert.equal(restored.startRaid({ seed: 303 }), false);
   storeAll(restored.state.profile); restored.startRaid({ seed: 303 }); quiet(restored);
-  const next = restored.state.loot[0]; restored.teleport(next.x, next.z); restored.interact();
+  takeFirstContainerItem(restored);
   restored.teleport(exit.x, exit.z); restored.interact(); run(restored, 8.1);
   assert.notEqual(restored.state.profile.intake[0].id, extractedId);
   assert.equal(restored.state.profile.stash[0].id, extractedId);

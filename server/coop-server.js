@@ -86,7 +86,7 @@ export async function createCoopServer({ host = '127.0.0.1', port = 0, token = r
         if (message.type === 'ready') { session.ready(info.id, message.ready, message.kit); broadcastLobby(); }
         else if (message.type === 'start') { session.start(info.id, { difficulty: message.difficulty }); broadcastLobby(); snapshots(); }
         else if (message.type === 'input') session.input(info.id, message.seq, message.input);
-        else if (message.type === 'action') session.action(info.id, message.action, message.id);
+        else if (message.type === 'action') session.action(info.id, message.action, message.id, message.containerId);
         else if (message.type === 'leave') {
           session.leave(info.id, 'Einsatz verlassen'); snapshots(ws);
           send(ws, { type: 'closed', message: 'Koop-Sitzung verlassen.' }); ws.close(1000, 'Left session');

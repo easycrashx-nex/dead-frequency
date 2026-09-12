@@ -17,7 +17,7 @@ const settings=sanitizeSettings(stored);
 const keys=new Set();
 let game,view,ui,audio,lookYaw=0,lookPitch=0,fire=false,aim=false,jump=false,lookDX=0,lookDY=0;
 let sprintToggle=false,crouchToggle=false,renderElapsed=0,autoReloadDelay=0;
-let mapOpen=false,inventoryOpen=false,lastPhase='hub',savingFailed=false;
+let mapOpen=false,inventoryOpen=false,lastContainerId=null,lastPhase='hub',savingFailed=false;
 let frames=0,fps=60,fpsTime=0,uiTime=0,clock=0,raf,hidden=false;
 const recoil=createRecoil();
 let marketTimer;
@@ -28,11 +28,13 @@ function persist() {
   catch{if(!savingFailed)ui?.events([{type:'notice',text:'Speicher nicht verfügbar. Fortschritt gilt für diese Sitzung.'}]);savingFailed=true;}
 }
 function clearInputs(){keys.clear();fire=false;aim=false;jump=false;sprintToggle=crouchToggle=false;lookDX=lookDY=0;}
-function closePanels(){mapOpen=inventoryOpen=false;ui?.closePanels();}
+function containerOpen(){return !!game?.state.activeContainerId;}
+function closePanels(){mapOpen=inventoryOpen=false;game?.closeContainer?.();lastContainerId=null;ui?.closePanels();}
 function closeFieldPanel(){closePanels();clearInputs();if(game.state.phase==='raid')lock();}
 function toggleFieldPanel(kind){
   const open=kind==='map'?mapOpen:inventoryOpen;
   if(open){closeFieldPanel();return;}
+  game.closeContainer();lastContainerId=null;
   mapOpen=kind==='map';inventoryOpen=kind==='inventory';clearInputs();ui.togglePanel(kind);unlock();
 }
 function unlock(){if(document.pointerLockElement)document.exitPointerLock();document.body.classList.remove('locked');}
@@ -79,17 +81,18 @@ function onKeyDown(e){
   if(ui?.isUtilityOpen?.()){if(e.code==='Escape'){e.preventDefault();ui.closeUtility();}return;}
   if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;
   const code=e.code;
+  if(containerOpen()&&code==='Tab')return;
   const action=bindingAction(settings.bindings,code);
   if(['raid','paused'].includes(game.state.phase)&&(action||code==='Escape'))e.preventDefault();
   if(e.repeat){
-    if(game.state.phase==='raid'&&!mapOpen&&!inventoryOpen&&document.pointerLockElement===canvas&&['forward','backward','left','right','sprint','crouch'].includes(action))keys.add(code);
+    if(game.state.phase==='raid'&&!mapOpen&&!inventoryOpen&&!containerOpen()&&document.pointerLockElement===canvas&&['forward','backward','left','right','sprint','crouch'].includes(action))keys.add(code);
     return;
   }
-  if(code==='Escape'){if(mapOpen||inventoryOpen)closeFieldPanel();else if(game.state.phase==='raid')pause();else if(game.state.phase==='paused')resume();return;}
+  if(code==='Escape'){if(mapOpen||inventoryOpen||containerOpen())closeFieldPanel();else if(game.state.phase==='raid')pause();else if(game.state.phase==='paused')resume();return;}
   if(game.state.phase!=='raid')return;
   if(action==='inventory'){toggleFieldPanel('inventory');return;}
   if(action==='map'){toggleFieldPanel('map');return;}
-  if(mapOpen||inventoryOpen)return;
+  if(mapOpen||inventoryOpen||containerOpen())return;
   keys.add(code);
   switch(action){
     case 'reload':game.reload();break;
@@ -102,23 +105,23 @@ function onKeyDown(e){
 }
 function onKeyUp(e){keys.delete(e.code);}
 function onMouseMove(e){
-  if(game.state.phase!=='raid'||mapOpen||inventoryOpen||document.pointerLockElement!==canvas)return;
+  if(game.state.phase!=='raid'||mapOpen||inventoryOpen||containerOpen()||document.pointerLockElement!==canvas)return;
   const sensitivity=settings.sensitivity*.0018*(aim?settings.adsSensitivity:1);
   lookYaw-=e.movementX*sensitivity;lookPitch=clamp(lookPitch-e.movementY*sensitivity*(settings.invertY?-1:1),-1.45,1.45);
   lookDX+=e.movementX;lookDY+=e.movementY;
 }
 function onMouseDown(e){
-  if(game.state.phase!=='raid'||mapOpen||inventoryOpen||document.pointerLockElement!==canvas)return;
+  if(game.state.phase!=='raid'||mapOpen||inventoryOpen||containerOpen()||document.pointerLockElement!==canvas)return;
   if(e.button===0)fire=true;if(e.button===2)aim=settings.aimMode==='toggle'?!aim:true;
 }
 function onMouseUp(e){if(e.button===0)fire=false;if(e.button===2&&settings.aimMode==='hold')aim=false;}
 function onLock(){
   const locked=document.pointerLockElement===canvas;document.body.classList.toggle('locked',locked);
-  if(!locked&&game?.state.phase==='raid'&&!mapOpen&&!inventoryOpen)pause();
+  if(!locked&&game?.state.phase==='raid'&&!mapOpen&&!inventoryOpen&&!containerOpen())pause();
 }
 function inputState(){
   const offset=recoil.offset();
-  if(mapOpen||inventoryOpen||ui?.isUtilityOpen?.())return {yaw:lookYaw+offset.yaw,pitch:clamp(lookPitch+offset.pitch,-1.45,1.45)};
+  if(mapOpen||inventoryOpen||containerOpen()||ui?.isUtilityOpen?.())return {yaw:lookYaw+offset.yaw,pitch:clamp(lookPitch+offset.pitch,-1.45,1.45)};
   if(game?.state.player.sprintExhausted&&settings.sprintMode==='toggle')sprintToggle=false;
   return {forward:Number(actionDown('forward'))-Number(actionDown('backward')),right:Number(actionDown('right'))-Number(actionDown('left')),yaw:lookYaw+offset.yaw,pitch:clamp(lookPitch+offset.pitch,-1.45,1.45),sprint:settings.sprintMode==='toggle'?sprintToggle:actionDown('sprint'),crouch:settings.crouchMode==='toggle'?crouchToggle:actionDown('crouch'),jump,aim,fire};
 }
@@ -138,11 +141,11 @@ function frame(now){
       recoil.update(1/60);input=inputState();
       game.update(1/60,input);
       autoReloadDelay=Math.max(0,autoReloadDelay-1/60);
-      if(settings.autoReload&&!autoReloadDelay&&game.state.phase==='raid'&&!mapOpen&&!inventoryOpen&&!ui?.isUtilityOpen?.()){
+      if(settings.autoReload&&!autoReloadDelay&&game.state.phase==='raid'&&!mapOpen&&!inventoryOpen&&!containerOpen()&&!ui?.isUtilityOpen?.()){
         const p=game.state.player;
         if(p.ammo===0&&p.reserve>0&&!p.reload&&!p.heal){game.reload();autoReloadDelay=.5;}
       }
-      if(game.state.phase==='raid'&&fire&&!mapOpen&&!inventoryOpen&&game.fire(aimDirection())){
+      if(game.state.phase==='raid'&&fire&&!mapOpen&&!inventoryOpen&&!containerOpen()&&game.fire(aimDirection())){
         recoil.shot({weapon:game.state.player.weapon,aim,crouch:game.state.player.crouching});
         const offset=recoil.offset();game.state.player.yaw=lookYaw+offset.yaw;game.state.player.pitch=clamp(lookPitch+offset.pitch,-1.45,1.45);
       }
@@ -150,6 +153,11 @@ function frame(now){
     }
     pumpEvents();
     const state=game.state;
+    if((state.activeContainerId||null)!==lastContainerId){
+      const wasOpen=!!lastContainerId;lastContainerId=state.activeContainerId||null;
+      if(lastContainerId){mapOpen=inventoryOpen=false;ui.closePanels();clearInputs();unlock();}
+      else if(wasOpen&&state.phase==='raid'&&!mapOpen&&!inventoryOpen){clearInputs();pause();}
+    }
     if(state.phase!==lastPhase){
       if(state.phase!=='raid'){clearInputs();unlock();}
       if(['extracted','dead','hub'].includes(state.phase))persist();
@@ -220,6 +228,8 @@ async function boot(){
     coopHost:options=>joinCoop(options,true),coopJoin:options=>joinCoop(options,false),coopReady:ready=>coop?.ready(ready),coopStart:()=>coop?.start(),coopLeave:leaveCoop,
     coopCopyInvite:()=>window.platform?.copyInvite(coop?.info.invite||'').then(()=>ui.events([{type:'notice',text:'Einladung kopiert. Deinem Kollegen schicken und im Spiel einfügen.'}])),
     dropItem(id){const result=game.dropItem(id);pumpEvents();return result;},closeFieldPanel,
+    takeContainerItem(containerId,itemId){const result=game.takeContainerItem(containerId,itemId);pumpEvents();return result;},
+    takeAllContainerItems(containerId){const result=game.takeAllContainerItems(containerId);pumpEvents();return result;},closeContainer:closeFieldPanel,
     storeItem:id=>homeAction('storeItem',id),storeAll:()=>homeAction('storeAll'),listItem:(id,price,duration)=>homeAction('listItem',id,price,duration),
     cancelListing:id=>homeAction('cancelListing',id),claimMail:id=>homeAction('claimMail',id),claimAll:()=>homeAction('claimAll'),
     settings:settingsChanged,resetSettings:category=>settingsChanged(resetSettingsCategory(settings,category)),rebind,quit(){window.close();}});

@@ -5,8 +5,63 @@ import packageInfo from '../package.json' with { type: 'json' };
 import { createCoopClient, parseInvite } from '../src/coop-client.js';
 import { createGame } from '../src/simulation.js';
 import { createCoopServer } from '../server/coop-server.js';
+import { createCoopSession } from '../src/coop-session.js';
+import { approachContainer } from './container-helpers.js';
 
 const token = 'a1'.repeat(32);
+
+test('explicit same-container reopen survives a close without an intervening closed snapshot', async () => {
+  const originalWebSocket = globalThis.WebSocket;
+  const session = createCoopSession({ seed: 414 }), localGame = await createGame();
+  let client, wire, snapshotSeq = 0;
+  try {
+    const a = await session.join({ name: 'Host' }), b = await session.join({ name: 'Partner' });
+    session.ready(a, true); session.ready(b, true); session.start(a);
+    const authoritativeGame = session.players.get(a).game;
+    authoritativeGame.state.enemies.length = 0;
+    const container = authoritativeGame.state.containers[0];
+    approachContainer(authoritativeGame, container);
+    session.action(a, 'interact');
+    for (let i = 0; i < 100; i++) session.update(1 / 60);
+    assert.equal(container.searched, true);
+
+    // Deliver actions immediately, but advance the real server only when the
+    // test asks. This models close/reopen arriving between snapshot broadcasts.
+    globalThis.WebSocket = class extends EventTarget {
+      static OPEN = 1;
+      readyState = 1;
+      constructor() { super(); wire = this; queueMicrotask(() => this.dispatchEvent(new Event('open'))); }
+      send(raw) {
+        const message = JSON.parse(raw);
+        if (message.type === 'join') queueMicrotask(() => this.receive({ type: 'welcome', id: a, hostId: a }));
+        else if (message.type === 'action') session.action(a, message.action, message.id, message.containerId);
+      }
+      receive(message) { this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) })); }
+      close() { this.readyState = 3; }
+    };
+    client = createCoopClient({ localGame });
+    await client.connect(`ws://127.0.0.1:1/coop?token=${token}`);
+    const deliverSnapshot = () => wire.receive({ ...session.snapshot(a), seq: ++snapshotSeq });
+    deliverSnapshot();
+    assert.equal(client.state.activeContainerId, container.id);
+
+    assert.equal(client.closeContainer(), true);
+    deliverSnapshot(); // Old open state arrives before the pending close runs.
+    assert.equal(client.state.activeContainerId, null, 'A stale snapshot must not reopen a closed panel');
+    assert.equal(client.interact(), true);
+    session.update(1 / 60); // Both queued actions execute before any closed snapshot.
+    assert.equal(authoritativeGame.state.activeContainerId, container.id);
+    deliverSnapshot();
+    assert.equal(client.state.activeContainerId, container.id, 'The explicit reopen must reach the UI');
+    session.update(1 / 60); deliverSnapshot();
+    assert.equal(client.state.activeContainerId, container.id, 'Further snapshots keep the same panel open');
+    assert.equal(client.state.containerSearchRemaining, 0);
+    assert.equal(client.state.containers.find(value => value.id === container.id).searched, true);
+  } finally {
+    client?.dispose(); globalThis.WebSocket = originalWebSocket;
+    session.close(); localGame.dispose();
+  }
+});
 
 test('host exposes the public invitation throughout connecting and welcome while using loopback transport', { timeout: 10000 }, async () => {
   const originalWebSocket = globalThis.WebSocket;

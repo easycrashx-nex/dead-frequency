@@ -189,9 +189,36 @@ export const INTERIORS = [
   ], [[-4, -3, 1], [4, 2, 2], [-4, 3, 2]]),
 ];
 const interiorById = new Map(INTERIORS.map(room => [room.id, room]));
-export const COLLIDERS = OBSTACLES.flatMap(obstacle => interiorById.get(obstacle.id)?.solids ?? [{ ...obstacle, y: obstacle.h / 2 }]);
+const containerDimensions = { tools: [1.1, .7, .7], electronics: [1.05, .65, .65], medical: [.95, .65, .7], ammo: [1.05, .65, .65], provisions: [1.2, .8, .75], industrial: [1.3, .85, .85], security: [1.1, .75, .8] };
+function container(id, type, x, z, interiorId) {
+  const [w, d, h] = containerDimensions[type];
+  return { id, type, x, z, w, d, h, rotation: 0, ...(interiorId ? { interiorId } : {}) };
+}
+export const CONTAINER_SPOTS = [
+  container('arrival-tools', 'tools', -10, 47), container('arrival-medical', 'medical', -15, 47),
+  container('cargo-ammo', 'ammo', -29, 34), container('cargo-tools', 'tools', -29, 11), container('cargo-industrial', 'industrial', -46, 9),
+  container('power-electronics', 'electronics', 17, 25), container('power-industrial', 'industrial', 42, 30),
+  container('relay-security', 'security', 12, -24), container('north-ammo', 'ammo', 19, -46),
+  container('rail-industrial', 'industrial', -103, -87), container('rail-tools', 'tools', -79, -94), container('rail-security', 'security', -95, -115),
+  container('west-tools', 'tools', -103, 84), container('west-provisions', 'provisions', -93, 95), container('west-medical', 'medical', -79, 112),
+  container('water-industrial', 'industrial', -8, -106), container('water-electronics', 'electronics', 6, -120),
+  container('refinery-industrial', 'industrial', 97, -86), container('refinery-electronics', 'electronics', 113, -108),
+  container('customs-security', 'security', 104, 25), container('customs-ammo', 'ammo', 88, 25),
+  container('convoy-provisions', 'provisions', 72, 99), container('convoy-ammo', 'ammo', 97, 104),
+  container('south-tools', 'tools', -18, 119), container('south-medical', 'medical', -39, 122),
+  container('processing-industrial', 'industrial', -111, -4), container('processing-electronics', 'electronics', -104, -23),
+  container('booth-records', 'security', 8.7, 41.2, 'entry-booth'),
+  container('warehouse-parts', 'industrial', -30, -19, 'warehouse'), container('warehouse-tools', 'tools', -20, -20, 'warehouse'), container('warehouse-rations', 'provisions', -20, -11.5, 'warehouse'),
+  container('rail-office-electronics', 'electronics', -123, -103, 'rail-office'), container('rail-office-records', 'security', -109, -104, 'rail-office'),
+  container('customs-office-records', 'security', 86, 5, 'customs-office'), container('customs-office-medical', 'medical', 98, 6, 'customs-office'),
+  container('workshop-tools', 'tools', -1, 120, 'south-workshop'), container('workshop-electronics', 'electronics', 7, 125, 'south-workshop'),
+];
+export const COLLIDERS = [
+  ...OBSTACLES.flatMap(obstacle => interiorById.get(obstacle.id)?.solids ?? [{ ...obstacle, y: obstacle.h / 2 }]),
+  ...CONTAINER_SPOTS.map(spot => ({ ...spot, kind: 'loot-container', y: spot.h / 2 })),
+];
 
 export const layout = {
   size: WORLD_SIZE, obstacles: OBSTACLES, pois: POIS,
-  extractions: EXTRACTIONS, relay: RELAY, spawn: SPAWN, interiors: INTERIORS, colliders: COLLIDERS,
+  extractions: EXTRACTIONS, relay: RELAY, spawn: SPAWN, interiors: INTERIORS, colliders: COLLIDERS, containers: CONTAINER_SPOTS,
 };

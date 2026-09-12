@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createGame, validateProfile, findPath, isWalkable, hasLineOfSight, UPGRADE_COSTS } from '../src/simulation.js';
 import { SPAWN, EXTRACTIONS, RELAY, POIS } from '../src/layout.js';
 import { storeAll } from '../src/economy.js';
+import { openContainer, takeFirstContainerItem } from './container-helpers.js';
 
 const economyDefaults = { stash: [], intake: [], listings: [], mailbox: [], nextItemId: 1, marketTime: 0 };
 
@@ -30,6 +31,7 @@ test('seeded raids reproduce patrols and loot, and the free kit never softlocks'
   assert.equal(b.startRaid({ kit: 'scout', seed: 712 }), true);
   assert.deepEqual(a.state.enemies, b.state.enemies);
   assert.deepEqual(a.state.loot, b.state.loot);
+  assert.deepEqual(a.state.containers, b.state.containers);
   assert.equal(a.state.profile.credits, 0);
   assert.equal(a.startRaid({ kit: 'scout' }), false);
   assert.equal(a.state.profile.raids, 1);
@@ -110,21 +112,22 @@ test('medkits commit once on completion; firing cancels without consuming one', 
 
 test('loot cannot be duplicated, capacity is enforced and supplies use no slots', async t => {
   const game = await gameFor(t); game.startRaid({ seed: 5 }); quiet(game);
-  const first = game.state.loot[0]; game.teleport(first.x, first.z);
-  assert.equal(game.interact(), true); assert.equal(game.interact(), false);
+  const container = openContainer(game), first = container.items[0];
+  assert.equal(game.takeContainerItem(container.id, first.id), true); assert.equal(game.takeContainerItem(container.id, first.id), false);
   assert.equal(game.state.raid.value, first.value); assert.equal(game.state.raid.loot.length, 1);
   game.state.raid.capacity = 1;
-  const second = game.state.loot[1]; game.teleport(second.x, second.z);
-  assert.equal(game.interact(), false); assert.equal(second.taken, false);
-  const supply = game.state.loot.find(item => item.kind === 'ammo'); game.teleport(supply.x, supply.z);
+  const second = container.items[1];
+  assert.equal(game.takeContainerItem(container.id, second.id), false); assert.equal(second.taken, false);
+  const ammoContainer = openContainer(game, game.state.containers.find(value => value.type === 'ammo'));
+  const supply = ammoContainer.items.find(item => item.kind === 'ammo');
   const reserve = game.state.player.reserve;
-  assert.equal(game.interact(), true); assert.equal(game.state.player.reserve, reserve + 36);
+  assert.equal(game.takeContainerItem(ammoContainer.id, supply.id), true); assert.equal(game.state.player.reserve, reserve + 36);
   assert.equal(game.state.raid.loot.length, 1);
 });
 
 test('extraction requires continuous presence and transfers unsold goods exactly once', async t => {
   const game = await gameFor(t); game.startRaid({ seed: 6 }); quiet(game);
-  const first = game.state.loot[0]; game.teleport(first.x, first.z); game.interact();
+  const first = takeFirstContainerItem(game);
   const bank = game.state.profile.credits, exit = EXTRACTIONS[0];
   game.teleport(exit.x, exit.z); run(game, 9); assert.equal(game.state.phase, 'raid');
   assert.equal(game.interact(), true); run(game, 3); assert.ok(game.state.raid.extractionProgress > 2.9);
@@ -154,7 +157,7 @@ test('extraction requires continuous presence and transfers unsold goods exactly
 
 test('dropping and picking up keeps one world instance and does not duplicate value', async t => {
   const game = await gameFor(t); game.startRaid({ seed: 605 }); quiet(game);
-  const first = game.state.loot[0]; game.teleport(first.x, first.z); game.interact();
+  const first = takeFirstContainerItem(game);
   assert.equal(game.state.raid.value, first.value);
   game.teleport(-7, 38.2); game.state.player.yaw = 0;
   assert.equal(game.dropItem(first.id), true);
@@ -189,11 +192,11 @@ test('relay is optional and awards its bonus only after successful extraction', 
 test('timeout and abandoning a paused raid lose carried value without charging twice', async t => {
   const game = await gameFor(t); game.startRaid({ kit: 'assault', seed: 8 }); quiet(game);
   const bank = game.state.profile.credits; assert.equal(bank, 400);
-  const first = game.state.loot[0]; game.teleport(first.x, first.z); game.interact();
+  takeFirstContainerItem(game);
   game.state.raid.timeLeft = 0.02; run(game, 0.1);
   assert.equal(game.state.phase, 'dead'); assert.equal(game.state.result.total, 0); assert.equal(game.state.profile.credits, bank);
   game.returnToHub(); assert.equal(game.state.phase, 'hub');
-  game.startRaid({ seed: 9 }); quiet(game); game.teleport(first.x, first.z); game.interact();
+  game.startRaid({ seed: 9 }); quiet(game); takeFirstContainerItem(game);
   game.pause(true); game.returnToHub(); assert.equal(game.state.phase, 'hub');
   assert.equal(game.state.profile.credits, bank); assert.equal(game.state.profile.raids, 2); assert.equal(game.state.profile.extracts, 0);
 });

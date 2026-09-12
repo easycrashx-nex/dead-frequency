@@ -55,12 +55,29 @@ test('two WebSocket clients share authoritative loot, validated movement and per
   assert.ok(Math.abs(moved.state.player.x + 7) < .02); assert.equal(moved.state.player.hp, 100); assert.equal(moved.state.player.ammo, 24);
   a.send({ type: 'input', seq: 2, input: { forward: 0 } });
   await a.wait(m => m.type === 'snapshot' && m.ack === 2);
-  const item = ga.state.loot[0]; ga.teleport(item.x, item.z); gb.teleport(item.x, item.z);
-  a.send({ type: 'action', action: 'interact' });
-  await a.wait(m => m.type === 'snapshot' && m.state.raid.loot.length === 1);
-  b.send({ type: 'action', action: 'interact' });
-  const noDuplicate = await b.wait(m => m.type === 'snapshot' && m.state.loot[0]?.taken === true);
+  assert.equal(initial.state.loot.length, 0);
+  const container = ga.state.containers.find(c => c.id === 'arrival-tools'), item = container.items[0];
+  ga.teleport(container.x, container.z + container.d / 2 + .9); gb.teleport(container.x, container.z + container.d / 2 + .9);
+  a.send({ type: 'action', action: 'interact' }); b.send({ type: 'action', action: 'interact' });
+  await a.wait(m => m.type === 'snapshot' && m.state.activeContainerId === container.id);
+  await b.wait(m => m.type === 'snapshot' && m.state.activeContainerId === container.id);
+  a.send({ type: 'action', action: 'take', containerId: container.id, id: item.id });
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.equal(ga.state.raid.loot.length, 0, 'searching does not allow an early take');
+  advance(server, 1.7);
+  const searched = await b.wait(m => m.type === 'snapshot' && m.state.containers.find(c => c.id === container.id)?.searched);
+  assert.equal(searched.state.activeContainerId, container.id);
+  a.send({ type: 'action', action: 'take', containerId: 'wrong-container', id: item.id });
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(ga.state.raid.loot.length, 0, 'item membership is enforced at the server boundary');
+  a.send({ type: 'action', action: 'take', containerId: container.id, id: item.id });
+  await a.wait(m => m.type === 'snapshot' && m.state.raid.loot.some(value => value.id === item.id));
+  b.send({ type: 'action', action: 'take', containerId: container.id, id: item.id });
+  const noDuplicate = await b.wait(m => m.type === 'snapshot' && m.state.containers.find(c => c.id === container.id)?.items.find(value => value.id === item.id)?.taken);
   assert.equal(noDuplicate.state.raid.loot.length, 0);
+  a.send({ type: 'action', action: 'closeContainer' }); b.send({ type: 'action', action: 'closeContainer' });
+  await a.wait(m => m.type === 'snapshot' && !m.state.activeContainerId && m.state.raid.loot.length === 1);
+  ga.teleport(-7, 48); gb.teleport(-7, 48);
   advance(server, .15); a.send({ type: 'action', action: 'drop', id: item.id });
   await a.wait(m => m.type === 'snapshot' && m.state.raid.loot.length === 0 && m.state.loot[0]?.taken === false && m.seq > moved.seq);
   advance(server, .15); b.send({ type: 'action', action: 'interact' });
@@ -75,6 +92,33 @@ test('two WebSocket clients share authoritative loot, validated movement and per
   assert.equal(ar.state.profile.credits, 0); assert.equal(br.state.profile.credits, 750);
   assert.equal(br.state.result.value, item.value); assert.equal(br.state.coopPhase, 'finished');
   assert.equal(a.ws.readyState, WebSocket.OPEN); assert.equal(b.ws.readyState, WebSocket.OPEN);
+});
+
+test('WebSocket take-all obeys shared contents and immediate close cancels private crate interaction', { timeout: 10000 }, async t => {
+  const server = await createCoopServer(); t.after(() => server.close());
+  const { a, b, aid, bid } = await pair(t, server);
+  server.session.ready(aid, true); server.session.ready(bid, true); server.session.start(aid);
+  const ga = server.session.players.get(aid).game, gb = server.session.players.get(bid).game;
+  ga.state.enemies.splice(0);
+  const container = ga.state.containers.find(c => c.type === 'medical');
+  assert.ok(ga.teleport(container.x, container.z + container.d / 2 + .9));
+  assert.ok(gb.teleport(container.x, container.z + container.d / 2 + .9));
+  const beforeMedkits = ga.state.player.medkits;
+  a.send({ type: 'action', action: 'interact' });
+  await a.wait(m => m.type === 'snapshot' && m.state.activeContainerId === container.id);
+  advance(server, 1.6);
+  await a.wait(m => m.type === 'snapshot' && m.state.containers.find(c => c.id === container.id)?.searched);
+  a.send({ type: 'action', action: 'takeAll', containerId: container.id });
+  const claimed = await a.wait(m => m.type === 'snapshot' && m.state.containers.find(c => c.id === container.id)?.items.every(item => item.taken));
+  assert.equal(claimed.state.raid.loot.length, container.items.filter(item => !item.kind).length);
+  assert.equal(claimed.state.player.medkits, beforeMedkits + 1);
+  b.send({ type: 'action', action: 'interact' });
+  await b.wait(m => m.type === 'snapshot' && m.state.activeContainerId === container.id);
+  advance(server, .1); b.send({ type: 'action', action: 'takeAll', containerId: container.id });
+  b.send({ type: 'action', action: 'closeContainer' });
+  const closed = await b.wait(m => m.type === 'snapshot' && !m.state.activeContainerId && m.state.containers.find(c => c.id === container.id)?.searched);
+  assert.equal(closed.state.raid.loot.length, 0);
+  assert.equal(closed.state.containerSearchRemaining, 0);
 });
 
 test('WebSocket authentication, protocol, capacity, ping and graceful shutdown are enforced', { timeout: 15000 }, async t => {

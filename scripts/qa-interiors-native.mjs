@@ -41,16 +41,17 @@ try{
     await walkTo(north.outside);
     const exited=await page.evaluate(()=>({...__DF.state.player}));assert.ok(exited.z<north.z);
     pass(`${room.name}: the continuous central route reaches the second exit`);
-    const loot=await page.evaluate(room=>__DF.state.loot.find(item=>!item.kind&&!item.taken&&room.lootSpots.some(spot=>Math.hypot(item.x-spot.x,item.z-spot.z)<.05)),room);
-    assert.ok(loot,`${room.name}: missing interior loot`);await position(loot);
-    await page.waitForFunction(id=>__DF.state.prompt?.id===id,loot.id);
-    await page.keyboard.press('KeyE');await page.waitForFunction(id=>__DF.state.raid.loot.some(item=>item.id===id),loot.id);
-    await page.keyboard.press('Tab');await page.locator(`[data-drop-item="${loot.id}"]`).click();
-    await page.waitForFunction(id=>!__DF.state.raid.loot.some(item=>item.id===id),loot.id);await page.keyboard.press('Tab');
-    await page.waitForFunction(()=>document.pointerLockElement);
-    await page.waitForFunction(id=>__DF.state.prompt?.id===id,loot.id);await page.keyboard.press('KeyE');
-    await page.waitForFunction(id=>__DF.state.raid.loot.some(item=>item.id===id),loot.id);
-    pass(`${room.name}: interior loot can be picked up, dropped from the backpack and recovered`);
+    const container=await page.evaluate(room=>__DF.state.containers.find(c=>c.interiorId===room.id),room);
+    assert.ok(container,`${room.name}: missing interior container`);
+    const reached=await page.evaluate(c=>{for(const [dx,dz] of [[0,c.d/2+.9],[0,-c.d/2-.9],[c.w/2+.9,0],[-c.w/2-.9,0]]){if(!__DF.game.teleport(c.x+dx,c.z+dz))continue;__DF.state.player.yaw=Math.atan2(dx,dz);__DF.syncLook();__DF.step(.05);if(__DF.state.prompt?.id===c.id)return true;}return false;},container);assert.ok(reached);
+    await page.keyboard.press('KeyE');await page.waitForFunction(id=>__DF.state.containers.find(c=>c.id===id).searched,container.id);
+    const loot=container.items.find(item=>!item.kind);assert.ok(loot);
+    await page.locator(`[data-take-container-item="${loot.id}"]`).click();await page.waitForFunction(id=>__DF.state.raid.loot.some(item=>item.id===id),loot.id);
+    await page.locator(`[data-panel="container"] [data-drop-item="${loot.id}"]`).click();await page.waitForFunction(id=>!__DF.state.raid.loot.some(item=>item.id===id),loot.id);
+    await page.keyboard.press('Escape');await page.waitForFunction(()=>document.pointerLockElement);
+    const dropped=await page.evaluate(id=>__DF.state.loot.find(item=>item.id===id&&!item.taken),loot.id);assert.ok(dropped);await position(dropped);
+    await page.waitForFunction(id=>__DF.state.prompt?.id===id,loot.id);await page.keyboard.press('KeyE');await page.waitForFunction(id=>__DF.state.raid.loot.some(item=>item.id===id),loot.id);
+    pass(`${room.name}: its container can be searched, looted and the dropped item recovered`);
   }
   const warehouse=interiors.find(room=>room.id==='warehouse'),door=warehouse.doors.find(door=>door.side==='south');
   const wallX=door.x+door.width/2+1.2;
