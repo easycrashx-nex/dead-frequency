@@ -721,7 +721,7 @@ export function createRenderer(canvas, layout) {
   const environmentScene = new RoomEnvironment();
   const pmrem = new THREE.PMREMGenerator(renderer); const environment = pmrem.fromScene(environmentScene, .06);
   scene.environment = environment.texture; scene.environmentIntensity = .32; environmentScene.dispose(); pmrem.dispose();
-  const camera = new THREE.PerspectiveCamera(78, 1, .035, 600); camera.rotation.order = 'YXZ'; scene.add(camera);
+  const camera = new THREE.PerspectiveCamera(82, 1, .035, 600); camera.rotation.order = 'YXZ'; scene.add(camera);
   const sky = createSky(scene); const mats = makePalette();
   const hemi = new THREE.HemisphereLight('#c5e0dc', '#918466', 1.85); scene.add(hemi);
   const sun = new THREE.DirectionalLight('#ffd3a0', 3.8); sun.position.set(-48, 56, -54); scene.add(sun); scene.add(sun.target);
@@ -733,7 +733,9 @@ export function createRenderer(canvas, layout) {
   const world = buildWorld(scene, layout, mats); const weapon = makeWeapon(camera, mats); const effects = makeEffects(scene);
   const enemies = new Map(); const teammates = new Map(); const lootField = makeLootField(scene);
   const dir = new THREE.Vector3(); const tmp = new THREE.Vector3(); const hubTarget = new THREE.Vector3();
-  let elapsed = 0; let lastState = null; let lastPhase = ''; let fps = 60; let shake = 0; let quality = 'high'; let fovSetting = 78;
+  let elapsed = 0; let lastState = null; let lastPhase = ''; let fps = 60; let shake = 0; let quality = 'high';
+  const settings = { quality: 'high', renderScale: 1, shadows: 'auto', particles: true, brightness: 1, contrast: 1, saturation: 1,
+    fov: 82, headBob: 1, weaponSway: 1, screenShake: 1, adsZoom: 1, sprintFov: 4, showWeapon: true };
   let width = 1; let height = 1; let disposed = false; let frameDt = 1 / 60;
   const rnd = seeded(404);
   const dustCount = 135; const dustPositions = new Float32Array(dustCount * 3);
@@ -746,13 +748,47 @@ export function createRenderer(canvas, layout) {
     renderer.setSize(width, height, false); camera.aspect = width / height; camera.updateProjectionMatrix();
   }
 
+  function applyQuality() {
+    quality = settings.quality;
+    const ratio = Math.min(window.devicePixelRatio || 1, quality === 'high' ? 1.5 : quality === 'medium' ? 1.15 : .85) * settings.renderScale;
+    if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
+    const shadowQuality = settings.shadows === 'auto' ? quality === 'low' ? 'off' : quality : settings.shadows;
+    const shadowsEnabled = shadowQuality !== 'off', mapSize = shadowQuality === 'high' ? 2048 : 1024;
+    renderer.shadowMap.enabled = shadowsEnabled; sun.castShadow = shadowsEnabled;
+    if (sun.shadow.mapSize.x !== mapSize || !shadowsEnabled) {
+      sun.shadow.mapSize.set(mapSize, mapSize); sun.shadow.map?.dispose(); sun.shadow.map = null;
+      sun.shadow.mapPass?.dispose(); sun.shadow.mapPass = null;
+    }
+    dust.visible = settings.particles && quality !== 'low'; resize();
+  }
+
+  function setSettings(next = {}) {
+    if (disposed || !next || typeof next !== 'object') return;
+    const previous = { ...settings };
+    const ranges = { renderScale: [.5, 1.5], brightness: [.7, 1.4], contrast: [.75, 1.3], saturation: [0, 1.5], fov: [65, 110],
+      headBob: [0, 1], weaponSway: [0, 1], screenShake: [0, 1], adsZoom: [0, 1], sprintFov: [0, 8] };
+    for (const [key, [min, max]] of Object.entries(ranges)) if (Number.isFinite(next[key])) settings[key] = clamp(next[key], min, max);
+    if (['low', 'medium', 'high'].includes(next.quality)) settings.quality = next.quality;
+    if (['auto', 'off', 'medium', 'high'].includes(next.shadows)) settings.shadows = next.shadows;
+    for (const key of ['particles', 'showWeapon']) if (typeof next[key] === 'boolean') settings[key] = next[key];
+    if (['quality', 'renderScale', 'shadows', 'particles'].some(key => settings[key] !== previous[key])) applyQuality();
+    renderer.toneMappingExposure = .98 * settings.brightness;
+    // Canvas composition grades the 3D image after tone mapping, preserving HUD
+    // contrast and avoiding a second full-resolution render target at defaults.
+    canvas.style.filter = settings.contrast === 1 && settings.saturation === 1 ? '' : `contrast(${settings.contrast}) saturate(${settings.saturation})`;
+    if (['fov', 'adsZoom', 'sprintFov'].some(key => settings[key] !== previous[key]) && lastState && lastState.phase !== 'hub') {
+      camera.fov = settings.fov - weapon.aim * 19 * settings.adsZoom + weapon.sprintBlend * settings.sprintFov;
+      camera.updateProjectionMatrix();
+    }
+    weapon.rig.visible = settings.showWeapon && !!lastState && ['raid', 'paused', 'extracted'].includes(lastState.phase);
+    if (lastState?.phase === 'paused' && ['headBob', 'screenShake'].some(key => settings[key] !== previous[key])) {
+      camera.position.y = (lastState.player.y || 0) + 1.65 - weapon.crouch + Math.sin(weapon.bob * 2) * weapon.bobAmplitude * settings.headBob;
+      camera.rotation.z = Math.cos(weapon.bob) * weapon.bobAmplitude * .2 * settings.headBob + Math.sin(elapsed * 33) * shake * .006 * settings.screenShake;
+    }
+  }
+
   function setQuality(value) {
-    quality = ['low', 'medium', 'high'].includes(value) ? value : 'high';
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality === 'high' ? 1.5 : quality === 'medium' ? 1.15 : .85));
-    renderer.shadowMap.enabled = quality !== 'low'; sun.castShadow = quality !== 'low';
-    const mapSize = quality === 'high' ? 2048 : 1024;
-    if (sun.shadow.mapSize.x !== mapSize) { sun.shadow.mapSize.set(mapSize, mapSize); sun.shadow.map?.dispose(); sun.shadow.map = null; }
-    dust.visible = quality !== 'low'; resize();
+    setSettings({ quality: ['low', 'medium', 'high'].includes(value) ? value : 'high' });
   }
 
   function clearEntities() {
@@ -771,13 +807,13 @@ export function createRenderer(canvas, layout) {
       weapon.recoil = weapon.kick = weapon.flashTime = weapon.aim = weapon.crouch = weapon.bob = weapon.reloadClock = 0;
       weapon.sprintBlend = weapon.moveBlend = weapon.bobAmplitude = 0;
       weapon.rig.position.set(.265, -.315, -.49); weapon.rig.rotation.set(0, 0, 0);
-      camera.fov = input.fov || fovSetting; camera.updateProjectionMatrix(); shake = 0;
+      camera.fov = Number.isFinite(input.fov) ? clamp(input.fov, 65, 110) : settings.fov; camera.updateProjectionMatrix(); shake = 0;
     }
     if (phase === 'paused' && lastPhase !== 'paused') {
       weapon.flashTime = 0; weapon.flash.visible = false; weapon.light.intensity = 0;
     }
     lastPhase = phase;
-    weapon.rig.visible = isRaidView && phase !== 'dead';
+    weapon.rig.visible = settings.showWeapon && isRaidView && phase !== 'dead';
     if (!isRaidView) {
       const angle = -.38 + Math.sin(elapsed * .037) * .13;
       camera.position.set(25 + Math.sin(angle) * 13, 10.8 + Math.sin(elapsed * .08) * .4, 26 + Math.cos(angle) * 10);
@@ -799,14 +835,15 @@ export function createRenderer(canvas, layout) {
       const amplitude = THREE.MathUtils.lerp(.013, .03, weapon.sprintBlend) * weapon.moveBlend * (1 - weapon.aim * .85);
       weapon.bobAmplitude = amplitude;
       const bobY = Math.sin(weapon.bob * 2) * amplitude;
+      const weaponAmplitude = amplitude * settings.weaponSway;
       const deathOffset = phase === 'dead' ? .92 : 0;
-      camera.position.set(p.x || 0, (p.y || 0) + 1.65 - weapon.crouch + bobY - deathOffset, p.z || 0);
+      camera.position.set(p.x || 0, (p.y || 0) + 1.65 - weapon.crouch + bobY * settings.headBob - deathOffset, p.z || 0);
       shake = damp(shake, 0, 9, dt);
       // Parent supplies the single authoritative aim offset to both player state
       // and hitscan. Cosmetic weapon motion must never alter camera pitch/yaw.
-      camera.rotation.set(p.pitch || 0, p.yaw || 0, phase === 'dead' ? -.21 : Math.cos(weapon.bob) * amplitude * .2 + Math.sin(elapsed * 33) * shake * .006, 'YXZ');
-      const fov = input.fov || fovSetting;
-      camera.fov = damp(camera.fov, fov - weapon.aim * 19 + weapon.sprintBlend * 4, 12, dt); camera.updateProjectionMatrix();
+      camera.rotation.set(p.pitch || 0, p.yaw || 0, phase === 'dead' ? -.21 : Math.cos(weapon.bob) * amplitude * .2 * settings.headBob + Math.sin(elapsed * 33) * shake * .006 * settings.screenShake, 'YXZ');
+      const fov = Number.isFinite(input.fov) ? clamp(input.fov, 65, 110) : settings.fov;
+      camera.fov = damp(camera.fov, fov - weapon.aim * 19 * settings.adsZoom + weapon.sprintBlend * settings.sprintFov, 12, dt); camera.updateProjectionMatrix();
       weapon.recoil = damp(weapon.recoil, 0, 18, dt); weapon.kick = damp(weapon.kick, 0, 19, dt);
       weapon.flashTime -= dt; weapon.flash.visible = weapon.flashTime > 0; weapon.light.intensity = weapon.flashTime > 0 && quality === 'high' ? 4.5 : 0;
       if (weapon.flash.visible) weapon.flash.rotation.z += dt * 40;
@@ -814,13 +851,13 @@ export function createRenderer(canvas, layout) {
       weapon.reloadClock = isReloading ? weapon.reloadClock + dt : 0;
       const reload = isReloading ? Math.sin(Math.min(1, weapon.reloadClock / .23) * Math.PI / 2) : 0;
       const healing = p.heal ? 1 : 0;
-      const swayX = clamp(input.lookDX || 0, -70, 70) * -.00022 * (1 - weapon.aim * .8);
-      const swayY = clamp(input.lookDY || 0, -70, 70) * -.00015 * (1 - weapon.aim * .8);
-      const x = THREE.MathUtils.lerp(.265, 0, weapon.aim) + Math.cos(weapon.bob) * amplitude + swayX;
-      const y = THREE.MathUtils.lerp(-.315, -.174, weapon.aim) - Math.abs(bobY) + swayY - reload * .13 - healing * .3;
+      const swayX = clamp(input.lookDX || 0, -70, 70) * -.00022 * (1 - weapon.aim * .8) * settings.weaponSway;
+      const swayY = clamp(input.lookDY || 0, -70, 70) * -.00015 * (1 - weapon.aim * .8) * settings.weaponSway;
+      const x = THREE.MathUtils.lerp(.265, 0, weapon.aim) + Math.cos(weapon.bob) * weaponAmplitude + swayX;
+      const y = THREE.MathUtils.lerp(-.315, -.174, weapon.aim) - Math.abs(bobY) * settings.weaponSway + swayY - reload * .13 - healing * .3;
       const z = THREE.MathUtils.lerp(-.49, -.43, weapon.aim) + weapon.recoil * (.011 - weapon.aim * .007);
       weapon.rig.position.x = damp(weapon.rig.position.x, x, 22, dt); weapon.rig.position.y = damp(weapon.rig.position.y, y, 20, dt); weapon.rig.position.z = damp(weapon.rig.position.z, z, 25, dt);
-      weapon.rig.rotation.set(weapon.kick * (.015 - weapon.aim * .014) + reload * .16 - weapon.sprintBlend * .2, reload * .38 + swayX * 2, reload * -.47 + weapon.sprintBlend * .16 + Math.cos(weapon.bob) * amplitude * .35);
+      weapon.rig.rotation.set(weapon.kick * (.015 - weapon.aim * .014) + reload * .16 - weapon.sprintBlend * .2, reload * .38 + swayX * 2, reload * -.47 + weapon.sprintBlend * .16 + Math.cos(weapon.bob) * weaponAmplitude * .35);
       weapon.mag.position.y = -.08 - (isReloading ? Math.sin(Math.min(1, weapon.reloadClock / 1.7) * Math.PI) * .3 : 0);
       weapon.mag.rotation.x = isReloading ? Math.sin(weapon.reloadClock * 3) * .17 : 0;
       weapon.dot.visible = weapon.aim > .3;
@@ -921,7 +958,7 @@ export function createRenderer(canvas, layout) {
       } else if (event.type === 'damage') shake = .85;
       else if (event.type === 'hit') {
         const en = enemies.get(event.id ?? event.enemyId); if (en) en.hit = .12;
-        if (event.x != null) for (let i = 0; i < 5; i++) effects.add({ x: event.x, y: event.y || 1, z: event.z }, { x: event.x + (rnd() - .5) * .45, y: (event.y || 1) + rnd() * .35, z: event.z + (rnd() - .5) * .45 }, false, .11);
+        if (settings.particles && event.x != null) for (let i = 0; i < 5; i++) effects.add({ x: event.x, y: event.y || 1, z: event.z }, { x: event.x + (rnd() - .5) * .45, y: (event.y || 1) + rnd() * .35, z: event.z + (rnd() - .5) * .45 }, false, .11);
       }
     }
   }
@@ -933,17 +970,18 @@ export function createRenderer(canvas, layout) {
     if (materials) uniqueMaterials.forEach(m => { for (const key of Object.keys(m)) if (m[key]?.isTexture) m[key].dispose(); m.dispose(); });
   }
 
-  setQuality('high');
+  applyQuality();
   return {
     canvas,
     update,
     render() { if (!disposed) renderer.render(scene, camera); },
     resize,
     events,
+    setSettings,
     setQuality,
-    setFov(value) { fovSetting = clamp(Number(value) || 78, 60, 105); },
+    setFov(value) { setSettings({ fov: Number.isFinite(value) ? value : 82 }); },
     getAimDirection() { const p = lastState?.player; if (p) return { x: -Math.sin(p.yaw || 0) * Math.cos(p.pitch || 0), y: Math.sin(p.pitch || 0), z: -Math.cos(p.yaw || 0) * Math.cos(p.pitch || 0) }; camera.getWorldDirection(dir); return { x: dir.x, y: dir.y, z: dir.z }; },
-    stats() { return { teammates: teammates.size, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, fps: Math.round(fps), quality, frameMs: Math.round(frameDt * 10000) / 10, cameraPitch: camera.rotation.x, cameraYaw: camera.rotation.y, cameraY: camera.position.y, fov: camera.fov, sprintBlend: weapon.sprintBlend, moveBlend: weapon.moveBlend, weaponPitch: weapon.rig.rotation.x, weaponRoll: weapon.rig.rotation.z, bobAmplitude: weapon.bobAmplitude, ...lootField.stats() }; },
-    dispose() { if (disposed) return; disposed = true; disposeGroup(scene); environment.dispose(); renderer.dispose(); },
+    stats() { return { settings: { ...settings }, pixelRatio: renderer.getPixelRatio(), renderWidth: canvas.width, renderHeight: canvas.height, shadowsEnabled: renderer.shadowMap.enabled, shadowMapSize: renderer.shadowMap.enabled ? sun.shadow.mapSize.x : 0, dustVisible: dust.visible, exposure: renderer.toneMappingExposure, colorFilter: canvas.style.filter, weaponVisible: weapon.rig.visible, cameraRoll: camera.rotation.z, weaponX: weapon.rig.position.x, weaponY: weapon.rig.position.y, teammates: teammates.size, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, fps: Math.round(fps), quality, frameMs: Math.round(frameDt * 10000) / 10, cameraPitch: camera.rotation.x, cameraYaw: camera.rotation.y, cameraY: camera.position.y, fov: camera.fov, sprintBlend: weapon.sprintBlend, moveBlend: weapon.moveBlend, weaponPitch: weapon.rig.rotation.x, weaponRoll: weapon.rig.rotation.z, bobAmplitude: weapon.bobAmplitude, headBobAmplitude: weapon.bobAmplitude * settings.headBob, weaponBobAmplitude: weapon.bobAmplitude * settings.weaponSway, ...lootField.stats() }; },
+    dispose() { if (disposed) return; disposed = true; disposeGroup(scene); environment.dispose(); renderer.dispose(); canvas.style.filter = ''; },
   };
 }

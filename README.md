@@ -1,4 +1,4 @@
-# DEAD FREQUENCY 1.3.1
+# DEAD FREQUENCY 1.4.0
 
 Ein Extraction-Shooter aus der Ego-Perspektive für Windows x64: allein offline oder zu zweit im Koop. Durchsuche den 300 × 300 Meter großen Sektor 07, bekämpfe Patrouillen, sichere Beute und handle nach der Extraktion damit.
 
@@ -27,6 +27,19 @@ Die Internet-Einladung läuft über den mitgelieferten Cloudflare-Tunnel, benöt
 Bei jedem normalen Start prüft der Launcher das neueste stabile [GitHub-Release](https://github.com/easycrashx-nex/dead-frequency/releases/latest). Eine neuere Version wird ohne Bestätigung heruntergeladen, anhand von SHA-256 geprüft und in einem separaten Versionsordner vorbereitet. Anschließend startet automatisch die neue Version. Es muss kein ZIP von Hand heruntergeladen oder entpackt werden. Während eines Raids wird kein Update eingespielt.
 
 Bei fehlendem Internet oder einem fehlerhaften Download startet die vorhandene Version. Frühere vollständige Installationen bleiben erhalten; ältere Releases ersetzen keine neuere Version. Spielstände liegen getrennt von den Programmdateien im Windows-Benutzerprofil. Für Updates werden ausschließlich öffentliche GitHub-Release-Dateien dieses Projekts verwendet; Zugangstoken werden nicht mitgeliefert.
+
+## Einstellungen
+
+**EINSTELLUNGEN** in der Basis oder im Pausenmenü öffnet 55 Optionen in sechs Kategorien:
+
+- **Grafik & Anzeige:** Qualitätsprofil, Renderauflösung, Schatten, Partikel, Helligkeit, Kontrast, Sättigung, Sichtfeld, FPS-Limit und Vollbild.
+- **Kamera & Bewegung:** Kopfbewegung, Waffenschwanken, Treffererschütterungen, Visier-Zoom, Sprint-Sichtfeld und Waffenanzeige.
+- **Maus & Spielweise:** normale und Visier-Empfindlichkeit, invertierte Y-Achse, Halten/Umschalten für Zielen, Sprint und Ducken sowie Nachladen ohne erneuten Schussversuch.
+- **Tastenbelegung:** zwölf Bewegungs- und Aktionstasten. Eine Aktion anklicken und die gewünschte Taste drücken; belegte Tasten werden erklärt, Escape bricht die Eingabe ab. Escape für das Menü und F11 für Vollbild bleiben fest.
+- **Audio:** Gesamtlautstärke, Waffen, Effekte, Schritte, Umgebung und Hinweise separat; Stummschaltung bei Fensterwechsel und Nachtmodus.
+- **HUD & Fadenkreuz:** Größe und Deckkraft, Fadenkreuz mit Farb-/Größenvorschau, Treffer- und Schadensanzeigen, Kompass, Teamanzeige, Interaktionshinweise und FPS-Anzeige.
+
+Die Suche findet Einstellungen über alle Kategorien. Änderungen wirken sofort und werden automatisch gespeichert; vorhandene Einstellungen früherer Versionen bleiben erhalten. Eine Kategorie lässt sich einzeln zurücksetzen, alle Einstellungen über einen zweiten Bestätigungsklick. Spielstände und Lager werden dabei nicht verändert. Beim Sprint-Umschalten beendet Erschöpfung den Sprint; nach Erholung erneut die Sprinttaste drücken. Im Koop läuft die Welt auch bei geöffneten Einstellungen weiter.
 
 ## Solo-Raid
 

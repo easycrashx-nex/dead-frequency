@@ -6,5 +6,7 @@ contextBridge.exposeInMainWorld('platform',Object.freeze({
   stopHost:()=>ipcRenderer.invoke('coop:stop'),
   copyInvite:text=>ipcRenderer.invoke('coop:copy',text),
   onStatus:callback=>subscribe('coop:status',callback),
+  setFullscreen:value=>ipcRenderer.invoke('display:fullscreen',value),
+  onFullscreen:callback=>subscribe('display:fullscreen',callback),
 }));
 contextBridge.exposeInMainWorld('launcher',Object.freeze({onProgress:callback=>subscribe('launcher:progress',callback)}));

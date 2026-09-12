@@ -1,5 +1,7 @@
 import { layout } from './layout.js';
 import { createCoopUI } from './coop-ui.js';
+import { createSettingsUI } from './settings-ui.js';
+import { BINDING_ACTIONS, defaultSettings, keyLabel } from './settings.js';
 import { KIT_COSTS, UPGRADE_COSTS, RAID_SECONDS } from './simulation.js';
 import { marketQuote, saleChance, MARKET_DURATIONS, MARKET_CHECK_MS } from './economy.js';
 
@@ -16,7 +18,7 @@ const logisticsPanels = `<section id="hub-logistics" class="hub-logistics" hidde
   <div id="hub-market" class="market-layout logistics-content" hidden><section class="logistics-card sell-card"><div class="sell-scroll"><div class="logistics-card-heading"><div><span class="micro orange">LOKALER HANDEL</span><h3>ANGEBOT ERSTELLEN</h3></div><span class="market-live"><i></i> LIVE</span></div><label class="market-label" for="market-item">GEGENSTAND AUS DEINEM LAGER</label><select id="market-item" aria-label="Gegenstand für Marktangebot"><option value="">Lager ist leer</option></select><div class="quote-display"><div><span class="micro dim">AKTUELLER MARKTRICHTWERT</span><strong id="market-quote">— <small>CR</small></strong></div><span id="market-trend" class="market-trend">—</span></div><svg id="market-chart" class="market-chart" viewBox="0 0 300 50" preserveAspectRatio="none" role="img" aria-label="Marktrichtwert der vergangenen zehn Minuten"><path id="market-chart-fill" d=""/><polyline id="market-chart-line" points=""/></svg><div class="chart-caption"><span>−10 MIN</span><span>JETZT · RICHTWERT</span></div><div class="price-form"><label for="market-price">DEIN WUNSCHPREIS <span>CR</span></label><div class="price-input-row"><input id="market-price" type="number" min="1" max="1000000" step="1" inputmode="numeric" placeholder="Preis festlegen"><button id="use-market-price" class="small-button" data-action="quote-price" title="Aktuellen Marktrichtwert übernehmen">RICHTWERT</button></div><label for="market-duration">ANGEBOTSDAUER</label><select id="market-duration">${MARKET_DURATIONS.map(minutes => `<option value="${minutes}"${minutes === 5 ? ' selected' : ''}>${minutes} MINUTEN</option>`).join('')}</select></div><div class="chance-display"><div><span>VERKAUFSCHANCE</span><strong id="market-chance">—</strong></div><p>je Käuferprüfung (${MARKET_CHECK_MS / 1000} Sekunden). Keine Verkaufsgarantie; Markt und Nachfrage verändern sich.</p><div class="chance-track"><i id="market-chance-fill"></i></div></div><p id="market-form-message" class="market-form-message">Wähle einen eingelagerten Gegenstand.</p></div><button id="create-listing" data-action="list-item" class="primary-button"><span>ANGEBOT EINSTELLEN</span><span>↗</span></button></section><section class="logistics-card listings-card"><div class="logistics-card-heading"><div><span class="micro dim">KAUFINTERESSENTEN PRÜFEN REGELMÄSSIG</span><h3>AKTIVE ANGEBOTE <b id="listing-count">0</b></h3></div><button class="small-button" data-hub-tab="mailbox">POSTFACH ↗</button></div><p class="card-description">Wunschpreis und Laufzeit bleiben fest. Erlöse und unverkaufte Ware landen im Postfach und werden dort von dir beansprucht.</p><div id="listing-list" class="logistics-list"></div><div class="market-rules"><span>01 <b>ANBIETEN</b> Ware verlässt das Lager.</span><span>02 <b>ABWARTEN</b> Käufer entscheiden nach Preis und Nachfrage.</span><span>03 <b>ABHOLEN</b> Credits oder Retoure im Postfach beanspruchen.</span></div></section></div>
   <div id="hub-mailbox" class="mailbox-layout logistics-content" hidden><section class="logistics-card mailbox-card"><div class="logistics-card-heading"><div><span class="micro orange">DEINE MARKTERGEBNISSE</span><h3>POSTEINGANG <b id="mail-count">0</b></h3></div><button id="claim-all" class="small-button accent-button" data-action="claim-all">ALLES BEANSPRUCHEN ↗</button></div><div class="mail-summary"><div><span class="micro dim">ABHOLBARE ERLÖSE</span><strong id="mail-credits">0 CR</strong></div><div><span class="micro dim">WARE ZURÜCK</span><strong id="mail-items">0</strong></div><p>Verkaufserlöse gehen erst beim Beanspruchen auf dein Guthaben. Retouren werden wieder eingelagert.</p></div><div id="mail-list" class="logistics-list"></div></section></div>
 </section>`;
-const controls = `<dl class="controls-grid"><div><dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Bewegen</dd></div><div><dt><kbd>MAUS</kbd></dt><dd>Umsehen</dd></div><div><dt><kbd>LMB</kbd> / <kbd>RMB</kbd></dt><dd>Feuern / Zielen</dd></div><div><dt><kbd>SHIFT</kbd> / <kbd>C</kbd></dt><dd>Sprinten / Ducken</dd></div><div><dt><kbd>LEER</kbd></dt><dd>Springen</dd></div><div><dt><kbd>E</kbd></dt><dd>Beute, Relais, Extraktion</dd></div><div><dt><kbd>R</kbd> / <kbd>F</kbd></dt><dd>Nachladen / Medkit</dd></div><div><dt><kbd>M</kbd> / <kbd>TAB</kbd></dt><dd>Karte / Rucksack</dd></div><div><dt><kbd>ESC</kbd></dt><dd>Menü / Pause</dd></div></dl>`;
+const controls = `<dl class="controls-grid"><div><dt><kbd>MAUS</kbd></dt><dd>Umsehen</dd></div><div><dt><kbd>LMB</kbd> / <kbd>RMB</kbd></dt><dd>Feuern / Zielen</dd></div>${BINDING_ACTIONS.map(action => `<div><dt><kbd data-binding-code="${action.key}">${escapeHTML(keyLabel(action.default))}</kbd></dt><dd>${escapeHTML(action.label)}</dd></div>`).join('')}<div><dt><kbd>ESC</kbd></dt><dd>Menü / Pause</dd></div><div><dt><kbd>F11</kbd></dt><dd>Vollbild</dd></div></dl>`;
 
 export function createUI(root, actions) {
   root.classList.add('game-interface');
@@ -42,24 +44,24 @@ export function createUI(root, actions) {
         <div class="upgrades-heading"><span class="micro">PERMANENTE UPGRADES</span><span class="tiny dim">BLEIBEN BEI TOD</span></div>
         <div class="upgrade-list">${['armor','backpack','weapon'].map((kind, index) => `<button class="upgrade-button" id="upgrade-${kind}" data-upgrade="${kind}"><span class="upgrade-icon" aria-hidden="true">${['◇','▤','⌖'][index]}</span><span class="upgrade-copy"><strong>${['Panzerung','Rucksack','Waffentuning'][index]}</strong><small id="upgrade-${kind}-level">STUFE 0 / 3</small></span><span class="upgrade-price" id="upgrade-${kind}-price">— CR</span><span class="upgrade-plus">+</span></button>`).join('')}</div>
       </aside></div>${logisticsPanels}
-      <footer class="menu-footer"><div class="footer-hint"><span class="micro">WASD</span> BEWEGEN <span class="footer-separator">/</span> <span class="micro">MAUS</span> ZIELEN <span class="footer-separator">/</span> <span class="micro">E</span> INTERAGIEREN</div><button data-action="help" class="text-button">FELDHANDBUCH & STEUERUNG <span>↗</span></button><span class="tiny dim build-label">SINGLEPLAYER · OFFLINE</span></footer>
+      <footer class="menu-footer"><div class="footer-hint"><span class="micro"><span data-binding-code="forward">W</span> <span data-binding-code="left">A</span> <span data-binding-code="backward">S</span> <span data-binding-code="right">D</span></span> BEWEGEN <span class="footer-separator">/</span> <span class="micro">MAUS</span> ZIELEN <span class="footer-separator">/</span> <span class="micro" data-binding-code="interact">E</span> INTERAGIEREN</div><button data-action="help" class="text-button">FELDHANDBUCH & STEUERUNG <span>↗</span></button><span class="tiny dim build-label">SINGLEPLAYER · OFFLINE</span></footer>
     </section>
     <section id="raid-hud" class="raid-hud" hidden>
       <div class="objective-hud"><div class="objective-label"><span class="live-dot"></span> IM EINSATZ <span id="raid-difficulty">NORMAL</span></div><div class="raid-clock" id="raid-clock">${clock(RAID_SECONDS)}</div><div class="objective-text" id="objective-text">Fracht sichern. Lebend extrahieren.</div><div class="relay-status" id="relay-status">OPTIONAL / FUNKRELAIS AKTIVIEREN</div></div>
       <div class="compass-hud"><span class="compass-pointer">▾</span><div id="compass-labels" class="compass-labels"></div><span id="compass-bearing" class="tiny">000°</span></div>
-      <div class="raid-top-right"><span class="micro">SPERRZONE 07</span><span class="tiny dim">M KARTE <i>·</i> TAB RUCKSACK</span></div>
+      <div class="raid-top-right"><span class="micro">SPERRZONE 07</span><span class="tiny dim"><kbd data-binding-code="map">M</kbd> KARTE <i>·</i> <kbd data-binding-code="inventory">TAB</kbd> RUCKSACK</span></div>
       <div id="crosshair" class="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div><div id="hit-marker" class="hit-marker" aria-hidden="true">×</div>
-      <div id="interaction" class="interaction" hidden><div class="interaction-key">E</div><div><span id="interaction-label"></span><small id="interaction-detail"></small></div></div>
+      <div id="interaction" class="interaction" hidden><div class="interaction-key" data-binding-code="interact">E</div><div><span id="interaction-label"></span><small id="interaction-detail"></small></div></div>
       <div id="extraction-hud" class="extraction-hud" hidden><div><span class="micro">EXTRAKTION LÄUFT</span><strong id="extraction-seconds">8.0</strong></div><div class="extraction-track"><i id="extraction-fill"></i></div><span class="tiny">POSITION HALTEN · ZONE NICHT VERLASSEN</span></div>
-      <div class="vitals-hud"><div class="health-line"><span class="health-symbol">+</span><strong id="hud-health">100</strong><span class="tiny dim">GESUNDHEIT</span><span class="armor-value"><span>◇</span> <b id="hud-armor">0</b></span></div><div class="health-track"><i id="health-fill"></i></div><div class="stamina-track"><i id="stamina-fill"></i></div><div class="vitals-details"><span><kbd>F</kbd> <b id="hud-medkits">1</b> MEDKIT</span><span id="hud-player-action"></span></div></div>
-      <div class="ammo-hud"><div class="loot-mini"><span class="dim">BEUTE</span> <strong id="hud-loot-value">0 CR</strong><span id="hud-loot-space" class="dim">0 / 6</span></div><div class="weapon-name" id="hud-weapon">MX-4 / 5.56</div><div class="ammo-line"><strong id="hud-ammo">30</strong><span>/ <b id="hud-reserve">90</b></span></div><div class="ammo-detail"><span id="hud-firemode">AUTO</span><span><kbd>R</kbd> NACHLADEN</span></div></div>
+      <div class="vitals-hud"><div class="health-line"><span class="health-symbol">+</span><strong id="hud-health">100</strong><span class="tiny dim">GESUNDHEIT</span><span class="armor-value"><span>◇</span> <b id="hud-armor">0</b></span></div><div class="health-track"><i id="health-fill"></i></div><div class="stamina-track"><i id="stamina-fill"></i></div><div class="vitals-details"><span><kbd data-binding-code="heal">F</kbd> <b id="hud-medkits">1</b> MEDKIT</span><span id="hud-player-action"></span></div></div>
+      <div class="ammo-hud"><div class="loot-mini"><span class="dim">BEUTE</span> <strong id="hud-loot-value">0 CR</strong><span id="hud-loot-space" class="dim">0 / 6</span></div><div class="weapon-name" id="hud-weapon">MX-4 / 5.56</div><div class="ammo-line"><strong id="hud-ammo">30</strong><span>/ <b id="hud-reserve">90</b></span></div><div class="ammo-detail"><span id="hud-firemode">AUTO</span><span><kbd data-binding-code="reload">R</kbd> NACHLADEN</span></div></div>
       <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
-      <div class="field-panel" id="map-panel" data-panel="map" hidden><div class="field-panel-header"><div><span class="micro orange">TAKTISCHE ÜBERSICHT</span><h2>SEKTOR 07</h2></div><button class="field-close" data-action="close-field">M / ESC <span>×</span></button></div><div class="map-container"><canvas id="tactical-map" width="720" height="720" aria-label="Taktische Karte mit deiner Position, Funkrelais und Extraktionspunkten"></canvas><span class="map-north">N ↑</span></div><div class="map-legend"><span><i class="legend-player"></i>DU</span><span id="map-team-legend" hidden><i class="legend-teammate"></i>TEAM</span><span><i class="legend-relay"></i>FUNKRELAIS</span><span><i class="legend-exfil"></i>EXTRAKTION</span></div><p class="field-footnote">Die Zeit läuft weiter. Suche Deckung, bevor du die Karte öffnest.</p></div>
-      <div class="field-panel inventory-panel" id="inventory-panel" data-panel="inventory" hidden><div class="field-panel-header"><div><span class="micro orange">MITGEFÜHRTE AUSRÜSTUNG</span><h2>RUCKSACK</h2></div><button id="close-inventory" class="field-close" data-action="close-field">TAB / ESC <span>×</span></button></div><div class="inventory-summary"><span id="inventory-value">0 CR</span><span id="inventory-capacity" class="micro dim">0 / 6 PLÄTZE</span></div><div id="inventory-list" class="inventory-list"></div><div class="inventory-supplies"><span>RESERVEMUNITION <b id="inventory-reserve">90</b></span><span>MEDKITS <b id="inventory-medkits">1</b></span></div><p class="field-footnote">Der Raid läuft weiter. Abgeworfene Ware bleibt hier in der Zone.</p></div>
+      <div class="field-panel" id="map-panel" data-panel="map" hidden><div class="field-panel-header"><div><span class="micro orange">TAKTISCHE ÜBERSICHT</span><h2>SEKTOR 07</h2></div><button class="field-close" data-action="close-field"><kbd data-binding-code="map">M</kbd> / ESC <span>×</span></button></div><div class="map-container"><canvas id="tactical-map" width="720" height="720" aria-label="Taktische Karte mit deiner Position, Funkrelais und Extraktionspunkten"></canvas><span class="map-north">N ↑</span></div><div class="map-legend"><span><i class="legend-player"></i>DU</span><span id="map-team-legend" hidden><i class="legend-teammate"></i>TEAM</span><span><i class="legend-relay"></i>FUNKRELAIS</span><span><i class="legend-exfil"></i>EXTRAKTION</span></div><p class="field-footnote">Die Zeit läuft weiter. Suche Deckung, bevor du die Karte öffnest.</p></div>
+      <div class="field-panel inventory-panel" id="inventory-panel" data-panel="inventory" hidden><div class="field-panel-header"><div><span class="micro orange">MITGEFÜHRTE AUSRÜSTUNG</span><h2>RUCKSACK</h2></div><button id="close-inventory" class="field-close" data-action="close-field"><kbd data-binding-code="inventory">TAB</kbd> / ESC <span>×</span></button></div><div class="inventory-summary"><span id="inventory-value">0 CR</span><span id="inventory-capacity" class="micro dim">0 / 6 PLÄTZE</span></div><div id="inventory-list" class="inventory-list"></div><div class="inventory-supplies"><span>RESERVEMUNITION <b id="inventory-reserve">90</b></span><span>MEDKITS <b id="inventory-medkits">1</b></span></div><p class="field-footnote">Der Raid läuft weiter. Abgeworfene Ware bleibt hier in der Zone.</p></div>
     </section>
     <section id="pause-screen" class="screen pause-screen" hidden><div class="pause-content"><span class="eyebrow"><span class="orange-dash"></span> VERBINDUNG GEHALTEN</span><h2 id="pause-title">EINSATZ<br>PAUSIERT<span class="orange">.</span></h2><p class="dim" id="pause-description">Durchatmen. Die Zone wartet.</p><button id="resume-raid" class="primary-button" data-action="resume"><span>FORTSETZEN</span><span>↗</span></button><div class="pause-secondary"><button class="secondary-button" data-action="settings">EINSTELLUNGEN</button><button class="secondary-button" data-action="help">STEUERUNG</button></div><button id="abandon-raid" class="text-button abandon-button" data-action="abandon">EINSATZ ABBRECHEN <span>↗</span></button><p id="abandon-note" class="tiny dim">Mitgeführte Beute geht beim Abbruch verloren.</p></div><div id="pause-coordinate" class="pause-coordinate micro dim">BLACKLINE / SEKTOR 07 / OFFLINE</div></section>
     <section id="result-screen" class="screen result-screen" hidden><div class="result-content"><span class="eyebrow" id="result-eyebrow"><span class="orange-dash"></span> OPERATION ABGESCHLOSSEN</span><h2 id="result-title">ERFOLGREICH<br>EXTRAHIERT<span class="orange">.</span></h2><p id="result-description" class="result-description">Die Fracht ist sicher.</p><div class="result-stats"><div><span class="micro dim">WARENRICHTWERT</span><strong id="result-loot">0 <small>CR</small></strong></div><div><span class="micro dim">BONUS</span><strong id="result-bonus">0 <small>CR</small></strong></div><div><span class="micro dim">ABSCHÜSSE</span><strong id="result-kills">0</strong></div></div><div class="result-total"><span class="micro">BONUS DIREKT GUTGESCHRIEBEN</span><strong id="result-total">0 CR</strong></div><button id="result-hub" class="primary-button" data-action="hub"><span id="result-hub-label">ZURÜCK ZUR BASIS</span><span>↗</span></button><p id="result-storage-note" class="tiny dim">Extrahierte Gegenstände warten unter Lager → Anlieferung.</p></div></section>
-    <div id="utility-overlay" class="utility-overlay" hidden><section class="utility-dialog" role="dialog" aria-modal="true" aria-labelledby="utility-title"><div class="utility-heading"><div><span class="micro orange">BLACKLINE / FELDHANDBUCH</span><h2 id="utility-title">STEUERUNG</h2></div><button class="close-button" data-action="close-utility" aria-label="Schließen">×</button></div><div id="help-content"><p class="help-intro">Zwölf Minuten in der Sperrzone. Extrahiere Beute, lagere sie zu Hause ein und verkaufe sie auf dem lokalen Markt.</p>${controls}<div class="help-rules"><p><b>01 / SICHERN</b> Beutekisten durchsuchen. Mit E aufnehmen, solange Platz im Rucksack ist.</p><p><b>02 / SENDEN</b> Das optionale Funkrelais auf der Karte aktivieren und den Bonus sichern.</p><p><b>03 / VERSCHWINDEN</b> Einen markierten Extraktionspunkt erreichen. E drücken und 8 Sekunden in der Zone bleiben.</p></div></div><div id="settings-content" hidden><p class="help-intro">Passe dein Einsatzprofil an.</p><label class="setting-row" for="setting-sensitivity"><span>MAUS-EMPFINDLICHKEIT</span><output id="sensitivity-output">1.0</output><input id="setting-sensitivity" data-setting="sensitivity" type="range" min="0.2" max="2.5" step="0.1" value="1"></label><label class="setting-row" for="setting-volume"><span>LAUTSTÄRKE</span><output id="volume-output">60 %</output><input id="setting-volume" data-setting="volume" type="range" min="0" max="1" step="0.05" value="0.6"></label><label class="setting-row quality-setting" for="setting-quality"><span>GRAFIKQUALITÄT</span><select id="setting-quality" data-setting="quality"><option value="high">HOCH</option><option value="medium">MITTEL</option><option value="low">NIEDRIG</option></select></label><p class="settings-note tiny dim">Einstellungen werden automatisch gespeichert.</p></div><button data-action="close-utility" class="secondary-button utility-done">ZURÜCK</button></section></div>
+    <div id="utility-overlay" class="utility-overlay" hidden><section class="utility-dialog" role="dialog" aria-modal="true" aria-labelledby="utility-title"><div class="utility-heading"><div><span class="micro orange">BLACKLINE / FELDHANDBUCH</span><h2 id="utility-title">STEUERUNG</h2></div><button class="close-button" data-action="close-utility" aria-label="Schließen">×</button></div><div id="help-content"><p class="help-intro">Zwölf Minuten in der Sperrzone. Extrahiere Beute, lagere sie zu Hause ein und verkaufe sie auf dem lokalen Markt.</p>${controls}<div class="help-rules"><p><b>01 / SICHERN</b> Beutekisten durchsuchen. Mit <span data-binding-code="interact">E</span> aufnehmen, solange Platz im Rucksack ist.</p><p><b>02 / SENDEN</b> Das optionale Funkrelais auf der Karte aktivieren und den Bonus sichern.</p><p><b>03 / VERSCHWINDEN</b> Einen markierten Extraktionspunkt erreichen. <span data-binding-code="interact">E</span> drücken und 8 Sekunden in der Zone bleiben.</p></div></div><div id="settings-content" hidden></div><button data-action="close-utility" class="secondary-button utility-done">ZURÜCK</button></section></div>
     <div id="menu-notice" class="menu-notice" role="status" hidden></div>
   `;
 
@@ -73,6 +75,7 @@ export function createUI(root, actions) {
   let selectedDifficulty = 'normal';
   let panel = null;
   let utility = null;
+  let utilityReturnFocus = null, settings = defaultSettings(), bindingSignature = '';
   let lastExternalMap;
   let lastExternalInventory;
   let previousInventory = '';
@@ -89,6 +92,8 @@ export function createUI(root, actions) {
   const mapCanvas = el('tactical-map');
   const mapContext = mapCanvas.getContext('2d');
   let economy = { assault: KIT_COSTS.assault, upgradeCosts: UPGRADE_COSTS, maxLevel: 3 };
+  const settingsUI = createSettingsUI(nodes['settings-content'], actions);
+  const fpsNode = document.createElement('span'); fpsNode.id = 'hud-fps'; fpsNode.className = 'hud-fps'; fpsNode.hidden = true; nodes['raid-hud'].append(fpsNode);
 
   function notice(text) {
     setText('menu-notice', text);
@@ -97,12 +102,17 @@ export function createUI(root, actions) {
     noticeTimer = setTimeout(() => show('menu-notice', false), 3400);
   }
   function showUtility(kind) {
+    if (kind && !utility) utilityReturnFocus = document.activeElement;
     utility = kind;
     show('utility-overlay', !!kind);
     show('help-content', kind === 'help');
     show('settings-content', kind === 'settings');
     setText('utility-title', kind === 'settings' ? 'EINSTELLUNGEN' : 'STEUERUNG');
+    nodes['utility-overlay'].querySelector('.utility-heading .micro').textContent = kind === 'settings' ? 'BLACKLINE / EINSATZPROFIL' : 'BLACKLINE / FELDHANDBUCH';
+    nodes['utility-overlay'].querySelector('.utility-dialog').classList.toggle('settings-dialog', kind === 'settings');
+    if (kind === 'settings') settingsUI.open(); else settingsUI.close();
     if (kind) el('utility-overlay').querySelector('.close-button').focus({ preventScroll: true });
+    else if (utilityReturnFocus?.isConnected && utilityReturnFocus.offsetParent !== null) { utilityReturnFocus.focus({ preventScroll: true }); utilityReturnFocus = null; }
   }
   function selectKit(kit) {
     selectedKit = kit;
@@ -253,27 +263,20 @@ export function createUI(root, actions) {
     }
   };
   const onInput = event => {
-    if (event.target.id === 'setting-sensitivity') {
-      const sensitivity = Number(event.target.value);
-      setText('sensitivity-output', sensitivity.toFixed(1));
-      actions.settings({ sensitivity });
-    } else if (event.target.id === 'setting-volume') {
-      const volume = Number(event.target.value);
-      setText('volume-output', `${Math.round(volume * 100)} %`);
-      actions.settings({ volume });
-    } else if (event.target.id === 'setting-quality') actions.settings({ quality: event.target.value });
-    else if(event.target.id==='market-item')chooseMarketItem(event.target.value);
+    if(event.target.id==='market-item')chooseMarketItem(event.target.value);
     else if(event.target.id==='market-price'||event.target.id==='market-duration')updateMarketForm();
   };
   const onKey = event => {
+    if (utility === 'settings' && settingsUI.handleKey(event)) return;
     if (event.key === 'Escape' && utility) { event.stopImmediatePropagation(); event.preventDefault(); showUtility(null); }
     if (event.key === 'Tab' && utility) {
       event.stopPropagation();
-      const items = [...el('utility-overlay').querySelectorAll('button,input,select')].filter(node => node.offsetParent !== null);
+      const items = [...el('utility-overlay').querySelectorAll('button,input,select')].filter(node => node.offsetParent !== null && !node.disabled);
       const first = items[0], last = items.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }
+    if (utility) event.stopPropagation();
   };
   root.addEventListener('click', onClick);
   root.addEventListener('input', onInput);
@@ -370,13 +373,22 @@ export function createUI(root, actions) {
     if (typeof info.mapOpen === 'boolean' && info.mapOpen !== lastExternalMap) { lastExternalMap = info.mapOpen; if (info.mapOpen) panel = 'map'; else if (panel === 'map') panel = null; }
     if (typeof info.inventoryOpen === 'boolean' && info.inventoryOpen !== lastExternalInventory) { lastExternalInventory = info.inventoryOpen; if (info.inventoryOpen) panel = 'inventory'; else if (panel === 'inventory') panel = null; }
     show('map-panel', phase === 'raid' && panel === 'map'); show('inventory-panel', phase === 'raid' && panel === 'inventory');
-    const settings = info.settings || {};
-    for (const key of ['sensitivity','volume','quality']) {
-      const node = nodes[`setting-${key}`];
-      if (settings[key] !== undefined && document.activeElement !== node) node.value = settings[key];
+    settings = { ...defaultSettings(), ...info.settings, bindings: { ...defaultSettings().bindings, ...info.settings?.bindings } };
+    settingsUI.update(settings);
+    root.style.setProperty('--hud-scale', settings.hudScale);
+    root.style.setProperty('--hud-opacity', settings.hudOpacity);
+    root.style.setProperty('--crosshair-color', settings.crosshairColor);
+    root.style.setProperty('--crosshair-size', settings.crosshairSize);
+    root.style.setProperty('--crosshair-opacity', settings.crosshairOpacity);
+    root.dataset.hudCompass = String(settings.compass); root.dataset.teammateHud = String(settings.teammateHud);
+    if (!settings.damageVignette) nodes['damage-flash'].classList.remove('visible');
+    if (!settings.hitMarker) nodes['hit-marker'].classList.remove('visible');
+    fpsNode.hidden = !settings.fps; fpsNode.textContent = `${Math.round(info.fps || 0)} FPS`;
+    const nextBindings = JSON.stringify(settings.bindings);
+    if (bindingSignature !== nextBindings) {
+      bindingSignature = nextBindings;
+      root.querySelectorAll('[data-binding-code]').forEach(node => { node.textContent = keyLabel(settings.bindings[node.dataset.bindingCode]); });
     }
-    setText('sensitivity-output', Number(nodes['setting-sensitivity'].value).toFixed(1));
-    setText('volume-output', `${Math.round(Number(nodes['setting-volume'].value)*100)} %`);
     const profile = state.profile || {};
     if (phase === 'hub') renderHome();
     setText('hub-credits', number(profile.credits));
@@ -404,7 +416,7 @@ export function createUI(root, actions) {
       setText('hud-ammo', String(p.ammo).padStart(2,'0')); setText('hud-reserve', p.reserve); nodes['hud-ammo'].classList.toggle('urgent', p.ammo <= 5);
       setText('hud-weapon', typeof p.weapon === 'string' ? p.weapon.toUpperCase() : 'MX-4 / 5.56');
       setText('hud-firemode', p.reload > 0 ? 'NACHLADEN …' : p.ammo === 0 ? 'MAGAZIN LEER' : 'AUTO');
-      setText('hud-player-action', p.heal > 0 ? 'BEHANDLUNG …' : p.sprinting ? 'SPRINT' : p.sprintExhausted ? 'SHIFT LOSLASSEN' : '');
+      setText('hud-player-action', p.heal > 0 ? 'BEHANDLUNG …' : p.sprinting ? 'SPRINT' : p.sprintExhausted ? settings.sprintMode === 'toggle' ? `ERHOLEN · ${keyLabel(settings.bindings.sprint).toUpperCase()} ERNEUT DRÜCKEN` : `${keyLabel(settings.bindings.sprint).toUpperCase()} LOSLASSEN` : '');
       setText('hud-loot-value', `${number(raid.value)} CR`); setText('hud-loot-space', `${raid.loot?.length || 0} / ${raid.capacity}`);
       const bearing = ((-(p.yaw || 0) * 180 / Math.PI) % 360 + 360) % 360;
       setText('compass-bearing', `${Math.round(bearing).toString().padStart(3,'0')}°`);
@@ -413,9 +425,9 @@ export function createUI(root, actions) {
       nodes['compass-labels'].innerHTML = [-2,-1,0,1,2].map(offset => `<span class="${offset === 0 ? 'active' : ''}">${directions[((center+offset)%8+8)%8]}</span>`).join('');
       nodes['crosshair'].classList.toggle('aiming', !!(info.aim ?? p.aim));
       nodes['crosshair'].classList.toggle('moving', !!p.moving);
-      show('crosshair', !!info.locked && !panel && !(p.reload > 0) && !(p.heal > 0));
+      show('crosshair', settings.crosshair && !!info.locked && !panel && !(p.reload > 0) && !(p.heal > 0));
       const prompt = state.prompt;
-      show('interaction', !!prompt && !panel && !(raid.extractionProgress > 0));
+      show('interaction', settings.prompts && !!prompt && !panel && !(raid.extractionProgress > 0));
       if (prompt) { setText('interaction-label', prompt.text); setText('interaction-detail', prompt.kind === 'extract' ? 'EXTRAKTION ANFORDERN' : prompt.kind === 'relay' ? 'OPTIONALES EINSATZZIEL' : 'AUFNEHMEN'); }
       show('extraction-hud', raid.extractionProgress > 0);
       if (raid.extractionProgress > 0) { nodes['extraction-fill'].style.width = `${clamp(raid.extractionProgress / (raid.extractionDuration || 8)*100,0,100)}%`; setText('extraction-seconds', Math.max(0,(raid.extractionDuration || 8)-raid.extractionProgress).toFixed(1)); }
@@ -437,8 +449,8 @@ export function createUI(root, actions) {
 
   function events(items = []) {
     for (const event of items) {
-      if (event.type === 'damage') { nodes['damage-flash'].classList.add('visible'); clearTimeout(damageTimer); damageTimer = setTimeout(() => nodes['damage-flash'].classList.remove('visible'), 330); }
-      if (event.type === 'hit' || event.type === 'kill') { nodes['hit-marker'].classList.add('visible'); nodes['hit-marker'].classList.toggle('kill', event.type === 'kill'); clearTimeout(hitTimer); hitTimer = setTimeout(() => nodes['hit-marker'].classList.remove('visible'), event.type === 'kill' ? 250 : 140); }
+      if (event.type === 'damage' && settings.damageVignette) { nodes['damage-flash'].classList.add('visible'); clearTimeout(damageTimer); damageTimer = setTimeout(() => nodes['damage-flash'].classList.remove('visible'), 330); }
+      if ((event.type === 'hit' || event.type === 'kill') && settings.hitMarker) { nodes['hit-marker'].classList.add('visible'); nodes['hit-marker'].classList.toggle('kill', event.type === 'kill'); clearTimeout(hitTimer); hitTimer = setTimeout(() => nodes['hit-marker'].classList.remove('visible'), event.type === 'kill' ? 250 : 140); }
       let text = null, tone = '';
       if (event.type === 'loot') { text = event.name ? `${event.name}  +${number(event.value)} CR` : 'Fracht gesichert'; tone = 'loot'; }
       if (event.type === 'kill') { text = event.headshot ? 'KOPFTREFFER / ZIEL AUSGESCHALTET' : 'ZIEL AUSGESCHALTET'; tone = 'kill'; }
@@ -463,5 +475,5 @@ export function createUI(root, actions) {
   function closePanels() { panel = null; show('map-panel', false); show('inventory-panel', false); showUtility(null); }
   const coopUI = createCoopUI(root, actions, { getLoadout: () => ({ kit: selectedKit, difficulty: selectedDifficulty }), notice });
   selectKit('scout'); selectDifficulty('normal'); selectHubTab('deploy');
-  return { update, events, togglePanel, closePanels, dispose() { coopUI.dispose(); root.removeEventListener('click',onClick); root.removeEventListener('input',onInput); document.removeEventListener('keydown',onKey,true); clearTimeout(noticeTimer); clearTimeout(hitTimer); clearTimeout(damageTimer); for (const timer of timeoutIds) clearTimeout(timer); root.innerHTML = ''; } };
+  return { update, events, togglePanel, closePanels, isUtilityOpen: () => !!utility, isCapturingBinding: () => settingsUI.isCapturingBinding(), closeUtility: () => showUtility(null), dispose() { settingsUI.dispose(); coopUI.dispose(); root.removeEventListener('click',onClick); root.removeEventListener('input',onInput); document.removeEventListener('keydown',onKey,true); clearTimeout(noticeTimer); clearTimeout(hitTimer); clearTimeout(damageTimer); for (const timer of timeoutIds) clearTimeout(timer); root.innerHTML = ''; } };
 }

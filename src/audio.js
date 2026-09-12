@@ -9,15 +9,22 @@ const SAMPLES = [
 ];
 const MAX_VOICES = 32;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const DEFAULT_SETTINGS = Object.freeze({ volume: .65, weaponVolume: 1, effectsVolume: 1, footstepsVolume: 1, ambientVolume: 1, uiVolume: 1, muteOnBlur: false, dynamicRange: 'normal' });
+const CHANNEL_SETTINGS = { weapon: 'weaponVolume', effects: 'effectsVolume', footsteps: 'footstepsVolume', ambient: 'ambientVolume', ui: 'uiVolume' };
+const DYNAMICS = {
+  normal: { threshold: -10, knee: 12, ratio: 6, attack: .002, release: .13 },
+  night: { threshold: -20, knee: 18, ratio: 8, attack: .003, release: .2 },
+};
 
 export function createAudio(options = {}) {
   const random = options.random || Math.random;
   let ctx;
   try { ctx = options.context || new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' }); } catch {}
   const buffers = new Map(), voices = new Set(), choices = new Map(), failed = [], enemySteps = new Map();
-  let disposed = false, volume = .65, peakVoices = 0, footsteps = 0, lastPhase = 'hub';
+  let disposed = false, focused = true, peakVoices = 0, footsteps = 0, lastPhase = 'hub';
+  const settings = { ...DEFAULT_SETTINGS }, channels = {};
   let lastPlayer = null, travel = 0, footSide = 1, jumpPeak = 0, windSource = null;
-  let master, gameplay, ambience, mix, reverb, reverbOut, highpass, compressor, ceiling, spatialPrimer;
+  let master, gameplay, ambience, mix, impulse, highpass, compressor, ceiling, spatialPrimer;
 
   function load(id) {
     // XHR also supports local file URLs in the isolated Electron renderer.
@@ -53,11 +60,15 @@ export function createAudio(options = {}) {
     compressor = ctx.createDynamicsCompressor(); compressor.threshold.value = -10; compressor.knee.value = 12;
     compressor.ratio.value = 6; compressor.attack.value = .002; compressor.release.value = .13;
     ceiling = ctx.createWaveShaper(); ceiling.curve = Float32Array.from({ length: 4097 }, (_, i) => .94 * Math.tanh((i / 2048 - 1) * 1.2) / Math.tanh(1.2));
-    master = ctx.createGain(); master.gain.value = volume;
+    master = ctx.createGain(); master.gain.value = settings.volume;
     mix.connect(highpass); highpass.connect(compressor); compressor.connect(ceiling); ceiling.connect(master);
     master.connect(options.destination || ctx.destination);
-    reverb = ctx.createConvolver(); reverb.normalize = false; reverb.buffer = reflections();
-    reverbOut = ctx.createGain(); reverbOut.gain.value = .6; reverb.connect(reverbOut); reverbOut.connect(gameplay);
+    impulse = reflections();
+    for (const name of Object.keys(CHANNEL_SETTINGS)) {
+      const gain = ctx.createGain(); gain.connect(name === 'ui' ? mix : name === 'ambient' ? ambience : gameplay);
+      channels[name] = { gain };
+    }
+    for (const name of ['weapon', 'footsteps']) reflectionInput(channels[name]);
     // Chromium loads the HRTF database lazily. Prime it before a first enemy shot.
     const primerSource = ctx.createBufferSource(), primerPanner = ctx.createPanner();
     primerPanner.panningModel = 'HRTF'; primerPanner.positionX.value = 3;
@@ -73,6 +84,38 @@ export function createAudio(options = {}) {
     if (failed.length) console.warn(`Audio samples unavailable: ${failed.join(', ')}`);
     return failed.length === 0;
   }) : Promise.resolve(false);
+
+  function target(parameter, value) {
+    parameter.cancelScheduledValues(ctx.currentTime);
+    parameter.setTargetAtTime(value, ctx.currentTime, .018);
+  }
+  function applySettings() {
+    if (!ctx || disposed) return;
+    target(master.gain, !focused && settings.muteOnBlur ? 0 : settings.volume);
+    for (const [name, key] of Object.entries(CHANNEL_SETTINGS)) target(channels[name].gain.gain, settings[key]);
+    for (const [key, value] of Object.entries(DYNAMICS[settings.dynamicRange])) target(compressor[key], value);
+  }
+  function setSettings(next = {}) {
+    if (disposed || !next || typeof next !== 'object') return;
+    for (const key of ['volume', ...Object.values(CHANNEL_SETTINGS)]) if (Number.isFinite(next[key])) settings[key] = clamp(next[key], 0, 1);
+    if (typeof next.muteOnBlur === 'boolean') settings.muteOnBlur = next.muteOnBlur;
+    if (Object.hasOwn(DYNAMICS, next.dynamicRange)) settings.dynamicRange = next.dynamicRange;
+    applySettings();
+  }
+  function setFocused(value) {
+    if (disposed) return;
+    focused = !!value;
+    if (master) target(master.gain, !focused && settings.muteOnBlur ? 0 : settings.volume);
+  }
+  function reflectionInput(channel) {
+    // Separate returns let each channel control already ringing reflections too.
+    if (!channel.reverb) {
+      channel.reverb = ctx.createConvolver(); channel.reverb.normalize = false; channel.reverb.buffer = impulse;
+      channel.reverbOut = ctx.createGain(); channel.reverbOut.gain.value = .6;
+      channel.reverb.connect(channel.reverbOut); channel.reverbOut.connect(channel.gain);
+    }
+    return channel.reverb;
+  }
 
   function clean(voice) {
     if (!voices.delete(voice)) return;
@@ -101,7 +144,7 @@ export function createAudio(options = {}) {
     ear.upX.value = Math.sin(yaw) * Math.sin(pitch); ear.upY.value = cp; ear.upZ.value = Math.cos(yaw) * Math.sin(pitch);
   }
 
-  function play(id, { gain = .4, rate = 1, delay = 0, pan = 0, position = null, cutoff = 19000, send = 0, tag = 'world', duration = null } = {}) {
+  function play(id, { gain = .4, rate = 1, delay = 0, pan = 0, position = null, cutoff = 19000, send = 0, tag = 'world', bus = null, duration = null } = {}) {
     if (!ctx || disposed || ctx.state !== 'running' || !buffers.has(id)) return null;
     if (voices.size >= MAX_VOICES) {
       const oldest = [...voices].find(v => v.tag !== 'result' && v.tag !== 'reload') || voices.values().next().value;
@@ -116,11 +159,13 @@ export function createAudio(options = {}) {
       panner.panningModel = 'HRTF'; panner.distanceModel = 'inverse'; panner.refDistance = 3; panner.rolloffFactor = .7; panner.maxDistance = 130;
       panner.positionX.value = position.x; panner.positionY.value = position.y ?? 1.4; panner.positionZ.value = position.z;
     } else panner.pan.value = clamp(pan, -1, 1);
-    source.connect(filter); filter.connect(level); level.connect(panner); panner.connect(tag === 'result' ? mix : gameplay);
+    const channelName = bus || (tag === 'shot' || tag === 'reload' ? 'weapon' : tag === 'footstep' ? 'footsteps' : tag === 'result' ? 'ui' : 'effects');
+    const channel = channels[channelName];
+    source.connect(filter); filter.connect(level); level.connect(panner); panner.connect(channel.gain);
     const nodes = [source, filter, level, panner];
-    if (send > 0) { const wet = ctx.createGain(); wet.gain.value = send; panner.connect(wet); wet.connect(reverb); nodes.push(wet); }
+    if (send > 0) { const wet = ctx.createGain(); wet.gain.value = send; panner.connect(wet); wet.connect(reflectionInput(channel)); nodes.push(wet); }
     const starts = ctx.currentTime + delay;
-    const voice = { source, nodes, tag, starts, id }; voices.add(voice); peakVoices = Math.max(peakVoices, voices.size);
+    const voice = { source, nodes, tag, bus: channelName, starts, id }; voices.add(voice); peakVoices = Math.max(peakVoices, voices.size);
     source.onended = () => clean(voice);
     source.start(starts, 0, duration || source.buffer.duration);
     return voice;
@@ -174,7 +219,7 @@ export function createAudio(options = {}) {
           const distance = Math.hypot(position.x - player.x, (position.y ?? 1.4) - (player.y + 1.65), position.z - player.z);
           const blocked = !hasLineOfSight(position, { x: player.x, y: player.y + (player.crouching ? 1.17 : 1.65), z: player.z });
           play(variant(event.type==='teammateShot'&&event.weapon==='VX-9'?'smg-shot':'rifle-shot', 3), { gain: blocked ? .27 : .63, rate: .96 + random() * .075,
-            position, delay: Math.min(.35, distance / 343), cutoff: blocked ? 950 : clamp(17000 / (1 + distance * .065), 2100, 17000), send: .36, tag: 'enemy' });
+            position, delay: Math.min(.35, distance / 343), cutoff: blocked ? 950 : clamp(17000 / (1 + distance * .065), 2100, 17000), send: .36, tag: 'enemy', bus: 'weapon' });
           break;
         }
         case 'reload': reloadSequence(event.duration || state.player.reload, state.player.weapon); break;
@@ -184,8 +229,8 @@ export function createAudio(options = {}) {
           break;
         case 'hit': play('reload-bolt', { gain: event.headshot ? .12 : .08, rate: 1.4, cutoff: 5300, duration: .065 }); break;
         case 'damage': play(variant('footstep', 6), { gain: .36, rate: .72, cutoff: 1000 }); break;
-        case 'loot': play('reload-out', { gain: .13, rate: 1.08, cutoff: 6500 }); break;
-        case 'relay': play('reload-bolt', { gain: .16, rate: .85 }); break;
+        case 'loot': play('reload-out', { gain: .13, rate: 1.08, cutoff: 6500, bus: 'ui' }); break;
+        case 'relay': play('reload-bolt', { gain: .16, rate: .85, bus: 'ui' }); break;
         case 'extract': play('reload-in', { gain: .17, rate: .9, tag: 'result' }); break;
         case 'death': play(variant('footstep', 6), { gain: .34, rate: .64, cutoff: 700, tag: 'result' }); break;
       }
@@ -236,23 +281,30 @@ export function createAudio(options = {}) {
       await ready;
       if (!windSource && !disposed && options.ambience !== false && buffers.has('wind')) {
         windSource = ctx.createBufferSource(); windSource.buffer = buffers.get('wind'); windSource.loop = true;
-        windSource.connect(ambience); windSource.start();
+        windSource.connect(channels.ambient.gain); windSource.start();
       }
     } catch { /* No audio device must not prevent playing. */ }
   }
 
   return {
-    ready, unlock, events, update,
-    setVolume(value) { if (!Number.isFinite(value)) return; volume = clamp(value, 0, 1); if (master) { master.gain.cancelScheduledValues(ctx.currentTime); master.gain.setTargetAtTime(volume, ctx.currentTime, .018); } },
-    suspend() { if (!ctx || disposed) return; cancel(); lastPlayer = null; travel = 0; ctx.suspend?.(); },
+    ready, unlock, events, update, setSettings, setFocused,
+    setVolume(value) { setSettings({ volume: value }); },
+    suspend() { if (!ctx || disposed) return; cancel(); lastPlayer = null; travel = 0; ctx.suspend?.()?.catch?.(() => {}); },
     stats() { return { available: !!ctx, activeVoices: voices.size, peakVoices, maxVoices: MAX_VOICES, pending: [...voices].filter(v => v.starts > ctx.currentTime).length,
-      footsteps, loadedSamples: buffers.size, failedSamples: [...failed] }; },
+      footsteps, loadedSamples: buffers.size, failedSamples: [...failed], settings: { ...settings }, focused, muted: !focused && settings.muteOnBlur,
+      contextState: ctx?.state ?? 'unavailable', disposed,
+      gains: { master: master?.gain.value ?? 0, gameplay: gameplay?.gain.value ?? 0, ambience: ambience?.gain.value ?? 0,
+        ...Object.fromEntries(Object.entries(channels).map(([name, channel]) => [name, channel.gain.gain.value])) },
+      gainTargets: { master: !focused && settings.muteOnBlur ? 0 : settings.volume, ...Object.fromEntries(Object.entries(CHANNEL_SETTINGS).map(([name, key]) => [name, settings[key]])) },
+      compressor: Object.fromEntries(Object.keys(DYNAMICS.normal).map(key => [key, compressor?.[key].value ?? null])),
+      voicesByBus: Object.fromEntries(Object.keys(CHANNEL_SETTINGS).map(name => [name, [...voices].filter(voice => voice.bus === name).length])) }; },
     dispose() {
       if (disposed) return; disposed = true; cancel();
-      if (windSource) { windSource.stop(); windSource.disconnect(); windSource = null; }
-      if (spatialPrimer) { try { spatialPrimer.source.stop(); } catch {} spatialPrimer.source.disconnect(); spatialPrimer.panner.disconnect(); spatialPrimer = null; }
-      for (const node of [gameplay, ambience, reverb, reverbOut, mix, highpass, compressor, ceiling, master]) node?.disconnect();
-      buffers.clear(); enemySteps.clear(); if (!options.context) ctx?.close();
+      if (windSource) { try { windSource.stop(); } catch {} windSource.disconnect(); windSource = null; }
+      if (spatialPrimer) { const primer = spatialPrimer; spatialPrimer = null; try { primer.source.stop(); } catch {} primer.source.disconnect(); primer.panner.disconnect(); }
+      for (const channel of Object.values(channels)) for (const node of [channel.gain, channel.reverb, channel.reverbOut]) node?.disconnect();
+      for (const node of [gameplay, ambience, mix, highpass, compressor, ceiling, master]) node?.disconnect();
+      buffers.clear(); enemySteps.clear(); impulse = null; if (!options.context) ctx?.close()?.catch?.(() => {});
     },
   };
 }

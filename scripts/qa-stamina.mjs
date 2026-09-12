@@ -28,7 +28,7 @@ try{
   let transitions=0;for(let i=1;i<frames.length;i++)if(frames[i].sprinting!==frames[i-1].sprinting)transitions++;
   assert.ok(transitions<=2);assert.ok(frames.some(f=>f.sprinting));pass('Only the intended sprint entry and exhaustion exit occur');
   assert.ok(exhausted.at(-1).stamina>20&&exhausted.at(-1).stamina>exhausted[0].stamina);pass('Stamina recovers steadily while the exhausted player walks');
-  assert.match(await page.locator('#hud-player-action').innerText(),/SHIFT LOSLASSEN/);pass('The HUD explains how to restart sprint after exhaustion');
+  assert.match(await page.locator('#hud-player-action').innerText(),/UMSCHALT LINKS LOSLASSEN/);pass('The HUD explains how to restart sprint after exhaustion with the current key label');
   assert.ok(exhausted[0].sprintBlend>0.05&&exhausted[0].sprintBlend<1);assert.ok(exhausted.at(-1).sprintBlend<.001);assert.ok(exhausted.at(-1).moveBlend>.99);pass('Sprint posture blends into a steady walking posture instead of snapping');
   const rates=frames.slice(1).map((f,i)=>({pitch:Math.abs(f.weaponPitch-frames[i].weaponPitch)/f.dt,roll:Math.abs(f.weaponRoll-frames[i].weaponRoll)/f.dt}));
   const maxPitchRate=Math.max(...rates.map(f=>f.pitch)),maxRollRate=Math.max(...rates.map(f=>f.roll));

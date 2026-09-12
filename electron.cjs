@@ -24,6 +24,9 @@ app.whenReady().then(async()=>{
   ipcMain.handle('coop:stop',event=>{if(!trusted(event))throw new Error('Unzulässiger Aufruf');return platform.stopHost();});
   ipcMain.handle('coop:prepare-invite',(event,invite)=>{if(!trusted(event)||typeof invite!=='string'||invite.length>2048)throw new Error('Ungültige Einladung');return platform.prepareInvite(invite);});
   ipcMain.handle('coop:copy',(event,text)=>{if(!trusted(event)||typeof text!=='string'||text.length>2048)throw new Error('Ungültige Einladung');clipboard.writeText(text);return true;});
+  ipcMain.handle('display:fullscreen',(event,value)=>{if(!trusted(event)||typeof value!=='boolean')throw new Error('Ungültige Anzeigeoption');win.setFullScreen(value);return true;});
+  win.on('enter-full-screen',()=>win.webContents.send('display:fullscreen',true));
+  win.on('leave-full-screen',()=>win.webContents.send('display:fullscreen',false));
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',e=>e.preventDefault());
   win.webContents.on('will-attach-webview',e=>e.preventDefault());

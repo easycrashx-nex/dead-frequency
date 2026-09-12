@@ -2,6 +2,12 @@
 
 A Windows 3D FPS extraction shooter: offline solo and private two-player cooperative raids. German interface. Industrial coastal exclusion zone at warm sunset, olive concrete, orange industrial accents, teal shadows. Twelve-minute repeatable raids on a 300×300 metre map. Extraction sends loot into a personal intake; manual stash, local real-time market and mailbox. GitHub Releases provide automatic verified updates. Internet co-op uses a temporary cloudflared tunnel; LAN mode connects directly. Current implementation and tests take precedence over historical notes below.
 
+## Version 1.4 settings
+- `settings.js` defines six categories, 43 fields and 12 key bindings, bounded migration, conflict checks and category resets. Existing `dead-frequency.settings.v1` values migrate in place; profile data uses separate keys.
+- `settings-ui.js` renders searchable controls with immediate persistence and a HUD preview. The utility dialog owns keyboard focus and blocks gameplay input while open.
+- `main.js` applies input preferences and a render-only FPS cap. Cosmetic motion settings do not change weapon recoil or authoritative multiplayer simulation. Toggle sprint clears on exhaustion.
+- Renderer and audio expose partial `setSettings` APIs. Audio category gains include active voices and reverb returns. Electron handles native fullscreen, F11 state synchronization and focus events through the narrow preload bridge.
+
 ## Version 1.3 integration
 - Root owns main.js, coop-client.js, audio.js, Electron/preload/platform, packaging and release QA.
 - Simulation owns simulation.js, coop-session.js, server/coop-server.js and co-op tests.
