@@ -1,6 +1,7 @@
 // Local buyers advance on wall-clock time; outcomes are stable across reloads.
-export const MARKET_CHECK_MS = 30_000;
+export const MARKET_CHECK_MS = 60_000;
 export const MARKET_DURATIONS = [2, 5, 10];
+export const ECONOMY_BALANCE = Object.freeze({ lootValueMultiplier: .65, killBonus: 15, relayBonus: 150, extractionSkillBonus: 50 });
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const integer = (v, fallback = 0, max = Number.MAX_SAFE_INTEGER) => Number.isFinite(v) ? clamp(Math.floor(v), 0, max) : fallback;
 const hash = text => { let n = 2166136261; for (const c of String(text)) n = Math.imul(n ^ c.charCodeAt(0), 16777619); return n >>> 0; };
@@ -75,7 +76,9 @@ export function marketQuote(item, now = Date.now()) {
 export function saleChance(item, price, now = Date.now()) {
   if (!Number.isFinite(price) || price < 1) return 0;
   const ratio = price / marketQuote(item, now);
-  return clamp(.38 * Math.exp(-4.5 * (ratio - 1)), .001, .88);
+  // No minimum probability: unrealistic prices must never become a money lottery.
+  if (ratio >= 2) return 0;
+  return clamp(.18 * Math.exp(-5 * (ratio - 1)), 0, .65);
 }
 
 export function storeItem(profile, id) {
@@ -95,7 +98,7 @@ export function listItem(profile, id, price, durationMinutes = 5, now = Date.now
   const createdAt = Math.max(clock(now), profile.marketTime), listingId = allocate(profile, 'listing');
   const item = profile.stash.splice(index, 1)[0];
   profile.listings.push({ id: listingId, item, price, createdAt, expiresAt: createdAt + durationMinutes * 60_000,
-    nextCheckAt: createdAt + MARKET_CHECK_MS + Math.floor(draw(listingId + createdAt) * 15_000), checks: 0 });
+    nextCheckAt: createdAt + MARKET_CHECK_MS + Math.floor(draw(listingId + createdAt) * 30_000), checks: 0 });
   return true;
 }
 

@@ -1,0 +1,72 @@
+import {_electron} from '@playwright/test';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {ITEM_CATALOG} from '../src/loot-catalog.js';
+
+const version=JSON.parse(await fs.readFile('package.json','utf8')).version;
+const exe=process.env.DF_EXE||path.resolve(`../../outputs/v${version}/DEAD FREQUENCY-win32-x64/DEAD FREQUENCY.exe`);
+const out=path.resolve(`../qa-economy-native-${version}`);await fs.mkdir(out,{recursive:true});
+const profile=await fs.mkdtemp(path.join(out,'profile-'));
+const checks=[],errors=[];let app,page;
+const pass=name=>{checks.push(name);console.log('PASS',name);};
+try{
+  app=await _electron.launch({executablePath:exe,args:['--qa'],env:{...process.env,DEAD_FREQUENCY_QA_PROFILE:profile},timeout:45000});
+  page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.waitForFunction(()=>window.__DF&&document.documentElement.dataset.ready==='true',null,{timeout:60000});
+  assert.equal(await app.evaluate(({app})=>app.getVersion()),version);
+  // A fixed future market clock keeps the deterministic buyer sequence repeatable.
+  const oldItem=await page.evaluate(()=>{const p=__DF.state.profile;p.credits=3456;p.marketTime=2_000_000_000_000;const item=__DF.economy.createItem(p,{name:'Quantenprozessor',value:780,rarity:'epic'});p.stash.push(item);__DF.persist();return item;});
+  await page.reload();await page.waitForFunction(()=>window.__DF&&document.documentElement.dataset.ready==='true');
+  assert.equal(await page.evaluate(()=>__DF.state.profile.credits),3456);assert.deepEqual(await page.evaluate(()=>__DF.state.profile.stash[0]),oldItem);
+  pass('Existing credits and a secured high-value item retain their value across native reload');
+  await page.locator('#start-raid').click();await page.waitForFunction(()=>__DF.state.phase==='raid'&&document.pointerLockElement);
+  const trade=await page.evaluate(()=>{__DF.state.enemies=[];return __DF.state.containers.flatMap(c=>c.items).filter(item=>!item.kind);});
+  for(const item of trade){const basis=ITEM_CATALOG.find(entry=>entry.name===item.name);assert.ok(basis);assert.equal(item.value,Math.round(basis.value*.65));}
+  assert.ok(trade.length>=37*3);pass('All new container goods use reduced values while every container still holds at least three trade items');
+  await page.evaluate(()=>{const r=__DF.game.layout.relay;__DF.game.teleport(r.x,r.z);__DF.syncLook();});
+  await page.waitForFunction(()=>__DF.state.prompt?.kind==='relay');assert.match(await page.evaluate(()=>__DF.state.prompt.text),/150/);
+  await page.keyboard.press('KeyE');await page.waitForFunction(()=>__DF.state.raid.objectiveComplete);
+  await page.evaluate(()=>{__DF.state.enemies=[];__DF.state.raid.kills=2;__DF.game.teleport(-47,46);__DF.syncLook();});
+  await page.waitForFunction(()=>__DF.state.prompt?.kind==='extract');await page.keyboard.press('KeyE');
+  await page.waitForFunction(()=>__DF.state.phase==='extracted',null,{timeout:15000});
+  assert.equal(await page.evaluate(()=>__DF.state.result.bonus),180);assert.equal(await page.evaluate(()=>__DF.state.profile.credits),3636);
+  assert.equal(await page.evaluate(()=>__DF.state.result.xpEarned),150);
+  await page.screenshot({path:path.join(out,'01-extraction-bonus.png')});pass('The actual extraction pays two 15-credit kills plus the 150-credit relay and keeps 150 extraction XP');
+  await page.locator('#result-hub').click();await page.locator('#tab-market').click();await page.locator('#market-item').selectOption(oldItem.id);
+  await page.locator('#market-price').fill('1000000');
+  await page.waitForFunction(()=>document.querySelector('#market-chance').textContent==='0,0 %');
+  assert.match(await page.locator('#market-form-message').innerText(),/keine Käufer/);
+  await page.locator('#market-duration').selectOption('10');await page.locator('#create-listing').click();
+  await page.waitForFunction(()=>__DF.state.profile.listings.length===1);
+  const listing=await page.evaluate(()=>__DF.state.profile.listings[0]);
+  assert.ok(listing.nextCheckAt-listing.createdAt>=60000&&listing.nextCheckAt-listing.createdAt<90000);
+  await page.evaluate(at=>{__DF.economy.advanceMarket(__DF.state.profile,at);__DF.persist();},listing.createdAt+59999);
+  assert.equal(await page.evaluate(()=>__DF.state.profile.listings[0].checks),0);
+  await page.screenshot({path:path.join(out,'02-market-expensive.png')});
+  pass('The real market shows zero buyers for a million-credit ask and waits 60–90 seconds before its first check');
+  await page.evaluate(at=>{__DF.economy.advanceMarket(__DF.state.profile,at);__DF.persist();},listing.expiresAt+1);
+  await page.waitForFunction(()=>__DF.state.profile.listings.length===0);
+  assert.equal(await page.evaluate(()=>__DF.state.profile.mailbox[0].type),'return');assert.equal(await page.evaluate(()=>__DF.state.profile.credits),3636);
+  await page.locator('#tab-mailbox').click();await page.locator('#claim-all').click();
+  await page.waitForFunction(()=>__DF.state.profile.stash.length===1);assert.deepEqual(await page.evaluate(()=>__DF.state.profile.stash[0]),oldItem);
+  pass('Offline buyer catch-up cannot sell an absurd ask; the exact original item returns through the real mailbox');
+  await page.locator('#tab-market').click();await page.locator('#market-item').selectOption(oldItem.id);await page.locator('#use-market-price').click();
+  await page.waitForFunction(()=>document.querySelector('#market-chance').textContent==='18,0 %');
+  assert.match(await page.locator('#market-form-message').innerText(),/60–90/);
+  await page.screenshot({path:path.join(out,'03-market-fair.png')});
+  pass('The current market quote displays an honest 18 percent chance per 60-second buyer check');
+  await page.locator('#market-price').fill('1');await page.locator('#create-listing').click();
+  await page.waitForFunction(()=>__DF.state.profile.listings.length===1);
+  await page.evaluate(()=>{const p=__DF.state.profile;__DF.economy.advanceMarket(p,p.listings[0].expiresAt+1);__DF.persist();});
+  assert.equal(await page.evaluate(()=>__DF.state.profile.mailbox[0].type),'sale');
+  await page.locator('#tab-mailbox').click();await page.locator('#claim-all').click();await page.waitForFunction(()=>__DF.state.profile.credits===3637);
+  await page.reload();await page.waitForFunction(()=>window.__DF&&document.documentElement.dataset.ready==='true');
+  assert.equal(await page.evaluate(()=>__DF.state.profile.credits),3637);assert.equal(await page.evaluate(()=>__DF.state.profile.mailbox.length),0);
+  pass('Affordable offers still sell for their exact asking price and the payout persists exactly once');
+  assert.deepEqual(errors,[]);pass('No JavaScript or renderer errors in the native economy flow');
+  const appAsarSha256=createHash('sha256').update(await fs.readFile(path.join(path.dirname(exe),'resources/app.asar'))).digest('hex');
+  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,exe,version,appAsarSha256,checks,errors},null,2));
+}catch(error){await page?.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,exe,version,checks,errors,failure:error.stack},null,2));throw error;}
+finally{await app?.close().catch(()=>{});}

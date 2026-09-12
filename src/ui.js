@@ -173,10 +173,11 @@ export function createUI(root, actions) {
     const price = Number(nodes['market-price'].value);
     const validPrice = Number.isInteger(price) && price >= 1 && price <= 1000000;
     const full = (profile.listings || []).length >= 20;
+    const noBuyers = !!item && validPrice && saleChance(item, price, now) === 0;
     nodes['create-listing'].disabled = !item || !validPrice || full;
     nodes['market-price'].disabled = !item; nodes['market-duration'].disabled = !item; nodes['use-market-price'].disabled = !item;
-    setText('market-form-message', !item ? 'Wähle einen eingelagerten Gegenstand.' : full ? '20 Angebote aktiv. Warte auf einen Käufer oder ziehe ein Angebot zurück.' : !validPrice ? 'Wunschpreis: ganze Credits zwischen 1 und 1.000.000.' : 'Kein Sofortverkauf. Die erste Käuferprüfung erfolgt nach 30–45 Sekunden.');
-    nodes['market-form-message'].classList.toggle('form-warning', !!item && (!validPrice || full));
+    setText('market-form-message', !item ? 'Wähle einen eingelagerten Gegenstand.' : full ? '20 Angebote aktiv. Warte auf einen Käufer oder ziehe ein Angebot zurück.' : !validPrice ? 'Wunschpreis: ganze Credits zwischen 1 und 1.000.000.' : noBuyers ? 'Aktuell keine Käufer: Dein Preis liegt mindestens beim doppelten Richtwert.' : 'Kein Sofortverkauf. Erste Käuferprüfung nach 60–90 Sekunden, danach alle 60 Sekunden.');
+    nodes['market-form-message'].classList.toggle('form-warning', !!item && (!validPrice || full || noBuyers));
     if (!item) {
       setText('market-quote','— CR'); setText('market-trend','KEINE WARE'); setText('market-chance','—');
       nodes['market-chart-line'].setAttribute('points',''); nodes['market-chart-fill'].setAttribute('d',''); nodes['market-chance-fill'].style.width='0%';

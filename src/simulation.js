@@ -1,6 +1,6 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { layout, COLLIDERS, CONTAINER_SPOTS, SPAWN, EXTRACTIONS, RELAY, WORLD_SIZE } from './layout.js';
-import { validateEconomy, createItem } from './economy.js';
+import { validateEconomy, createItem, ECONOMY_BALANCE } from './economy.js';
 import { CONTAINER_TYPES, CONTAINER_SEARCH_SECONDS, LEGACY_ITEMS, rollContainerItems } from './loot-catalog.js';
 import { getWeapon, defaultWeapon } from './weapons.js';
 import { validateProgression, getSkillEffects, canUnlockSkill } from './progression.js';
@@ -310,7 +310,7 @@ export async function createGame(saved = null, options = {}) {
   function finish(success, reason) {
     if (!alive()) return;
     closeContainer();
-    const bonus = success ? state.raid.kills * 40 + (state.raid.objectiveComplete ? 450 : 0) + skillEffects.extractionBonus : 0;
+    const bonus = success ? state.raid.kills * ECONOMY_BALANCE.killBonus + (state.raid.objectiveComplete ? ECONOMY_BALANCE.relayBonus : 0) + skillEffects.extractionBonus : 0;
     const total = bonus;
     const itemCount = state.raid.loot.length;
     if (success) {
@@ -340,7 +340,7 @@ export async function createGame(saved = null, options = {}) {
     if (!alive()) return;
     const p = state.player;
     if (!state.raid.objectiveComplete && distance(p, RELAY) < 3) {
-      state.prompt = { kind: 'relay', id: 'relay', text: 'Relais aktivieren · +450 Credits bei Extraktion' }; return;
+      state.prompt = { kind: 'relay', id: 'relay', text: `Relais aktivieren · +${ECONOMY_BALANCE.relayBonus} Credits bei Extraktion` }; return;
     }
     let closest, near = 2.7;
     for (const item of state.loot) {
@@ -383,7 +383,7 @@ export async function createGame(saved = null, options = {}) {
     } else if (prompt.kind === 'relay') {
       state.raid.objectiveComplete = true;
       emit({ type: 'relay', x: RELAY.x, z: RELAY.z });
-      notice('Relais gesichert. Verstärkung unterwegs. Extrahiere für +450 CR.');
+      notice(`Relais gesichert. Verstärkung unterwegs. Extrahiere für +${ECONOMY_BALANCE.relayBonus} CR.`);
       for (const enemy of state.enemies) if (!enemy.dead && distance(enemy, RELAY) < 36) {
         enemy.alert = 10; enemy.lastSeen = { ...RELAY }; enemy.pathTimer = 0;
       }
@@ -541,7 +541,7 @@ export async function createGame(saved = null, options = {}) {
         state.raid.kills++; emit({ type: 'kill', ...to, headshot, enemyId: victim.id });
         grantXP(victim.kind === 'elite' ? 100 : 50, 'kill');
         state.loot.push({ id: `drop-${victim.id}`, x: victim.x, z: victim.z, name: 'Wachmunition · +18', value: 0, rarity: 'common', kind: 'ammo', amount: 18, taken: false });
-        if (victim.kind === 'elite') state.loot.push({ id: `raid-${state.profile.raids}-elite-${victim.id}`, x: victim.x, z: victim.z, name: 'Offiziers-Chip', value: 420, rarity: 'epic', taken: false });
+        if (victim.kind === 'elite') state.loot.push({ id: `raid-${state.profile.raids}-elite-${victim.id}`, x: victim.x, z: victim.z, name: 'Offiziers-Chip', value: Math.round(420 * ECONOMY_BALANCE.lootValueMultiplier), rarity: 'epic', taken: false });
       }
     }
     return true;

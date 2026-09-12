@@ -137,14 +137,14 @@ test('each player extracts personal goods and bonus independently; the other rai
   const exit = EXTRACTIONS[0]; ga.teleport(exit.x, exit.z); session.action(a, 'interact'); step(session, 8.2);
   assert.equal(ga.state.phase, 'extracted'); assert.equal(gb.state.phase, 'raid'); assert.equal(session.phase, 'raid');
   assert.equal(ga.state.profile.intake.length, 1); assert.equal(ga.state.profile.intake[0].name, first.name);
-  assert.equal(ga.state.profile.credits, 830); assert.equal(gb.state.profile.credits, 1150);
+  assert.equal(ga.state.profile.credits, 780); assert.equal(gb.state.profile.credits, 1150);
   assert.equal(ga.state.profile.progression.xp, 160); assert.equal(gb.state.profile.progression.xp, 10);
   const remaining = gb.state.raid.timeLeft; step(session, 1); assert.ok(gb.state.raid.timeLeft < remaining);
   gb.teleport(exit.x, exit.z); session.action(b, 'interact'); step(session, 8.2);
   assert.equal(session.phase, 'finished'); assert.equal(gb.state.phase, 'extracted');
   assert.equal(gb.state.profile.intake.length, 1); assert.equal(gb.state.profile.intake[0].name, second.name);
   assert.equal(gb.state.profile.progression.xp, 160); assert.equal(gb.state.result.xpEarned, 160);
-  assert.equal(ga.state.profile.intake.length, 1); assert.equal(ga.state.profile.credits, 830);
+  assert.equal(ga.state.profile.intake.length, 1); assert.equal(ga.state.profile.credits, 780);
   const frozen = ga.state.profile.credits; step(session, 60); assert.equal(ga.state.profile.credits, frozen);
   assert.equal(session.snapshot(a).state.teammates[0].phase, 'extracted');
 });

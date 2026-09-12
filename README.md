@@ -1,4 +1,4 @@
-# DEAD FREQUENCY 1.7.0
+# DEAD FREQUENCY 1.7.1
 
 Ein Extraction-Shooter aus der Ego-Perspektive für Windows x64: allein offline oder zu zweit im Koop. Durchsuche den 300 × 300 Meter großen Sektor 07, bekämpfe Patrouillen, sichere Beute und handle nach der Extraktion damit.
 
@@ -103,9 +103,11 @@ Die Runde dauert maximal zwölf Minuten. Tod, Ablauf der Zeit oder Aufgabe verli
 
 Mit **Tab** den Rucksack öffnen und bei einem Gegenstand **Abwerfen** klicken. Er liegt anschließend erreichbar in der Welt und kann mit E wieder aufgenommen werden. So wird sofort ein Platz frei. Tab, Escape oder die Schließen-Schaltfläche bringen dich zurück ins Spiel. Die Welt läuft während geöffneter Feldanzeigen weiter; Laufen und Schießen sind währenddessen gesperrt. Außerhalb dieser Anzeigen pausiert Escape den Einsatz.
 
-Der Markt simuliert lokale Käufer und braucht keine Internetverbindung. Der Richtpreis schwankt kontinuierlich mit der Uhrzeit. Die erste Käuferprüfung findet nach 30–45 Sekunden statt, weitere alle 30 Sekunden. Ein günstiger Wunschpreis erhöht die Chance pro Prüfung; ein hoher Preis senkt sie. Die angezeigte Chance ist keine Verkaufsgarantie. Maximal 20 Angebote laufen gleichzeitig, Preise sind ganze Credits zwischen 1 und 1.000.000. Es fallen keine Gebühren an.
+Der Markt simuliert lokale Käufer und braucht keine Internetverbindung. Der Richtpreis schwankt kontinuierlich mit der Uhrzeit. Die erste Käuferprüfung findet nach 60–90 Sekunden statt, weitere alle 60 Sekunden. Zum aktuellen Richtwert beträgt die Chance 18 % pro Prüfung; günstigere Angebote erreichen höchstens 65 %. Ein hoher Wunschpreis senkt die Chance. Ab dem doppelten aktuellen Richtwert gibt es keine Käufer; beliebig hohe Preise haben keine verbleibende Mindestchance. Die Anzeige folgt dem aktuellen Markt und ist keine Verkaufsgarantie. Maximal 20 Angebote laufen gleichzeitig, Preise sind ganze Credits zwischen 1 und 1.000.000. Es fallen keine Gebühren an.
 
 Verkaufte Angebote schicken exakt den gewählten Preis ins Postfach. Nach Ablauf unverkaufte oder manuell abgebrochene Angebote schicken den Gegenstand dorthin zurück. **Beanspruchen** übernimmt Credits bzw. lagert den Gegenstand ein. Beim nächsten Start wird verstrichene Zeit nachberechnet; dieselben Käuferprüfungen erhalten bei jedem Laden dasselbe Ergebnis. Es gibt keine echten Spieler oder externen Börsenkurse.
+
+Seit Version 1.7.1 wächst das Guthaben langsamer: Neue Beutefunde sind 35 % weniger wert, hochwertige Gegenstände werden seltener gezogen. Die Kisten enthalten weiterhin drei bis fünf Handelsgegenstände sowie gegebenenfalls Munition oder Medkits. Bei erfolgreicher Extraktion gibt es 15 CR pro Abschuss, 150 CR für das Relais und mit Rückkehrplan zusätzlich 50 CR. XP, Waffenpreise und das kostenlose Scout-Kit bleiben gleich. Vorhandene Credits, gesicherte Gegenstände und bereits abgerechnete Post bleiben erhalten; aktive Angebote folgen den neuen Käuferregeln.
 
 ## Steuerung
 

@@ -139,7 +139,7 @@ test('skill effects change supply, healing, damage, movement, stamina, search an
   const container = game.state.containers[0]; approachContainer(game, container); assert.equal(game.interact(), true);
   assert.equal(game.state.containerSearchRemaining, 1.5 * effect.searchMultiplier); run(game, 1.21); assert.equal(container.searched, true);
   const exit = EXTRACTIONS[0]; game.teleport(exit.x, exit.z); game.interact(); run(game, 7.01);
-  assert.equal(game.state.phase, 'extracted'); assert.equal(game.state.result.bonus, 150); assert.equal(game.state.result.xpEarned, 150);
+  assert.equal(game.state.phase, 'extracted'); assert.equal(game.state.result.bonus, 50); assert.equal(game.state.result.xpEarned, 150);
 });
 
 test('XP commits once for successful trade claims, kills and extraction and survives death', async t => {

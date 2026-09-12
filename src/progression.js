@@ -1,3 +1,5 @@
+import { ECONOMY_BALANCE } from './economy.js';
+
 export const XP_PER_LEVEL = 250;
 export const STARTING_SKILL_POINTS = 3;
 export const SKILL_BRANCHES = [
@@ -31,7 +33,7 @@ export const SKILL_NODES = [
   node('backpack-3', 'logistics', 'Rucksack III', 'Weitere +2 Beuteplätze.', 1, ['backpack-2'], 0, 2, { capacityBonus: 2 }),
   node('quick-search', 'logistics', 'Geschulter Blick', '20 % kürzere Kistensuche.', 1, ['backpack-1'], 2, 1, { searchMultiplier: .8 }),
   node('ammo-supply', 'logistics', 'Munitionsreserve', '20 % mehr Reservemunition zu Raidbeginn.', 1, ['quick-search'], 2, 2, { reserveMultiplier: 1.2 }),
-  node('logistics-master', 'logistics', 'Rückkehrplan', 'Extraktion dauert 7 statt 8 Sekunden; +150 CR bei erfolgreicher Rückkehr.', 2, ['backpack-3', 'ammo-supply'], 1, 3, { extractionMultiplier: .875, extractionBonus: 150 }),
+  node('logistics-master', 'logistics', 'Rückkehrplan', `Extraktion dauert 7 statt 8 Sekunden; +${ECONOMY_BALANCE.extractionSkillBonus} CR bei erfolgreicher Rückkehr.`, 2, ['backpack-3', 'ammo-supply'], 1, 3, { extractionMultiplier: .875, extractionBonus: ECONOMY_BALANCE.extractionSkillBonus }),
 ];
 const byId = new Map(SKILL_NODES.map(skill => [skill.id, skill]));
 const integer = (value, max = 1e9) => Number.isFinite(value) ? Math.max(0, Math.min(max, Math.floor(value))) : 0;

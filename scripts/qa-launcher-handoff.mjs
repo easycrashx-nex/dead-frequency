@@ -16,7 +16,7 @@ if(!baselineExe){
 }
 const env={...process.env,DEAD_FREQUENCY_QA_PROFILE:profile};
 const launchOptions=mode=>baselineExe?{executablePath:baselineExe,args:['--qa',mode],env,timeout:45000}:{args:[bootstrap,'--qa',mode],env,timeout:45000};
-const checks=[],phases=[],errors=[];let initial,updating,browser,baselineVersion,expectedSettings,legacyUpgradeMigration=false;
+const checks=[],phases=[],errors=[];let initial,updating,browser,baselineVersion,expectedSettings,expectedInventory,legacyUpgradeMigration=false;
 const pass=name=>{checks.push(name);console.log('PASS',name);};
 try{
   initial=await _electron.launch(launchOptions('--play'));let page=await initial.firstWindow();
@@ -25,6 +25,14 @@ try{
   legacyUpgradeMigration=await page.evaluate(()=>{
     if(__DF.state.profile.progression)return false;
     __DF.state.profile.upgrades={armor:2,backpack:1,weapon:3};__DF.persist();return true;
+  });
+  expectedInventory=await page.evaluate(()=>{
+    const p=__DF.state.profile,e=__DF.economy;
+    const goods=e.createItem(p,{name:'Quantenprozessor',value:780,rarity:'epic'});p.stash.push(goods);
+    const sold=e.createItem(p,{name:'Funkmodul',value:340,rarity:'rare'});
+    p.mailbox.push({id:`mail-${p.nextItemId++}`,type:'sale',item:sold,credits:1200,reason:'Verkauft',createdAt:Date.now()});
+    __DF.game.selectWeapon?.('RV-6');__DF.game.unlockSkill?.('weapon-1');__DF.persist();
+    return {stash:p.stash,intake:p.intake,mailbox:p.mailbox,...(p.progression?{progression:p.progression,selectedWeapon:p.selectedWeapon}:{})};
   });
   expectedSettings=await page.evaluate(()=>{
     __DF.state.profile.credits=3456;__DF.persist();
@@ -62,6 +70,9 @@ try{
   assert.ok(browser,'Updated game did not relaunch automatically');
   await page.waitForFunction(()=>window.__DF&&document.documentElement.dataset.ready==='true',null,{timeout:60000});
   assert.equal(await page.evaluate(()=>__DF.state.profile.credits),3456);pass('The newly installed GitHub version starts automatically and preserves the player save');
+  const updatedProfile=await page.evaluate(()=>__DF.state.profile);
+  for(const [key,value] of Object.entries(expectedInventory))assert.deepEqual(updatedProfile[key],value,key);
+  pass('Existing secured item values, settled mail and any learned skills and weapon selection survive the real update unchanged');
   if(legacyUpgradeMigration){
     const unlocked=await page.evaluate(()=>__DF.state.profile.progression.unlocked);
     assert.deepEqual([...unlocked].sort(),['armor-1','armor-2','backpack-1','weapon-1','weapon-2','weapon-3'].sort());
@@ -79,7 +90,7 @@ try{
   assert.equal(offline.source,'installed');assert.equal(offline.version,version);assert.equal(offline.fallback,true);pass('With the network unavailable the fully reverified installed version is selected');
   const manifest=JSON.parse(await fs.readFile(path.join(path.dirname(offline.exe),'update-manifest.json'),'utf8'));assert.equal(manifest.version,version);
   assert.deepEqual(errors,[]);pass('Launcher reports no JavaScript errors');
-  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,liveGitHub:true,baselineVersion,actualReleasedBaseline:!!baselineExe,version,checks,phases,errors,automaticRelaunch:true,preservedCredits:3456,preservedSettings:true,preservedSettingKeys:Object.keys(expectedSettings),legacyUpgradeMigration,offlineVersion:offline.version},null,2));
+  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,liveGitHub:true,baselineVersion,actualReleasedBaseline:!!baselineExe,version,checks,phases,errors,automaticRelaunch:true,preservedCredits:3456,preservedInventory:true,preservedProgression:!!expectedInventory.progression,preservedSettings:true,preservedSettingKeys:Object.keys(expectedSettings),legacyUpgradeMigration,offlineVersion:offline.version},null,2));
 }catch(error){await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,liveGitHub:true,version,checks,phases,errors,failure:error.stack,temporaryRoot:root},null,2));throw error;}
 finally{
   if(browser){for(const page of browser.contexts().flatMap(context=>context.pages()))await page.close().catch(()=>{});await browser.close().catch(()=>{});}

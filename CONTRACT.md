@@ -2,6 +2,12 @@
 
 A Windows 3D FPS extraction shooter: offline solo and private two-player cooperative raids. German interface. Industrial coastal exclusion zone at warm sunset, olive concrete, orange industrial accents, teal shadows. Twelve-minute repeatable raids on a 300×300 metre map. Extraction sends loot into a personal intake; manual stash, local real-time market and mailbox. GitHub Releases provide automatic verified updates. Internet co-op uses a temporary cloudflared tunnel; LAN mode connects directly. Current implementation and tests take precedence over historical notes below.
 
+## Version 1.7.1 economy pacing
+- `ECONOMY_BALANCE` in `economy.js` sets new loot value to 65% of its catalog basis, kill bonus 15, relay bonus 150 and trained extraction bonus 50. These credit changes do not affect XP, weapon prices, existing balances or secured inventory values.
+- Containers still draw three to five unique goods, weighted per item by rarity: common 6, rare 3, epic 1. Hard-mode multiplier remains 1.35. Elite chips use the same new-loot value multiplier.
+- Buyers check after 60–90 seconds then every 60 seconds. At the current quote the chance is 18%, capped at 65% for discounted goods, and zero for prices at least twice the current quote. There is no minimum chance for extreme asking prices. No listing fee is introduced; returns remain claimable, payments settle once, saved outcomes remain deterministic across offline catch-up.
+- Prior credits, stash/intake and settled mail retain their values. Active offers retain their item, requested price and expiry while using the new buyer rules.
+
 ## Version 1.7 weapons and progression
 - `weapons.js` is the shared catalog of eight distinct weapons: VX-9, AR-4, BR-12, SG-8, DMR-7, SR-90, MG-60 and RV-6. It controls costs, magazine/reserve, cadence, fire mode, damage, pellets, range, reload time and model identity. Kit and weapon costs are charged once on raid start.
 - `progression.js` defines 24 nodes in four branches, prerequisites, two-point capstones, three starter points and one point per 250 XP. Legacy armor/backpack/weapon ranks migrate to equivalent learned nodes with compensating legacy points. Their effects are applied once. Save validation bounds values and rejects invalid graph unlocks.

@@ -1,3 +1,5 @@
+import { ECONOMY_BALANCE } from './economy.js';
+
 export const CONTAINER_SEARCH_SECONDS = 1.5;
 export const CONTAINER_TYPES = [
   { id: 'tools', name: 'Werkzeugkiste', color: '#c3994a', description: 'Werkzeuge und Reparaturmaterial' },
@@ -62,11 +64,14 @@ export const LEGACY_ITEMS = [
 ];
 export const ITEM_CATALOG = [...LEGACY_ITEMS, ...NEW_ITEMS];
 export const ITEM_POOLS = Object.fromEntries(CONTAINER_TYPES.map(type => [type.id, ITEM_CATALOG.filter(item => item.type === type.id)]));
+const RARITY_WEIGHTS = { common: 6, rare: 3, epic: 1 };
 export function rollContainerItems(spot, random, raid, difficulty = 'normal') {
   const pool = [...ITEM_POOLS[spot.type]], count = 3 + Math.floor(random() * 3), items = [];
   for (let i = 0; i < count; i++) {
-    const item = pool.splice(Math.floor(random() * pool.length), 1)[0];
-    items.push({ id: `r${raid}-${spot.id}-${i}`, name: item.name, value: Math.round(item.value * (difficulty === 'hard' ? 1.35 : 1)), rarity: item.rarity, taken: false });
+    let draw = random() * pool.reduce((sum, item) => sum + RARITY_WEIGHTS[item.rarity], 0), index = 0;
+    while (index < pool.length - 1 && (draw -= RARITY_WEIGHTS[pool[index].rarity]) >= 0) index++;
+    const item = pool.splice(index, 1)[0];
+    items.push({ id: `r${raid}-${spot.id}-${i}`, name: item.name, value: Math.round(item.value * ECONOMY_BALANCE.lootValueMultiplier * (difficulty === 'hard' ? 1.35 : 1)), rarity: item.rarity, taken: false });
   }
   if (spot.type === 'ammo') items.push({ id: `r${raid}-${spot.id}-supply`, name: 'Munition · +36', value: 0, rarity: 'common', kind: 'ammo', amount: 36, taken: false });
   if (spot.type === 'medical') items.push({ id: `r${raid}-${spot.id}-supply`, name: 'Medkit · +1', value: 0, rarity: 'rare', kind: 'medkit', amount: 1, taken: false });

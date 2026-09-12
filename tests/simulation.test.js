@@ -186,7 +186,7 @@ test('relay is optional and awards its bonus only after successful extraction', 
   assert.equal(game.interact(), false); quiet(game);
   game.state.raid.kills = 2;
   const exit = EXTRACTIONS[1]; game.teleport(exit.x, exit.z); game.interact(); run(game, 8.1);
-  assert.equal(game.state.result.bonus, 530); assert.equal(game.state.profile.credits, bank + 530);
+  assert.equal(game.state.result.bonus, 180); assert.equal(game.state.profile.credits, bank + 180);
 });
 
 test('timeout and abandoning a paused raid lose carried value without charging twice', async t => {

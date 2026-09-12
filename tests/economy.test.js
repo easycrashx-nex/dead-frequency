@@ -22,9 +22,9 @@ test('listing validates price/duration/ownership and escrows exactly one item', 
   assert.equal(listItem(p,a.id,400,5,now),true);assert.equal(listItem(p,a.id,400,5,now),false);
   assert.equal(p.stash.length,0);assert.deepEqual(p.listings[0].item,a);assert.equal(p.credits,750);
 });
-test('first buyer takes at least thirty seconds; no instant sale', () => {
+test('first buyer takes at least sixty seconds; no instant sale', () => {
   const p=make(), a=seedItem(p);listItem(p,a.id,1,2,now);
-  assert.equal(advanceMarket(p,now+29_999),false);assert.equal(p.listings.length,1);assert.equal(p.mailbox.length,0);
+  assert.equal(advanceMarket(p,now+59_999),false);assert.equal(p.listings.length,1);assert.equal(p.mailbox.length,0);
 });
 test('prices fluctuate smoothly, stay bounded, and expensive asks reduce chance', () => {
   const quotes=new Set();for(let t=0;t<86_400;t+=13){const q=marketQuote(item,now+t*1000);quotes.add(q);assert.ok(q>=item.value*.71&&q<=item.value*1.29);}
