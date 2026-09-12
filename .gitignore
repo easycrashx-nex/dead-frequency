@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.package-stage/
+work/
+vendor/*.exe
+*.partial
+*.log
+.env*
+!.env.example

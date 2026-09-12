@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>DEAD FREQUENCY · Einsatz vorbereiten</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./launcher.js" defer></script>
+</head>
+<body data-phase="checking">
+  <main class="launcher" aria-labelledby="game-title">
+    <header class="topline"><span class="signal-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>VERBINDUNG ZUR BASIS</span><span class="version" id="version">SYSTEM BEREIT</span></header>
+    <section class="briefing">
+      <p class="eyebrow"><span></span> VERLASSENE ZONE · FREQUENZ 07.4</p>
+      <h1 id="game-title">DEAD<span>FREQUENCY</span></h1>
+      <p class="tagline">Rein. Beute sichern. Lebend zurück.</p>
+      <div class="radar" aria-hidden="true"><div class="radar-ring"></div><div class="radar-axis"></div><div class="radar-zone zone-a"></div><div class="radar-zone zone-b"></div><div class="radar-zone zone-c"></div><span class="radar-target target-a"></span><span class="radar-target target-b"></span><span class="radar-label">SIGNAL // 074</span><span class="radar-coordinate">51° 08′ N</span></div>
+    </section>
+    <section class="deployment" aria-labelledby="status">
+      <div class="status-row"><div><p class="eyebrow" id="operation">EINSATZ WIRD VORBEREITET</p><h2 id="status" role="status" aria-live="polite">Updates werden geprüft</h2></div><span class="progress-label" id="progress-label" aria-hidden="true">···</span></div>
+      <div class="progress-track" id="progress" role="progressbar" aria-label="Update-Fortschritt" aria-valuemin="0" aria-valuemax="100"><div id="progress-fill"></div></div>
+      <div class="steps" aria-hidden="true"><span data-step="checking" class="active">01 <b>PRÜFEN</b></span><span data-step="downloading">02 <b>LADEN</b></span><span data-step="verifying">03 <b>VORBEREITEN</b></span><span data-step="starting">04 <b>STARTEN</b></span></div>
+      <p class="detail" id="detail">Neue Versionen werden automatisch geladen. Danach startet dein Spiel.</p>
+    </section>
+    <footer><span><i class="live-dot"></i> AUTOMATISCHER START</span><span>DEIN FORTSCHRITT BLEIBT ERHALTEN</span></footer>
+  </main>
+</body>
+</html>

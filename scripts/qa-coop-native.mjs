@@ -1,0 +1,67 @@
+import {_electron} from '@playwright/test';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const version=JSON.parse(await fs.readFile('package.json','utf8')).version;
+const exe=process.env.DF_EXE||path.resolve(`../../outputs/v${version}/DEAD FREQUENCY-win32-x64/DEAD FREQUENCY.exe`);
+const out=path.resolve(`../qa-coop-native-${version}`);await fs.mkdir(out,{recursive:true});
+const apps=[],pages=[],checks=[],errors=[];const pass=name=>{checks.push(name);console.log('PASS',name);};
+async function boot(label){
+  const profile=await fs.mkdtemp(path.join(out,label+'-profile-'));
+  const app=await _electron.launch({executablePath:exe,args:['--qa'],env:{...process.env,DEAD_FREQUENCY_QA_PROFILE:profile},timeout:45000});apps.push(app);
+  const page=await app.firstWindow();pages.push(page);page.on('pageerror',e=>errors.push(label+': '+e.message));page.on('console',m=>{if(m.type()==='error')errors.push(label+': '+m.text());});
+  await page.waitForFunction(()=>window.__DF&&document.documentElement.dataset.ready==='true',null,{timeout:60000});
+  assert.equal(await app.evaluate(({app})=>app.getVersion()),version);return {app,page,profile};
+}
+try{
+  const host=await boot('host'),guest=await boot('guest');pass('Two packaged Windows clients boot with isolated persistent profiles');
+  await host.page.locator('#coop-open').click();await host.page.locator('#coop-name').fill('Alpha');
+  await host.page.locator('#coop-connect').click();
+  await host.page.waitForFunction(()=>__DF.coop?.info.status==='lobby'||document.querySelector('#coop-status-label')?.textContent==='VERBINDUNG UNTERBROCHEN',null,{timeout:100000});
+  const hostStatus=await host.page.locator('#coop-status-message').innerText();
+  assert.equal(await host.page.evaluate(()=>__DF.coop?.info.status),'lobby',hostStatus);
+  const invite=await host.page.locator('#coop-share-invite').inputValue();assert.match(invite,/^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/coop\?token=[a-f0-9]{64}$/);pass('Host creates a reachable encrypted Internet invitation automatically');
+  await host.page.locator('#coop-copy').click();assert.equal(await host.app.evaluate(({clipboard})=>clipboard.readText()),invite);pass('The real Copy button copies the complete invitation');
+  await guest.page.locator('#coop-open').click();await guest.page.locator('#coop-mode-join').click();await guest.page.locator('#coop-name').fill('Bravo');await guest.page.locator('#coop-invite').fill(invite);await guest.page.locator('#coop-connect').click();
+  await guest.page.waitForFunction(()=>__DF.coop?.info.players.length===2,null,{timeout:30000});await host.page.waitForFunction(()=>__DF.coop?.info.players.length===2);
+  pass('The colleague joins the shared lobby through the public Internet endpoint');
+  assert.equal(await host.page.locator('#coop-start').isEnabled(),false);await host.page.locator('#coop-ready').click();await guest.page.locator('#coop-ready').click();await host.page.waitForFunction(()=>__DF.coop?.info.players.every(p=>p.ready));
+  await host.page.locator('#coop-start').click();
+  for(const {page} of [host,guest])await page.waitForFunction(()=>['raid','paused'].includes(__DF.state.phase)&&__DF.state.teammates?.length===1,null,{timeout:20000});
+  assert.equal(await host.page.evaluate(()=>__DF.state.raid.seed),await guest.page.evaluate(()=>__DF.state.raid.seed));pass('Only a ready team can start; both enter the same seeded raid');
+  await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];global.__DF_QAEnemy=structuredClone(members[0].game.state.enemies[0]);for(const member of members)member.game.state.enemies.splice(0);});
+  await guest.page.bringToFront();await guest.page.evaluate(()=>__DF.resume());await guest.page.locator('#game').click().catch(()=>{});
+  await guest.page.waitForTimeout(350);const before=await guest.page.evaluate(()=>__DF.state.player.z);
+  await guest.page.keyboard.down('KeyW');await guest.page.keyboard.down('ShiftLeft');await guest.page.waitForTimeout(800);await guest.page.keyboard.up('KeyW');await guest.page.keyboard.up('ShiftLeft');
+  await guest.page.waitForTimeout(300);const after=await guest.page.evaluate(()=>__DF.state.player.z);assert.ok(Math.abs(after-before)>1,`Movement ${before} -> ${after}`);
+  const replicated=await host.page.evaluate(()=>__DF.state.teammates[0].z);assert.ok(Math.abs(replicated-after)<.7);pass('Real keyboard movement replicates between the two Windows clients');
+  assert.equal(await host.page.evaluate(()=>__DF.stats().teammates),1);assert.equal(await guest.page.evaluate(()=>__DF.stats().teammates),1);pass('Both clients render the remote operator');
+  await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];members[0].game.teleport(-142,122);members[1].game.teleport(-142,130);});
+  await guest.page.waitForTimeout(500);await guest.page.evaluate(()=>{__DF.state.player.yaw=0;__DF.state.player.pitch=0;__DF.syncLook();});await guest.page.waitForTimeout(200);
+  await host.page.screenshot({path:path.join(out,'01-host-coop.png')});await guest.page.screenshot({path:path.join(out,'02-guest-coop.png')});
+  await guest.page.mouse.down();await guest.page.waitForTimeout(100);await guest.page.mouse.up();await guest.page.waitForTimeout(350);assert.equal(await host.page.evaluate(()=>__DF.state.player.hp),100);pass('Shooting directly at the teammate causes no friendly fire');
+  await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];members[0].game.teleport(-145,130);const enemy={...global.__DF_QAEnemy,id:'qa-guard',x:-142,z:118,y:0,hp:45,dead:false,fireTimer:9999,alert:10,lastSeen:{x:-142,z:130},mode:'attack',path:[],pathTimer:9999,flank:false};members[0].game.state.enemies.push(enemy);});
+  await guest.page.waitForTimeout(350);await guest.page.mouse.down();await guest.page.waitForTimeout(250);await guest.page.mouse.up();
+  for(const {page} of [host,guest])await page.waitForFunction(()=>__DF.state.enemies.find(e=>e.id==='qa-guard')?.dead,null,{timeout:5000});
+  assert.ok(await guest.page.evaluate(()=>__DF.state.player.ammo<24));assert.equal(await host.page.evaluate(()=>__DF.state.player.ammo),24);pass('Real mouse fire synchronizes enemy damage and death while ammunition stays per player');
+  await guest.page.keyboard.press('Escape');await guest.page.waitForFunction(()=>__DF.state.phase==='paused');const raidTime=await guest.page.evaluate(()=>__DF.state.raid.timeLeft);await guest.page.waitForTimeout(700);assert.ok(await guest.page.evaluate(t=>__DF.state.raid.timeLeft<t-.4,raidTime));pass('The shared raid continues while one player opens the local menu');
+  await host.app.evaluate(()=>{for(const member of global.__DF_HOST().players.values())member.game.state.enemies.splice(0);});
+  await host.app.evaluate(()=>{const session=global.__DF_HOST();const loot=[...session.players.values()][0].game.state.loot.find(item=>!item.kind&&!item.taken);for(const member of session.players.values())member.game.teleport(loot.x,loot.z);});
+  await host.page.waitForTimeout(500);const lootId=await host.page.evaluate(()=>__DF.state.prompt?.id);assert.ok(lootId);
+  await Promise.all([host.page.evaluate(()=>__DF.game.interact()),guest.page.evaluate(()=>__DF.game.interact())]);await host.page.waitForTimeout(400);
+  const bags=await Promise.all([host.page.evaluate(()=>__DF.state.raid.loot),guest.page.evaluate(()=>__DF.state.raid.loot)]);assert.equal(bags.flat().filter(x=>x.id===lootId).length,1);pass('Simultaneous looting gives a world item to exactly one player');
+  const owner=bags[0].some(x=>x.id===lootId)?host:guest,receiver=owner===host?guest:host;
+  await owner.page.evaluate(id=>__DF.game.dropItem(id),lootId);await receiver.page.waitForTimeout(400);await receiver.page.evaluate(()=>__DF.game.interact());await receiver.page.waitForTimeout(400);
+  assert.ok(await receiver.page.evaluate(id=>__DF.state.raid.loot.some(x=>x.id===id),lootId));assert.equal(await owner.page.evaluate(id=>__DF.state.raid.loot.some(x=>x.id===id),lootId),false);pass('A dropped backpack item can be picked up by the teammate without duplication');
+  await host.app.evaluate(()=>{for(const member of global.__DF_HOST().players.values()){member.game.teleport(-47,46);member.game.state.loot.forEach(item=>{if(Math.hypot(item.x+47,item.z-46)<4)item.taken=true;});}});
+  await host.page.waitForTimeout(500);const prompts=await Promise.all([host.page.evaluate(()=>__DF.state.prompt),guest.page.evaluate(()=>__DF.state.prompt)]);assert.ok(prompts.every(p=>p?.kind==='extract'),JSON.stringify(prompts));
+  await Promise.all([host.page.evaluate(()=>__DF.game.interact()),guest.page.evaluate(()=>__DF.game.interact())]);
+  for(const {page} of [host,guest])await page.waitForFunction(()=>__DF.state.phase==='extracted',null,{timeout:15000});pass('Both players complete the extraction timer in the shared raid');
+  const recovered=await receiver.page.evaluate(()=>__DF.state.profile.intake);assert.ok(recovered.some(item=>item.name===bags.flat().find(x=>x.id===lootId).name));
+  assert.equal(await owner.page.evaluate(()=>__DF.state.profile.intake.length),0);pass('Extracted loot goes only into its owner’s persistent intake');
+  await host.page.screenshot({path:path.join(out,'03-coop-extraction.png')});
+  await Promise.all([host.page.evaluate(()=>__DF.persist()),guest.page.evaluate(()=>__DF.persist())]);
+  assert.deepEqual(errors,[]);pass('No JavaScript or renderer errors in the tested multiplayer flow');
+  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,internet:true,exe,version,checks,errors,endpoint:new URL(invite).origin},null,2));
+}catch(error){for(let i=0;i<pages.length;i++)await pages[i].screenshot({path:path.join(out,`failure-${i}.png`)}).catch(()=>{});await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,internet:true,exe,version,checks,errors,failure:error.stack},null,2));throw error;}
+finally{for(const app of apps.reverse())await app.close().catch(()=>{});}

@@ -1,0 +1,55 @@
+import {_electron} from '@playwright/test';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const exe=process.env.DF_EXE;assert.ok(exe,'Set DF_EXE to the new packaged Windows application');
+const version=JSON.parse(await fs.readFile('package.json','utf8')).version;
+const out=path.resolve(`../qa-stamina-${version}`);await fs.mkdir(out,{recursive:true});
+const profile=await fs.mkdtemp(path.join(out,'profile-'));
+const checks=[],errors=[];let metrics={};const pass=name=>{checks.push(name);console.log('PASS',name);};
+const app=await _electron.launch({executablePath:exe,args:['--qa'],env:{...process.env,DEAD_FREQUENCY_QA_PROFILE:profile},timeout:30000});
+let page;
+try{
+  page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.waitForFunction(()=>window.__DF&&document.documentElement.dataset.ready==='true',null,{timeout:60000});
+  assert.equal(await app.evaluate(({app})=>app.getVersion()),version);pass('New Windows version boots in an isolated profile');
+  await page.locator('#start-raid').click();await page.waitForFunction(()=>__DF.state.phase==='raid'&&document.pointerLockElement);
+  await page.evaluate(()=>{
+    __DF.state.enemies=[];__DF.teleport(-145,141);__DF.state.player.stamina=14;
+    window.__staminaFrames=[];const original=__DF.view.update;
+    __DF.view.update=(state,dt,input)=>{original(state,dt,input);if(state.phase!=='raid')return;const p=state.player;window.__staminaFrames.push({dt,stamina:p.stamina,sprinting:p.sprinting,exhausted:p.sprintExhausted,pitch:p.pitch,yaw:p.yaw,x:p.x,z:p.z,...__DF.stats()});};
+  });
+  await page.keyboard.down('KeyW');await page.keyboard.down('ShiftLeft');await page.waitForTimeout(350);await page.screenshot({path:path.join(out,'01-sprint.png')});
+  await page.waitForFunction(()=>__DF.state.player.sprintExhausted,null,{timeout:4000});
+  await page.waitForTimeout(2200);await page.screenshot({path:path.join(out,'02-exhausted-walking.png')});
+  const frames=await page.evaluate(()=>window.__staminaFrames);
+  const exhaustedIndex=frames.findIndex(f=>f.exhausted);assert.ok(exhaustedIndex>0);
+  const exhausted=frames.slice(exhaustedIndex);assert.ok(exhausted.length>30);assert.ok(exhausted.every(f=>!f.sprinting));pass('Holding W and Shift through exhaustion never flickers back into sprint');
+  let transitions=0;for(let i=1;i<frames.length;i++)if(frames[i].sprinting!==frames[i-1].sprinting)transitions++;
+  assert.ok(transitions<=2);assert.ok(frames.some(f=>f.sprinting));pass('Only the intended sprint entry and exhaustion exit occur');
+  assert.ok(exhausted.at(-1).stamina>20&&exhausted.at(-1).stamina>exhausted[0].stamina);pass('Stamina recovers steadily while the exhausted player walks');
+  assert.match(await page.locator('#hud-player-action').innerText(),/SHIFT LOSLASSEN/);pass('The HUD explains how to restart sprint after exhaustion');
+  assert.ok(exhausted[0].sprintBlend>0.05&&exhausted[0].sprintBlend<1);assert.ok(exhausted.at(-1).sprintBlend<.001);assert.ok(exhausted.at(-1).moveBlend>.99);pass('Sprint posture blends into a steady walking posture instead of snapping');
+  const rates=frames.slice(1).map((f,i)=>({pitch:Math.abs(f.weaponPitch-frames[i].weaponPitch)/f.dt,roll:Math.abs(f.weaponRoll-frames[i].weaponRoll)/f.dt}));
+  const maxPitchRate=Math.max(...rates.map(f=>f.pitch)),maxRollRate=Math.max(...rates.map(f=>f.roll));
+  assert.ok(maxPitchRate<4&&maxRollRate<4,`Unexpected pose snap: ${maxPitchRate}, ${maxRollRate}`);pass('Measured weapon-angle changes stay below the snapping threshold');
+  assert.ok(frames.every(f=>Math.abs(f.cameraPitch-f.pitch)<1e-8&&Math.abs(f.cameraYaw-f.yaw)<1e-8));pass('Smoothing preserves camera and aim alignment');
+  await page.keyboard.up('ShiftLeft');await page.waitForTimeout(150);await page.keyboard.down('ShiftLeft');
+  await page.waitForFunction(()=>__DF.state.player.sprinting);await page.waitForTimeout(350);pass('Releasing and pressing Shift restarts sprint once stamina has recovered');
+  await page.keyboard.up('ShiftLeft');await page.keyboard.up('KeyW');await page.waitForTimeout(650);
+  const stopped=await page.evaluate(()=>__DF.stats());assert.ok(stopped.moveBlend<.001&&stopped.sprintBlend<.001&&stopped.bobAmplitude<.0001);pass('Stopping settles weapon sway and camera bob smoothly');
+  await page.keyboard.down('KeyW');await page.keyboard.down('ShiftLeft');await page.waitForTimeout(100);await page.keyboard.press('Escape');
+  await page.waitForFunction(()=>__DF.state.phase==='paused');const paused=await page.evaluate(()=>__DF.stats());await page.waitForTimeout(400);const afterPause=await page.evaluate(()=>__DF.stats());
+  for(const key of ['sprintBlend','moveBlend','weaponPitch','weaponRoll','bobAmplitude','cameraY','fov'])assert.equal(afterPause[key],paused[key],key);pass('Pausing freezes the current first-person movement pose');
+  await page.keyboard.up('ShiftLeft');await page.keyboard.up('KeyW');await page.locator('#abandon-raid').click();await page.locator('#abandon-raid').click();
+  await page.waitForFunction(()=>__DF.state.phase==='hub');await page.locator('#kit-assault').click();await page.locator('#start-raid').click();await page.waitForFunction(()=>__DF.state.phase==='raid'&&document.pointerLockElement);
+  await page.evaluate(()=>{__DF.state.enemies=[];__DF.teleport(-145,141);});
+  assert.equal(await page.evaluate(()=>__DF.state.player.sprintExhausted),false);assert.equal(await page.evaluate(()=>__DF.state.player.stamina),100);pass('A fresh raid resets exhaustion and the movement pose');
+  await page.keyboard.down('KeyW');await page.keyboard.down('ShiftLeft');await page.waitForFunction(()=>__DF.state.player.sprintExhausted,null,{timeout:8000});await page.waitForTimeout(1800);
+  assert.equal(await page.evaluate(()=>__DF.state.player.sprinting),false);assert.ok(await page.evaluate(()=>__DF.stats().sprintBlend<.001));pass('The second weapon also stays stable after draining a full stamina bar');
+  await page.screenshot({path:path.join(out,'03-assault-exhausted.png')});await page.keyboard.up('ShiftLeft');await page.keyboard.up('KeyW');
+  assert.deepEqual(errors,[]);pass('No JavaScript or renderer errors');
+  metrics={sampledFrames:frames.length,transitions,maxPitchRate,maxRollRate,staminaAfterRecovery:exhausted.at(-1).stamina,sprintBlendAtExhaustion:exhausted[0].sprintBlend};
+  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,exe,version,checks,errors,metrics},null,2));
+}catch(error){if(page)await page.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,exe,version,checks,errors,metrics,failure:String(error.stack)},null,2));throw error;}
+finally{await app.close();}

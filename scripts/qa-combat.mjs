@@ -1,0 +1,41 @@
+import {chromium} from '@playwright/test';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const out=path.resolve('../qa-combat');await fs.mkdir(out,{recursive:true});
+const browser=await chromium.launch({headless:true,args:['--use-angle=d3d11','--ignore-gpu-blocklist']});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+const errors=[],checks=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+const snap=()=>page.evaluate(()=>JSON.parse(JSON.stringify(window.__DF.state)));
+const pass=name=>{checks.push(name);console.log('PASS',name);};
+try{
+  await page.goto('http://127.0.0.1:5195/?qa=1');await page.waitForFunction(()=>window.__DF);
+  await page.locator('#kit-assault').click();await page.locator('#difficulty-hard').click();await page.locator('#start-raid').click();
+  await page.waitForFunction(()=>document.pointerLockElement);
+  assert.equal((await snap()).player.weapon,'AR-4');assert.equal((await snap()).raid.difficulty,'hard');assert.equal((await snap()).profile.credits,400);pass('Loadout and difficulty selectors affect real raid');
+  await page.evaluate(()=>{const g=window.__DF.game;g.state.enemies=g.state.enemies.slice(0,1);const e=g.state.enemies[0];Object.assign(e,{x:-7,z:40,yaw:Math.PI,hp:95,kind:'guard',dead:false,alert:10,fireTimer:0,flank:false,path:[]});g.state.player.yaw=0;g.state.player.pitch=0;window.__DF.syncLook();});
+  await page.waitForFunction(()=>window.__DF.state.player.hp<100,null,{timeout:12000});pass('Live enemy acquires and damages player');
+  await page.evaluate(()=>{const d=window.__DF,p=d.state.player,e=d.state.enemies[0];p.yaw=Math.atan2(-(e.x-p.x),-(e.z-p.z));p.pitch=Math.atan2(1.69-(p.y+1.65),Math.hypot(e.x-p.x,e.z-p.z));d.syncLook();});
+  await page.mouse.down({button:'right'});await page.waitForTimeout(350);await page.screenshot({path:path.join(out,'01-ads-combat.png')});
+  assert.ok(await page.locator('#crosshair').evaluate(el=>el.classList.contains('aiming')));pass('Aim input switches to weapon sight');
+  await page.mouse.down();await page.waitForTimeout(550);await page.mouse.up();await page.mouse.up({button:'right'});
+  await page.waitForFunction(()=>window.__DF.state.enemies[0].dead,null,{timeout:3000});assert.equal((await snap()).raid.kills,1);pass('Real aimed firing kills guard and creates ammunition drop');
+  assert.ok((await snap()).loot.some(i=>i.kind==='ammo'&&i.id.startsWith('drop-')));
+  const oldHp=(await snap()).player.hp,oldMeds=(await snap()).player.medkits;
+  await page.keyboard.press('KeyF');await page.waitForTimeout(2400);
+  assert.ok((await snap()).player.hp>oldHp);assert.equal((await snap()).player.medkits,oldMeds-1);pass('Medkit key completes healing and spends one kit');
+  await page.keyboard.down('ControlRight');await page.waitForTimeout(150);assert.ok((await snap()).player.crouching);await page.keyboard.up('ControlRight');pass('Right Ctrl crouches');
+  await page.keyboard.press('Space');await page.waitForTimeout(140);assert.ok((await snap()).player.y>.3);await page.waitForTimeout(800);assert.ok((await snap()).player.grounded);pass('Jump and landing through actual keyboard');
+  await page.keyboard.press('Escape');await page.waitForFunction(()=>window.__DF.state.phase==='paused');
+  await page.locator('#pause-screen [data-action="settings"]').click();
+  await page.locator('#setting-quality').selectOption('low');await page.locator('#setting-volume').fill('0');await page.locator('#setting-sensitivity').fill('1.8');await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(()=>window.__DF.settings.volume),0);assert.equal(await page.evaluate(()=>window.__DF.stats().quality),'low');pass('Settings controls apply volume, mouse speed and quality');
+  await page.locator('#setting-quality').selectOption('high');await page.locator('[data-action="close-utility"]').first().click();
+  await page.locator('#abandon-raid').click();assert.equal((await snap()).phase,'paused');await page.locator('#abandon-raid').click();await page.waitForFunction(()=>window.__DF.state.phase==='hub');pass('Abandonment requires second click');
+  await page.reload();await page.waitForFunction(()=>window.__DF);assert.equal(await page.evaluate(()=>window.__DF.settings.volume),0);assert.equal(await page.evaluate(()=>window.__DF.settings.sensitivity),1.8);assert.equal((await snap()).profile.credits,400);pass('Settings and spent loadout persist across reload');
+  await page.locator('#kit-scout').click();await page.locator('#start-raid').click();await page.waitForFunction(()=>window.__DF.state.phase==='raid');
+  await page.evaluate(()=>{window.__DF.state.raid.timeLeft=.05;});await page.waitForFunction(()=>window.__DF.state.phase==='dead');assert.equal((await snap()).result.total,0);pass('Time limit produces failure without banking loot');
+  assert.deepEqual(errors,[]);pass('No combat or settings renderer errors');
+  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({checks,errors},null,2));
+}catch(error){await page.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});await fs.writeFile(path.join(out,'result.json'),JSON.stringify({checks,errors,failure:String(error.stack)},null,2));throw error;}
+finally{await browser.close();}

@@ -1,0 +1,45 @@
+import {_electron} from '@playwright/test';
+import {createRequire} from 'node:module';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const require=createRequire(import.meta.url);
+const out=path.resolve('../qa-native');await fs.mkdir(out,{recursive:true});
+const exe=process.env.DF_EXE||require('electron');
+const args=process.env.DF_EXE?['--qa']:['.','--qa'];
+const profile=await fs.mkdtemp(path.join(out,'profile-'));
+const app=await _electron.launch({executablePath:exe,args,cwd:process.cwd(),env:{...process.env,DEAD_FREQUENCY_QA_PROFILE:profile},timeout:30000});
+const errors=[],checks=[];let page;
+const check=(name)=>{checks.push(name);console.log('PASS',name);};
+try{
+  page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));
+  page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.waitForFunction(()=>document.documentElement.dataset.ready==='true',null,{timeout:60000});
+  assert.equal(await page.evaluate(()=>window.__DF.state.phase),'hub');check('Packaged Windows application boots offline');
+  const audioLoaded=await page.evaluate(()=>window.__DF.audio.stats());
+  assert.equal(audioLoaded.loadedSamples,16);assert.deepEqual(audioLoaded.failedSamples,[]);check('All sixteen recordings decode inside the packaged EXE');
+  const security=await app.evaluate(({BrowserWindow})=>{const prefs=BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();return {sandbox:prefs.sandbox,contextIsolation:prefs.contextIsolation,nodeIntegration:prefs.nodeIntegration};});
+  assert.deepEqual(security,{sandbox:true,contextIsolation:true,nodeIntegration:false});
+  assert.equal(await page.evaluate(()=>typeof window.require),'undefined');check('Native renderer isolation is active');
+  await page.screenshot({path:path.join(out,'01-native-hub.png')});
+  await page.locator('[data-action="start"]').click();
+  await page.waitForFunction(()=>window.__DF.state.phase==='raid'&&document.pointerLockElement);
+  check('Native start action captures mouse');
+  await page.mouse.down();await page.waitForTimeout(220);await page.mouse.up();
+  assert.ok(await page.evaluate(()=>window.__DF.audio.stats().peakVoices>0));check('Native weapon firing plays sample voices');
+  await page.keyboard.down('KeyD');await page.waitForTimeout(600);await page.keyboard.up('KeyD');
+  assert.ok(await page.evaluate(()=>window.__DF.state.player.x>-6));check('Native keyboard movement');
+  await page.keyboard.press('Escape');await page.waitForFunction(()=>window.__DF.state.phase==='paused');check('Native Escape pauses and releases input');
+  await page.waitForFunction(()=>window.__DF.audio.stats().activeVoices===0);check('Native pause clears gameplay audio voices');
+  await page.locator('[data-action="resume"]').click();await page.waitForFunction(()=>window.__DF.state.phase==='raid');
+  await page.evaluate(()=>{const g=window.__DF.game;g.state.enemies.forEach(e=>e.dead=true);g.teleport(-10,47);g.update(1/60,{});g.interact();g.teleport(-47,46);g.update(1/60,{});g.interact();});
+  await page.waitForFunction(()=>window.__DF.state.phase==='extracted',null,{timeout:15000});
+  assert.ok(await page.evaluate(()=>window.__DF.state.profile.intake.length>0&&window.__DF.state.result.total===window.__DF.state.result.bonus));check('Native loot and timed extraction preserve goods for storage');
+  await page.screenshot({path:path.join(out,'02-native-result.png')});
+  const balance=await page.evaluate(()=>window.__DF.state.profile.credits);
+  await page.reload();await page.waitForFunction(()=>window.__DF?.state.phase==='hub');
+  assert.equal(await page.evaluate(()=>window.__DF.state.profile.credits),balance);check('Native local progress survives reload');
+  assert.deepEqual(errors,[]);check('No native renderer errors');
+  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({exe,checks,errors,security,audio:audioLoaded,stats:await page.evaluate(()=>window.__DF.stats())},null,2));
+}catch(e){if(page)await page.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});await fs.writeFile(path.join(out,'result.json'),JSON.stringify({checks,errors,failure:String(e.stack)},null,2));throw e;}
+finally{await app.close();}
