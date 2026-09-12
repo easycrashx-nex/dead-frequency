@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { createCoopSession, sanitizeCoopInput } from '../src/coop-session.js';
 import { EXTRACTIONS, RELAY } from '../src/layout.js';
 import { approachContainer } from './container-helpers.js';
+import { ownedProfile } from './loadout-helpers.js';
+import { resolveLoadout } from '../src/loadouts.js';
 
 const step = (session, seconds) => { for (let i = 0; i < Math.ceil(seconds * 60); i++) session.update(1 / 60); };
 async function setup(t, started = true) {
@@ -25,25 +27,34 @@ function take(session, id, game, item) {
   } else { game.teleport(item.x, item.z); session.action(id, 'interact'); step(session, .1); }
 }
 
-test('weapon lobby choices validate combined costs and freeze skills before entering the raid', async t => {
-  const { session, a, b, ga, gb } = await setup(t, false);
+test('owned lobby builds validate costs, freeze editing and replicate effective weapons and gear', async t => {
+  const session=createCoopSession({seed:414});t.after(()=>session.close());
+  const pa=ownedProfile({weapon:'SG-8',gear:['pack-day','carrier-web','plate-fiber'],attachments:['muzzle-choke']}),pb=ownedProfile({weapon:'SR-90',attachments:['optic-sniper','stock-heavy']});
+  const qa=resolveLoadout(pa),qb=resolveLoadout(pb);
+  const a=await session.join({name:'Alpha',profile:pa}),b=await session.join({name:'Bravo',profile:pb}),ga=session.players.get(a).game,gb=session.players.get(b).game;
   assert.equal(ga.unlockSkill('weapon-1'), false); assert.equal(ga.selectWeapon('DMR-7'), false);
-  assert.throws(() => session.ready(a, true, 'assault', 'SR-90'), /verfügbar/);
-  assert.equal(session.players.get(a).ready, false); assert.equal(session.players.get(a).kit, 'scout');
-  session.ready(a, true, 'scout', 'SG-8'); session.ready(b, true, 'assault', 'SR-90');
+  assert.equal(ga.purchaseEquipment('AR-4'),false);assert.equal(ga.mountAttachment(pa.loadout.custom.weapon,'muzzle',null),false);
+  assert.throws(() => session.ready(a, true, 'assault', 'SR-90'), /Kit/);
+  assert.equal(session.players.get(a).ready, false);
+  session.ready(a, true); session.ready(b, true);
   assert.deepEqual(session.lobby().players.map(player => player.weapon), ['SG-8', 'SR-90']);
   session.start(a); quiet(ga);
   assert.equal(ga.state.player.weapon, 'SG-8'); assert.equal(gb.state.player.weapon, 'SR-90');
-  assert.equal(ga.state.profile.credits, 575); assert.equal(gb.state.profile.credits, 600);
+  assert.equal(ga.state.profile.credits, pa.credits-qa.cost); assert.equal(gb.state.profile.credits, pb.credits-qb.cost);
   const snapshot = session.snapshot(a);
   assert.equal(snapshot.state.player.cycleDuration, .82); assert.equal(snapshot.state.teammates[0].weapon, 'SR-90');
   assert.equal(snapshot.state.teammates[0].reloadDuration, 3.1); assert.equal(snapshot.state.profile.progression.xp, 0);
+  assert.equal(snapshot.state.player.weaponStats.spread,qa.weapon.spread);
+  assert.equal(snapshot.state.teammates[0].weaponStats.adsZoom,6);
+  assert.equal(snapshot.state.player.equipment.backpack.catalogId,'pack-day');
+  assert.equal(snapshot.state.player.weaponStats.damage,qa.weapon.damage);
   assert.equal(snapshot.state.teammates[0].progression, undefined);
 });
 
 test('server preserves short clicks and legacy fire edges without repeating a held semi trigger', async t => {
-  const { session, a, b, ga } = await setup(t, false);
-  session.ready(a, true, 'scout', 'RV-6'); session.ready(b, true); session.start(a); quiet(ga);
+  const session=createCoopSession({seed:414});t.after(()=>session.close());
+  const a=await session.join({profile:ownedProfile({weapon:'RV-6'})}),b=await session.join(),ga=session.players.get(a).game;
+  session.ready(a, true); session.ready(b, true); session.start(a); quiet(ga);
   session.input(a, 1, { fire: false, firePressed: true }); session.input(a, 2, { fire: false, firePressed: false });
   session.update(1 / 60); assert.equal(ga.state.player.ammo, 5, 'Mouse down/up between network frames must still shoot once');
   step(session, .5); assert.equal(ga.state.player.ammo, 5);
@@ -74,6 +85,74 @@ test('lobby reserves exactly two slots, requires both ready and starts kits only
   assert.throws(() => session.start(a), /bereits/);
   assert.equal(gb.state.profile.credits, 1150);
   assert.ok(Math.hypot(ga.state.player.x - gb.state.player.x, ga.state.player.z - gb.state.player.z) > 2);
+});
+
+test('loadout preflight rejects preset overrides, missing ownership and unaffordable starts without consuming another player', async t => {
+  const session=createCoopSession({seed:411});t.after(()=>session.close());
+  await assert.rejects(session.join({kit:'scout',weapon:'SR-90'}),/Kit/);
+  const missing=ownedProfile();missing.loadout.custom.weapon='item-not-owned';
+  await assert.rejects(session.join({profile:missing}),/Waffe|Lager/);
+  await assert.rejects(session.join({kit:'support',profile:{credits:1}}),/Credits/);
+  const pa=ownedProfile({weapon:'AR-4',attachments:['mag-drum']}),pb=ownedProfile({weapon:'DMR-7'});
+  pa.stash.find(item=>item.kind==='weapon').damage=999999;
+  const a=await session.join({profile:pa}),b=await session.join({profile:pb});
+  const ga=session.players.get(a).game,gb=session.players.get(b).game;
+  session.ready(a,true);session.ready(b,true);
+  const before=structuredClone(ga.state.profile);
+  gb.state.profile.credits=0;
+  assert.throws(()=>session.start(a),/bereit/);
+  assert.equal(session.phase,'lobby');assert.equal(ga.state.phase,'hub');assert.deepEqual(ga.state.profile,before);
+  gb.state.profile.credits=1000;session.start(a);quiet(ga);
+  assert.equal(ga.state.player.weaponStats.damage,37,'Client-supplied damage never becomes a weapon stat');
+  assert.equal(ga.state.player.magSize,60,'Legitimately owned drum magazine is derived by the host');
+  const equipped=structuredClone(ga.state.player.weaponInstance);
+  session.input(a,1,{forward:0,damage:99999,attachments:{magazine:'mag-extended'},equipment:{},magSize:9999});step(session,.1);
+  assert.deepEqual(ga.state.player.weaponInstance,equipped);assert.equal(ga.state.player.magSize,60);
+});
+
+test('gear transfers and death spills conserve owned instances across players with identical local item serials', async t => {
+  const session=createCoopSession({seed:412});t.after(()=>session.close());
+  const pa=ownedProfile({weapon:'AR-4',gear:['pack-day'],attachments:['mag-fast']}),pb=ownedProfile({weapon:'AR-4',gear:['pack-day'],attachments:['mag-fast']});
+  assert.equal(pa.loadout.custom.weapon,pb.loadout.custom.weapon,'Both local profiles start at the same serial');
+  const a=await session.join({profile:pa}),b=await session.join({profile:pb});session.ready(a,true);session.ready(b,true);session.start(a);
+  const ga=session.players.get(a).game,gb=session.players.get(b).game;quiet(ga);
+  const wa=ga.state.player.weaponInstance,wb=gb.state.player.weaponInstance;
+  assert.notEqual(wa.id,wb.id);assert.notEqual(wa.attachments.magazine.id,wb.attachments.magazine.id);
+  const packA=ga.state.player.equipment.backpack,packB=gb.state.player.equipment.backpack;
+  assert.notEqual(packA.id,packB.id);
+  assert.equal(session.action(a,'dropEquipment','backpack'),true);step(session,.15);
+  const dropped=ga.state.loot.find(item=>item.id===packA.id&&!item.taken);assert.ok(dropped);
+  gb.teleport(dropped.x,dropped.z);session.action(b,'interact');step(session,.15);
+  assert.ok(gb.state.raid.loot.some(item=>item.id===packA.id));
+  session.action(b,'equip',packA.id);step(session,.15);
+  assert.equal(gb.state.player.equipment.backpack.id,packA.id);
+  assert.ok(gb.state.raid.loot.some(item=>item.id===packB.id),'Replaced owned backpack remains carried');
+  ga.receiveDamage(100000,{x:ga.state.player.x,z:ga.state.player.z-4});step(session,.1);
+  assert.equal(ga.state.phase,'dead');
+  const spilled=ga.state.loot.filter(item=>item.id===wa.id&&!item.taken);assert.equal(spilled.length,1);
+  assert.equal(spilled[0].attachments.magazine.catalogId,'mag-fast');
+  const count=ga.state.loot.length;session.snapshot(a);session.snapshot(b);session.leave(a);step(session,.1);
+  assert.equal(ga.state.loot.length,count,'Repeated snapshots/disconnect cannot spill the same possessions twice');
+  assert.equal(ga.state.profile.stash.filter(item=>item.kind==='weapon').length,0);
+});
+
+test('a recovered weapon keeps its current ammunition when its new owner dies and spills it again', async t => {
+  const session=createCoopSession({seed:413});t.after(()=>session.close());
+  const a=await session.join({profile:ownedProfile({weapon:'AR-4',attachments:['mag-fast']})}),b=await session.join();
+  session.ready(a,true);session.ready(b,true);session.start(a);
+  const ga=session.players.get(a).game,gb=session.players.get(b).game;quiet(ga);
+  const id=ga.state.player.weaponInstance.id;
+  session.action(a,'dropEquipment','weapon');step(session,.15);
+  const ground=ga.state.loot.find(item=>item.id===id);assert.equal(ground.ammo,30);
+  gb.teleport(ground.x,ground.z);session.action(b,'interact');step(session,.15);
+  session.action(b,'equip',id);step(session,.15);
+  session.input(b,1,{firePressed:true,yaw:0,pitch:0});step(session,1/60);
+  assert.equal(gb.state.player.ammo,29);
+  gb.receiveDamage(10000,{x:ground.x,z:ground.z-4});step(session,.15);
+  const respilled=ga.state.loot.find(item=>item.id===id);
+  assert.equal(respilled.taken,false);assert.equal(respilled.ammo,29,'The old ground copy must not restore a spent round');
+  assert.equal(respilled.attachments.magazine.catalogId,'mag-fast');
+  assert.equal(ga.state.loot.filter(item=>item.id===id).length,1);
 });
 
 test('inputs clamp movement, reject stale sequences and never accept position, ammo or damage', async t => {
@@ -173,9 +252,9 @@ test('AI damages either player and remains active after the first player is elim
   const { session, a, ga, gb } = await setup(t);
   const template = structuredClone(ga.state.enemies[1]);
   ga.state.enemies.splice(0, ga.state.enemies.length,
-    { ...structuredClone(template), id: 'guard-left', x: -52, z: 25, home: { x: -52, z: 25 }, yaw: Math.PI, alert: 8, fireTimer: 0, flank: false },
-    { ...structuredClone(template), id: 'guard-right', x: 52, z: 25, home: { x: 52, z: 25 }, yaw: Math.PI, alert: 8, fireTimer: 0, flank: false });
-  ga.teleport(-52, 40); gb.teleport(52, 40);
+    { ...structuredClone(template), id: 'guard-left', x: -142, z: 120, home: { x: -142, z: 120 }, yaw: Math.PI, alert: 8, fireTimer: 0, flank: false },
+    { ...structuredClone(template), id: 'guard-right', x: -110, z: 120, home: { x: -110, z: 120 }, yaw: Math.PI, alert: 8, fireTimer: 0, flank: false });
+  ga.teleport(-142, 130); gb.teleport(-110, 130);
   for (let i = 0; i < 12 * 60 && (ga.state.player.hp === 100 || gb.state.player.hp === 100); i++) session.update(1 / 60);
   assert.ok(ga.state.player.hp < 100); assert.ok(gb.state.player.hp < 100);
   session.leave(a); const hp = gb.state.player.hp;

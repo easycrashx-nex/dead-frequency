@@ -4,6 +4,8 @@ import { once } from 'node:events';
 import WebSocket from 'ws';
 import { createCoopServer } from '../server/coop-server.js';
 import { EXTRACTIONS } from '../src/layout.js';
+import { ownedProfile } from './loadout-helpers.js';
+import { resolveLoadout } from '../src/loadouts.js';
 
 async function connect(t, url) {
   const ws = new WebSocket(url), queue = [], waiters = [];
@@ -110,7 +112,7 @@ test('WebSocket take-all obeys shared contents and immediate close cancels priva
   await a.wait(m => m.type === 'snapshot' && m.state.containers.find(c => c.id === container.id)?.searched);
   a.send({ type: 'action', action: 'takeAll', containerId: container.id });
   const claimed = await a.wait(m => m.type === 'snapshot' && m.state.containers.find(c => c.id === container.id)?.items.every(item => item.taken));
-  assert.equal(claimed.state.raid.loot.length, container.items.filter(item => !item.kind).length);
+  assert.equal(claimed.state.raid.loot.length, container.items.filter(item => !['ammo','medkit'].includes(item.kind)).length);
   assert.equal(claimed.state.player.medkits, beforeMedkits + 1);
   b.send({ type: 'action', action: 'interact' });
   await b.wait(m => m.type === 'snapshot' && m.state.activeContainerId === container.id);
@@ -149,10 +151,12 @@ test('real WebSocket loadouts validate weapons, retain migrated skills and award
   const url=`ws://127.0.0.1:${server.port}/coop?token=${server.token}`;
   const a=await connect(t,url),b=await connect(t,url);
   a.send({type:'join',protocol:1,version:'1.3.0',weapon:'invented-gun',profile:{credits:750}});
-  assert.match((await a.wait(m=>m.type==='error')).message,/Waffe/);
-  a.send({type:'join',protocol:1,version:'1.3.0',weapon:'RV-6',profile:{credits:750,upgrades:{armor:2}},name:'Revolver'});
+  assert.match((await a.wait(m=>m.type==='error')).message,/Kit|Waffe/);
+  const pa=ownedProfile({weapon:'RV-6',upgrades:{armor:2},gear:['carrier-web','plate-fiber','helmet-bump']}),pb=ownedProfile({weapon:'SG-8',attachments:['muzzle-choke']});
+  const guestCost=resolveLoadout(pb).cost;
+  a.send({type:'join',protocol:1,version:'1.3.0',profile:pa,name:'Revolver'});
   const aid=(await a.wait(m=>m.type==='welcome')).id;
-  b.send({type:'join',protocol:1,version:'1.3.0',weapon:'SG-8',profile:{credits:750},name:'Shotgun'});
+  b.send({type:'join',protocol:1,version:'1.3.0',profile:pb,name:'Shotgun'});
   const bid=(await b.wait(m=>m.type==='welcome')).id;
   a.send({type:'ready',ready:true});b.send({type:'ready',ready:true});
   await a.wait(m=>m.type==='lobby'&&m.players.length===2&&m.players.every(p=>p.ready));
@@ -160,7 +164,8 @@ test('real WebSocket loadouts validate weapons, retain migrated skills and award
   const start=await a.wait(m=>m.type==='snapshot'&&m.state.phase==='raid');
   assert.equal(start.state.player.weapon,'RV-6');assert.equal(start.state.player.magSize,6);assert.equal(start.state.player.armor,70);
   const partner=await b.wait(m=>m.type==='snapshot'&&m.state.phase==='raid');
-  assert.equal(partner.state.player.weapon,'SG-8');assert.equal(partner.state.player.magSize,8);assert.equal(partner.state.profile.credits,575);
+  assert.equal(partner.state.player.weapon,'SG-8');assert.equal(partner.state.player.magSize,8);assert.equal(partner.state.profile.credits,pb.credits-guestCost);
+  assert.equal(partner.state.player.attachments.muzzle,'muzzle-choke');
   const game=server.session.players.get(aid).game,target=game.state.enemies[0];
   game.state.enemies.splice(1);Object.assign(target,{x:-7,z:42,hp:20,fireTimer:9999,pathTimer:9999,alert:0});
   a.send({type:'input',seq:1,input:{fire:false,firePressed:true,yaw:0,pitch:0}});

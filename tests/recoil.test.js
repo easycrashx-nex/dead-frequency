@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRecoil } from '../src/recoil.js';
-import { WEAPONS } from '../src/weapons.js';
+import { WEAPONS, getWeapon } from '../src/weapons.js';
 
 test('sustained fire stays bounded in each stance and has negligible sideways motion', () => {
   for (const weapon of ['VX-9', 'AR-4']) for (const aim of [false, true]) for (const crouch of [false, true]) {
@@ -75,7 +75,7 @@ test('invalid time steps leave state finite and a rested burst restarts its patt
   recoil.update(1); recoil.shot(); assert.deepEqual(recoil.offset(), initial);
 });
 
-test('eight weapon recoil profiles remain stable and the trained recoil modifier reduces the actual aim offset', () => {
+test('weapon recoil profiles remain stable and the trained recoil modifier reduces the actual aim offset', () => {
   const kicks = [];
   for (const weapon of WEAPONS) {
     const normal=createRecoil(),trained=createRecoil();
@@ -87,4 +87,14 @@ test('eight weapon recoil profiles remain stable and the trained recoil modifier
     normal.update(.6);assert.deepEqual(normal.offset(),{pitch:0,yaw:0});
   }
   assert.ok(new Set(kicks).size>=6,'Weapon families should have distinct recoil impulses');
+});
+
+test('assembled weapon recoil changes the actual aim offset and combines with trained recoil once', () => {
+  const base=getWeapon('AR-4'), factory=createRecoil(), modified=createRecoil(), trained=createRecoil();
+  const stats={recoilPitch:base.recoilPitch*.75,recoilYaw:base.recoilYaw*.8};
+  factory.shot({weapon:base.id}); modified.shot({weapon:base.id,stats}); trained.shot({weapon:base.id,stats,multiplier:.85});
+  assert.ok(Math.abs(modified.offset().pitch/factory.offset().pitch-.75)<1e-12);
+  assert.ok(Math.abs(trained.offset().pitch/modified.offset().pitch-.85)<1e-12);
+  const invalid=createRecoil();invalid.shot({weapon:base.id,stats:{recoilPitch:NaN,recoilYaw:Infinity}});
+  assert.deepEqual(invalid.offset(),factory.offset());
 });

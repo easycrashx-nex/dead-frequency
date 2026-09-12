@@ -7,6 +7,7 @@ import { createGame } from '../src/simulation.js';
 import { createCoopServer } from '../server/coop-server.js';
 import { createCoopSession } from '../src/coop-session.js';
 import { approachContainer } from './container-helpers.js';
+import { ownedProfile } from './loadout-helpers.js';
 
 const token = 'a1'.repeat(32);
 
@@ -14,7 +15,7 @@ test('short semi-automatic clicks survive the network send interval and cleared 
   const originalWebSocket=globalThis.WebSocket,session=createCoopSession({seed:1717}),localGame=await createGame();
   let client,wire,seq=0;
   try{
-    const a=await session.join({name:'Host',weapon:'RV-6'}),b=await session.join({name:'Partner'});
+    const a=await session.join({name:'Host',profile:ownedProfile({weapon:'RV-6'})}),b=await session.join({name:'Partner'});
     session.ready(a,true);session.ready(b,true);session.start(a);
     const game=session.players.get(a).game;game.state.enemies.length=0;
     globalThis.WebSocket=class extends EventTarget{

@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {getCatalogItem} from '../src/loadouts.js';
 const version=JSON.parse(await fs.readFile('package.json','utf8')).version;
 const exe=process.env.DF_EXE||path.resolve(`../../outputs/v${version}/DEAD FREQUENCY-win32-x64/DEAD FREQUENCY.exe`);
 const internet=process.env.DF_QA_LAN!=='1';
@@ -24,7 +25,20 @@ async function boot(label){
 try{
   const host=await boot('host'),guest=await boot('guest');pass('Two packaged Windows clients boot with isolated persistent profiles');
   for(const [client,weapon] of [[host,'SG-8'],[guest,'DMR-7']]){
-    await client.page.locator('#tab-arsenal').click();await client.page.locator(`[data-select-weapon="${weapon}"]`).click();await client.page.locator('#tab-deploy').click();
+    const page=client.page;await page.evaluate(()=>{__DF.state.profile.credits=15000;});
+    await page.locator('#tab-arsenal').click();await page.locator('.armory-tabs [data-armory-tab="shop"]').click();
+    for(const id of [weapon,'optic-holo','mag-fast','pack-day']){
+      await page.locator('#shop-kind').selectOption(getCatalogItem(id).kind);await page.locator('#shop-category').selectOption('all');await page.locator('#shop-search').fill(getCatalogItem(id).name);
+      await page.locator(`[data-shop-item="${id}"]`).click();await page.locator('#purchase-equipment').click();await page.waitForFunction(id=>__DF.state.profile.stash.some(item=>item.catalogId===id),id);
+    }
+    const owned=await page.evaluate(()=>Object.fromEntries(__DF.state.profile.stash.map(item=>[item.catalogId,item.id])));
+    await page.locator('.armory-tabs [data-armory-tab="editor"]').click();await page.locator('#editor-weapon').selectOption(owned[weapon]);
+    for(const [slot,id] of [['optic','optic-holo'],['magazine','mag-fast']]){
+      await page.locator(`[data-attachment-slot="${slot}"]`).click();await page.locator('#editor-attachment').selectOption(owned[id]);await page.locator('#mount-attachment').click();
+      await page.waitForFunction(({weapon,slot,id})=>__DF.state.profile.stash.find(item=>item.catalogId===weapon)?.attachments?.[slot]?.catalogId===id,{weapon,slot,id});
+    }
+    await page.locator('.armory-tabs [data-armory-tab="loadout"]').click();await page.locator('[data-equip-slot="weapon"]').selectOption(owned[weapon]);await page.locator('[data-equip-slot="backpack"]').selectOption(owned['pack-day']);
+    await page.locator('#use-custom-loadout').click();await page.waitForFunction(()=>__DF.state.profile.loadout.mode==='custom');await page.locator('#tab-deploy').click();
   }
   await host.page.locator('#coop-open').click();await host.page.locator('#coop-name').fill('Alpha');
   if(!internet){await host.page.locator('.coop-options summary').click();await host.page.locator('#coop-internet').uncheck();}
@@ -43,6 +57,13 @@ try{
   assert.equal(await host.page.evaluate(()=>__DF.state.raid.seed),await guest.page.evaluate(()=>__DF.state.raid.seed));pass('Only a ready team can start; both enter the same seeded raid');
   assert.equal(await host.page.evaluate(()=>__DF.state.player.weapon),'SG-8');assert.equal(await guest.page.evaluate(()=>__DF.state.player.weapon),'DMR-7');
   assert.equal(await host.page.evaluate(()=>__DF.state.teammates[0].weapon),'DMR-7');assert.equal(await guest.page.evaluate(()=>__DF.state.teammates[0].weapon),'SG-8');pass('Distinct shotgun and marksman loadouts selected in the arsenal survive the Internet lobby and replicate to the teammate');
+  for(const {page} of [host,guest]){
+    await page.waitForFunction(()=>__DF.stats().teammateLoadouts?.[0]?.attachments?.optic==='optic-holo');
+    assert.deepEqual(await page.evaluate(()=>__DF.state.player.attachments),{optic:'optic-holo',magazine:'mag-fast'});
+    assert.deepEqual(await page.evaluate(()=>__DF.stats().teammateLoadouts[0].attachments),{optic:'optic-holo',magazine:'mag-fast'});
+    assert.equal(await page.evaluate(()=>__DF.state.teammates[0].equipment.backpack.catalogId),'pack-day');
+  }
+  pass('Owned holographic sights, magazine attachments and backpacks replicate as the same authoritative builds and visible remote models');
   await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];global.__DF_QAEnemy=structuredClone(members[0].game.state.enemies[0]);for(const member of members)member.game.state.enemies.splice(0);});
   await host.app.evaluate(()=>{
     const members=[...global.__DF_HOST().players.values()];members[0].game.teleport(-142,130);members[1].game.teleport(-10,-15);
@@ -118,7 +139,13 @@ try{
   await Promise.all([host.page.evaluate(()=>__DF.game.interact()),guest.page.evaluate(()=>__DF.game.interact())]);
   for(const {page} of [host,guest])await page.waitForFunction(()=>__DF.state.phase==='extracted',null,{timeout:15000});pass('Both players complete the extraction timer in the shared raid');
   const recovered=await receiver.page.evaluate(()=>__DF.state.profile.intake);assert.ok(recovered.some(item=>item.name===bags.flat().find(x=>x.id===lootId).name));
-  assert.equal(await owner.page.evaluate(()=>__DF.state.profile.intake.length),0);pass('Extracted loot goes only into its owner’s persistent intake');
+  assert.equal(await owner.page.evaluate(name=>__DF.state.profile.intake.some(item=>item.name===name),bags.flat().find(x=>x.id===lootId).name),false);
+  for(const {page} of [host,guest]){
+    assert.equal(await page.evaluate(()=>__DF.state.profile.intake.filter(item=>item.kind==='weapon').length),1);
+    assert.equal(await page.evaluate(()=>__DF.state.profile.intake.find(item=>item.kind==='weapon').attachments.optic.catalogId),'optic-holo');
+    assert.equal(await page.evaluate(()=>__DF.state.profile.intake.find(item=>item.kind==='equipment').catalogId),'pack-day');
+  }
+  pass('Extracted trade loot goes only to its owner while each player also recovers their own complete weapon build and backpack');
   await host.page.screenshot({path:path.join(out,'03-coop-extraction.png')});
   await Promise.all([host.page.evaluate(()=>__DF.persist()),guest.page.evaluate(()=>__DF.persist())]);
   assert.deepEqual(errors,[]);pass('No JavaScript or renderer errors in the tested multiplayer flow');

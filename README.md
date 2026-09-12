@@ -1,4 +1,4 @@
-# DEAD FREQUENCY 1.9.0
+# DEAD FREQUENCY 1.10.0
 
 Ein Extraction-Shooter aus der Ego-Perspektive für Windows x64: allein offline oder zu zweit im Koop. Durchsuche den 300 × 300 Meter großen Sektor 07, bekämpfe Patrouillen, sichere Beute und handle nach der Extraktion damit.
 
@@ -63,18 +63,28 @@ Diese Verhaltensweisen gelten auch im Koop für beide Spieler. Schaden, Lebenspu
 
 ## Arsenal und Skilltree
 
-Im **ARSENAL** wählst du eine von acht Waffen. Alle besitzen eigene Modelle, auch beim Mitspieler, sowie unterschiedliche Schussrhythmen, Rückstoß, Reichweiten, Klänge und Nachladebewegungen. Waffenpreis und Kitpreis werden zusammen pro Einsatz berechnet. VX-9, AR-4 und RV-6 bleiben kostenlos; ohne ausdrückliche Waffenwahl bestimmt das Kit die Standardwaffe.
+Das **ARSENAL** enthält 32 Waffen, 36 Aufsätze und 24 Ausrüstungsteile. Waffen unterscheiden sich in Bauform, Schussrhythmus, Rückstoß, Reichweite, Klang und Nachladebewegung. Die acht bisherigen Waffen bleiben erhalten; 24 neue Modelle erweitern Maschinenpistolen, Sturm- und Bullpup-Gewehre, Schrotflinten, Präzisionsgewehre, Scharfschützengewehre, Maschinengewehre und Kurzwaffen.
 
-| Waffe | Bauart | Magazin | Feuerart | Credits pro Einsatz |
-| --- | --- | --- | --- | --- |
-| VX-9 | Kompakte Maschinenpistole | 24 | Automatik | 0 |
-| AR-4 | Sturmgewehr | 30 | Automatik | 0 |
-| BR-12 | Bullpup mit hinten liegendem Magazin | 32 | Automatik | 250 |
-| SG-8 | Pumpgun mit Röhrenmagazin | 8 | Einzelschuss, zehn Schrotpellets | 175 |
-| DMR-7 | Langes Präzisionsgewehr | 12 | Halbautomatik | 325 |
-| SR-90 | Repetiergewehr mit Zielfernrohr | 5 | Einzelschuss mit Repetierzyklus | 550 |
-| MG-60 | Maschinengewehr mit Munitionsgurt | 60 | Automatik | 425 |
-| RV-6 | Revolver mit ausschwenkbarer Trommel | 6 | Ein Schuss pro Klick | 0 |
+Unter **FERTIGE KITS** wählst du eines von sechs fertig zusammengestellten Einsatzkits. Dein eigenes Loadout stellst du unter **AUSRÜSTUNG** zusammen. Fertige Kits werden einmal pro Raid bezahlt und können vor dem Einsatz nicht verändert werden. Ihre gestellte Ausrüstung ist nicht handelbar und wird nach dem Einsatz nicht ins Lager übernommen. Das kostenlose **Notfall · Scout** bleibt jederzeit verfügbar. Im Raid kannst du gestellte Teile durch echte Funde ersetzen.
+
+Für dein **eigenes Kit** kaufst du Waffen, Aufsätze und Ausrüstung im **SHOP** oder findest sie in Kisten. Gekaufte Gegenstände landen im Lager. Unter **AUSRÜSTUNG** wählst du deine Waffeninstanz, Rucksack, Plattenträger, Schutzplatte, Helm und bis zu vier Medkits. Eine Schutzplatte benötigt einen Plattenträger. Der angezeigte Verbrauchspreis umfasst Reservemunition und die gewählten Medkits; deine besessene Ausrüstung wird nicht erneut gekauft.
+
+In der **WAFFENBANK** wählst du eine besessene Waffe. Die 3D-Vorschau zeigt ihre tatsächlichen Anbauteile. Sechs Aufsatzbereiche bieten jeweils sechs Alternativen:
+
+| Bereich | Beispiele und Wirkung |
+| --- | --- |
+| Visier | Offenes Visier, Reflex, Holografisch, Prisma und Zielfernrohr; Vergrößerung gegen Anschlagzeit |
+| Magazin | Kurz, verlängert, Trommel, gekoppelt; Kapazität gegen Wechselzeit und Handling |
+| Mündung | Bremse, Kompensator, Schalldämpfer, Choke; Rückstoß, Hörbarkeit und Garbe |
+| Griff | Vertikal, Winkel, kurz, Zweibein; Kontrolle gegen Gewicht und Anschlagzeit |
+| Schaft | Leicht, klappbar, gepolstert, Präzisionsschaft; Bewegung und Rückstoß |
+| Lauf | Kurz, lang, schwer, kanneliert; Reichweite, Schaden und Handling |
+
+Nur passende, besessene Aufsätze lassen sich montieren. Ein montierter Aufsatz wird Teil dieser Waffeninstanz; beim Abmontieren oder Ersetzen kehrt er ins Lager zurück. Die Vorschau vergleicht die abgeleiteten Werte vor und nach dem Wechsel. Dieselben Werte gelten im Solo und werden im Koop vom Host berechnet. Schalldämpfer verändern auch den Klang und die Reichweite, in der Bots den Schuss hören.
+
+Sechs Rucksäcke bieten acht bis 24 Beuteplätze; ohne Rucksack bleiben vier Plätze. Skills kommen zusätzlich dazu. Sechs Plattenträger, sechs Schutzplatten und sechs Helme unterscheiden sich in Schutz und Bewegungstempo. Schutzteile behalten ihren Zustand. Im Raid kannst du tragbare Fundstücke über **Ausrüsten** anlegen und eigene getragene Teile abwerfen. Ein Wechsel zu weniger Stauraum wird abgelehnt, solange deine Beute nicht hineinpasst.
+
+Bei erfolgreicher Extraktion kommen eigene mitgeführte Ausrüstung und Funde in die Anlieferung. Lagere sie vor dem nächsten Raid ein. Bei Tod, Aufgabe oder Verbindungsverlust geht die mitgenommene Ausrüstung verloren; im Koop kann dein Partner zurückgelassene Gegenstände bergen. Gesicherte Lagerware bleibt erhalten. Die frühere Waffenwahl war eine Auswahl für einen Einkauf pro Einsatz und wird nicht nachträglich zu kostenlosem Waffenbesitz.
 
 Der **SKILLTREE** ersetzt den bisherigen Upgrade-Shop. Vier Äste enthalten je sechs Fähigkeiten mit sichtbaren Verbindungen und Voraussetzungen:
 
@@ -89,7 +99,7 @@ Bereits gekaufte Rüstungs-, Rucksack- und Waffenränge werden beim Laden automa
 
 ## Kisten und Beute
 
-Sieben Kistentypen enthalten passende Beutepools: Werkzeug, Elektronik, Sanität, Munition, Vorräte, Industrie und Sicherheit. Sie stehen an Arbeitsplätzen, in Versorgungsbereichen, an Frachtplätzen und in den fünf begehbaren Gebäuden. Insgesamt kommen genau 100 neue Handelsgegenstände zu den bisherigen neun hinzu; Munitions- und Sanitätskisten liefern zusätzlich Verbrauchsmaterial.
+Sieben Kistentypen enthalten passende Beutepools: Werkzeug, Elektronik, Sanität, Munition, Vorräte, Industrie und Sicherheit. Sie stehen an Arbeitsplätzen, in Versorgungsbereichen, an Frachtplätzen und in den fünf begehbaren Gebäuden. Die 100 Handelsgegenstände und bisherigen neun Waren bleiben erhalten. Passende Kisten enthalten zusätzlich nutzbare Waffen, Aufsätze oder Ausrüstung; Munitions- und Sanitätskisten liefern auch Verbrauchsmaterial.
 
 Gehe nahe an eine Kiste und drücke **E**. Nach einer kurzen Suche kannst du Gegenstände einzeln oder mit **Alles nehmen** entnehmen. Im selben Fenster siehst du deinen Rucksack und kannst mit **Abwerfen** Platz schaffen. Escape oder die Schließen-Schaltfläche schließen die Kiste; Tab bewegt den Fokus zwischen ihren Schaltflächen. Während der Suche und beim Plündern läuft der Raid weiter.
 
@@ -131,7 +141,7 @@ Die Suche findet Einstellungen über alle Kategorien. Änderungen wirken sofort 
 6. Unter **Markt** einen gelagerten Gegenstand auswählen, den Wunschpreis eingeben und eine Laufzeit von 2, 5 oder 10 Minuten wählen.
 7. Unter **Postfach** Verkaufserlöse beanspruchen oder unverkaufte Waren wieder ins Lager holen. Credits finanzieren Kits und Waffen; XP liefern die Punkte für permanente Skills.
 
-Die Runde dauert maximal zwölf Minuten. Tod, Ablauf der Zeit oder Aufgabe verlieren die ungesicherte Beute. Erfolgreich extrahierte Gegenstände bleiben erhalten; Abschuss- und Relaisboni werden direkt gutgeschrieben. Das Scout-Kit kostet nichts, das Assault-Kit und kostenpflichtige Waffen werden beim Raidstart bezahlt. Kontostand, Skills, XP, Waffenwahl, Lager, Extraktionsrucksack, Angebote und Postfach werden lokal gespeichert. Ein laufender Raid wird beim Schließen nicht gespeichert.
+Die Runde dauert maximal zwölf Minuten. Tod, Ablauf der Zeit oder Aufgabe verlieren die ungesicherte Beute und mitgenommene eigene Ausrüstung. Erfolgreich extrahierte Gegenstände bleiben erhalten; Abschuss- und Relaisboni werden direkt gutgeschrieben. Das Scout-Kit kostet nichts. Andere Fertigkits beziehungsweise Verbrauchsmaterial für eigene Kits werden beim Raidstart bezahlt. Kontostand, Skills, XP, Loadout, Waffenumbauten, Lager, Anlieferung, Angebote und Postfach werden lokal gespeichert. Ein laufender Raid wird beim Schließen nicht gespeichert.
 
 ## Markt und Rucksack
 
@@ -184,9 +194,10 @@ pnpm package
 
 - `src/simulation.js`: Regeln, Gegner, Treffer, Physik, Extraktion, Wirtschaft und Speicherprüfung.
 - `src/economy.js`: dauerhafte Gegenstände, Lager, zeitabhängige Preise, Käuferprüfungen und Postfach.
-- `src/weapons.js`: gemeinsame Werte, Feuerarten, Modelle und Einsatzpreise aller acht Waffen.
+- `src/weapons.js`: gemeinsame Werte, Feuerarten, Modellvarianten und Preise aller 32 Waffen.
+- `src/loadouts.js`: Aufsätze, Ausrüstung, feste Kits, Besitzprüfung, Montage und abgeleitete Werte.
 - `src/progression.js`: 24 Skillknoten, Voraussetzungen, XP, Effekte und Migration alter Upgrades.
-- `src/armory-ui.js` / `src/progression-ui.js`: Waffenwahl und interaktiver Skilltree.
+- `src/armory-ui.js` / `src/progression-ui.js`: Kits, Ausrüstung, Waffenbank, Shop und interaktiver Skilltree.
 - `src/recoil.js`: sanfte, begrenzte Rückstoßwinkel, gemeinsam für Kamera und Trefferberechnung.
 - `src/layout.js`: gemeinsame Karte für Kollisionen, Darstellung und Übersicht.
 - `src/render.js`: Three.js-Welt, Beleuchtung, Waffe, Gegneranimationen und Effekte.
@@ -200,7 +211,7 @@ pnpm package
 - `platform.cjs` / `preload.cjs`: schmale Desktop-Schnittstelle, Host-Lebensdauer und Internet-Tunnel.
 - `launcher/`: automatische GitHub-Prüfung, verifizierter Download, sichere Archivextraktion und Versionsauswahl.
 
-Eine Karte mit fünf begehbaren Gebäuden, zwei Einsatz-Kits, acht Waffen, zwei Schwierigkeiten und 24 permanente Skills. Solo gegen KI oder privater Koop für genau zwei Spieler. Lager und Markt bleiben pro Spieler lokal; es gibt keinen gemeinsamen öffentlichen Handelsmarkt oder öffentliches Matchmaking. Modelle und Texturen werden lokal erzeugt. Die Sounds verwenden mitgelieferte Aufnahmen: echte M45- und AK-47-Schüsse als bearbeitete Klangbasis der fiktiven Waffen, Airsoft-Nachlademechanik, Schritte auf hartem Boden und Wind.
+Eine Karte mit fünf begehbaren Gebäuden, sechs festen Einsatzkits, eigenem Loadout, 32 Waffen, 36 Aufsätzen, 24 Ausrüstungsteilen, zwei Schwierigkeiten und 24 permanenten Skills. Solo gegen KI oder privater Koop für genau zwei Spieler. Lager und Markt bleiben pro Spieler lokal; es gibt keinen gemeinsamen öffentlichen Handelsmarkt oder öffentliches Matchmaking. Modelle und Texturen werden lokal erzeugt. Die Sounds verwenden mitgelieferte Aufnahmen: echte M45- und AK-47-Schüsse als bearbeitete Klangbasis der Waffen, Airsoft-Nachlademechanik, Schritte auf hartem Boden und Wind.
 
 Version 1.1.0 ersetzt die synthetischen Schüsse und Schritte. Schussvarianten wiederholen sich nicht unmittelbar; die beiden Waffen haben unterschiedliche Klangquellen. Gegnerklänge folgen Entfernung, Blickrichtung und Hindernissen. Schritte hängen von tatsächlicher Bewegung ab, Ducken ist leiser, Sprinten kräftiger. Pause und Tod brechen geplante Nachladegeräusche ab. Der Mixer begrenzt gleichzeitig aktive Stimmen und Spitzenpegel. `node scripts/qa-audio.mjs` prüft die echte Stereo-Ausgabe gegen den laufenden Vite-Server.
 

@@ -49,14 +49,14 @@ export function createCoopClient({localGame,onChange=()=>{},onRaid=()=>{},onProf
     }
     else if(message.type==='pong'&&Number.isFinite(message.time))info.ping=Math.round(performance.now()-message.time);
   }
-  async function connect(invite,{name,profile,kit='scout',weapon,invitation=invite,difficulty='normal'}={}){
+  async function connect(invite,{name,profile,kit,weapon,loadout,invitation=invite,difficulty='normal'}={}){
     const url=parseInvite(invite);closed=false;state=structuredClone(localGame.state);state.multiplayer=true;
     state.teammates=[];lastSnapshot=-1;events=[];paused=false;sequence=0;pendingJump=pendingFirePressed=false;
     change({status:'connecting',name:String(name||'Operator').trim().slice(0,20),invite:invitation,players:[],message:'Verbindung wird aufgebaut …',difficulty});
     await new Promise((resolve,reject)=>{
       socket=new WebSocket(url);let welcomed=false;
       const timer=setTimeout(()=>{reject(new Error('Keine Antwort vom Host. Prüfe, ob die Einladung noch aktiv ist.'));socket.close();},20000);
-      socket.addEventListener('open',()=>send({type:'join',protocol:1,version:packageInfo.version,name:info.name,profile,kit,weapon}));
+      socket.addEventListener('open',()=>send({type:'join',protocol:1,version:packageInfo.version,name:info.name,profile,kit,weapon,loadout}));
       socket.addEventListener('message',event=>{
         receive(event.data);
         if(info.id&&!welcomed){welcomed=true;clearTimeout(timer);resolve();}
@@ -90,6 +90,8 @@ export function createCoopClient({localGame,onChange=()=>{},onRaid=()=>{},onProf
     clearInput(){pendingJump=pendingFirePressed=false;sendTime=0;send({type:'input',seq:++sequence,input:{yaw:state.player.yaw,pitch:state.player.pitch}});},
     reload(){return send({type:'action',action:'reload'});},heal(){return send({type:'action',action:'heal'});},
     interact(){closingContainerId=null;return send({type:'action',action:'interact'});},dropItem(id){return send({type:'action',action:'drop',id});},
+    equipRaidItem(id){return send({type:'action',action:'equip',id});},
+    dropEquipment(slot){return send({type:'action',action:'dropEquipment',id:slot});},
     takeContainerItem(containerId,id){return send({type:'action',action:'take',id,containerId});},
     takeAllContainerItems(containerId){return send({type:'action',action:'takeAll',containerId});},
     closeContainer(){if(!state.activeContainerId)return false;closingContainerId=state.activeContainerId;state.activeContainerId=null;state.containerSearchRemaining=0;return send({type:'action',action:'closeContainer'});},
@@ -97,7 +99,7 @@ export function createCoopClient({localGame,onChange=()=>{},onRaid=()=>{},onProf
     ready(ready){send({type:'ready',ready:!!ready});},start(){send({type:'start',difficulty:info.difficulty||'normal'});},
     leave(){closed=true;clearInterval(watchdog);send({type:'leave'});socket?.close();change({status:'offline',players:[],message:'',id:null,hostId:null});},
     drainEvents(){const list=events;events=[];return list;},getSave(){return localGame.getSave();},
-    dispose(){this.leave();},returnToHub(){this.leave();},buyUpgrade(){return false;},unlockSkill(){return false;},selectWeapon(){return false;},startRaid(){return false;},
+    dispose(){this.leave();},returnToHub(){this.leave();},buyUpgrade(){return false;},unlockSkill(){return false;},selectWeapon(){return false;},selectLoadout(){return false;},purchaseEquipment(){return false;},equipLoadout(){return false;},mountAttachment(){return false;},setLoadoutMedkits(){return false;},startRaid(){return false;},
   };
   return adapter;
 }

@@ -8,6 +8,7 @@ import * as economy from './economy.js';
 import {createCoopClient,parseInvite} from './coop-client.js';
 import {sanitizeSettings,bindingAction,rebindSetting,resetSettingsCategory} from './settings.js';
 import {createGamepadInput} from './gamepad.js';
+import {resolveLoadout} from './loadouts.js';
 
 const SAVE_KEY='dead-frequency.profile.v2', LEGACY_SAVE_KEY='dead-frequency.profile.v1', SETTINGS_KEY='dead-frequency.settings.v1';
 const canvas=document.querySelector('#game'),root=document.querySelector('#ui');
@@ -204,7 +205,7 @@ function pollController(dt){
 function aimDirection(){const p=game.state.player,cp=Math.cos(p.pitch);return {x:-Math.sin(p.yaw)*cp,y:Math.sin(p.pitch),z:-Math.cos(p.yaw)*cp};}
 function pumpEvents(){
   const events=game.drainEvents();
-  if(coop)for(const event of events)if(event.type==='shot')recoil.shot({weapon:game.state.player.weapon,aim,crouch:game.state.player.crouching,multiplier:game.state.player.recoilMultiplier});
+  if(coop)for(const event of events)if(event.type==='shot')recoil.shot({weapon:game.state.player.weapon,stats:game.state.player.weaponStats,aim,crouch:game.state.player.crouching,multiplier:game.state.player.recoilMultiplier});
   if(controllerActive()&&document.hasFocus()&&settings.controllerVibration){
     if(events.some(event=>event.type==='damage'))controller.rumble?.({duration:140,strongMagnitude:.5,weakMagnitude:.3});
     else if(events.some(event=>event.type==='shot'))controller.rumble?.({duration:65,strongMagnitude:.12,weakMagnitude:.24});
@@ -228,7 +229,7 @@ function frame(now){
         if(p.ammo===0&&p.reserve>0&&!p.reload&&!p.heal){game.reload();autoReloadDelay=.5;}
       }
       if(gameplayInputActive()&&(fire||firePressed)&&game.fire(aimDirection(),{triggerPressed:firePressed})){
-        recoil.shot({weapon:game.state.player.weapon,aim,crouch:game.state.player.crouching,multiplier:game.state.player.recoilMultiplier});
+        recoil.shot({weapon:game.state.player.weapon,stats:game.state.player.weaponStats,aim,crouch:game.state.player.crouching,multiplier:game.state.player.recoilMultiplier});
         const offset=recoil.offset();game.state.player.yaw=lookYaw+offset.yaw;game.state.player.pitch=clamp(lookPitch+offset.pitch,-1.45,1.45);
       }
       jump=firePressed=false;input.jump=input.firePressed=false;accumulator-=1/60;
@@ -281,6 +282,8 @@ async function joinCoop(options,hosting){
   if(coop?.info.status==='error'&&game.state.phase==='hub')await leaveCoop();
   if(coopBusy||coop||game.state.phase!=='hub')return;
   if(game.state.profile.intake.length){ui.events([{type:'notice',text:'Zuerst die Beute aus dem letzten Raid einlagern.'}]);return;}
+  const prepared=resolveLoadout(game.state.profile,options);
+  if(!prepared.valid||!prepared.affordable){ui.events([{type:'notice',text:prepared.reason||'Nicht genug Credits für das gewählte Loadout.'}]);return;}
   if(!window.platform){Object.assign(coopStatus,{status:'error',message:'Koop ist in der Windows-Version verfügbar.'});return;}
   coopBusy=true;Object.assign(coopStatus,{status:hosting?'hosting':'connecting',message:hosting?'Einladung wird erstellt …':'Verbindung wird aufgebaut …',name:options.name});
   const generation=++coopGeneration;
@@ -316,6 +319,13 @@ async function boot(){
     coopCopyInvite:()=>window.platform?.copyInvite(coop?.info.invite||'').then(()=>ui.events([{type:'notice',text:'Einladung kopiert. Deinem Kollegen schicken und im Spiel einfügen.'}])),
     pasteClipboard:()=>window.platform?.readClipboard?.()??navigator.clipboard?.readText?.()??Promise.resolve(''),
     selectWeapon:id=>hubGameAction('selectWeapon',id),unlockSkill:id=>hubGameAction('unlockSkill',id),
+    selectLoadout:selection=>hubGameAction('selectLoadout',selection),
+    purchaseEquipment:id=>hubGameAction('purchaseEquipment',id),
+    equipLoadout:(slot,id)=>hubGameAction('equipLoadout',slot,id),
+    mountAttachment:(weaponId,slot,attachmentId)=>hubGameAction('mountAttachment',weaponId,slot,attachmentId),
+    setLoadoutMedkits:count=>hubGameAction('equipLoadout','medkits',count),
+    equipRaidItem(id){const result=game.equipRaidItem(id);pumpEvents();return result;},
+    dropEquipment(slot){const result=game.dropEquipment(slot);pumpEvents();return result;},
     dropItem(id){const result=game.dropItem(id);pumpEvents();return result;},closeFieldPanel,
     takeContainerItem(containerId,itemId){const result=game.takeContainerItem(containerId,itemId);pumpEvents();return result;},
     takeAllContainerItems(containerId){const result=game.takeAllContainerItems(containerId);pumpEvents();return result;},closeContainer:closeFieldPanel,

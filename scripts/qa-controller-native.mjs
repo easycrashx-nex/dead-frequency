@@ -74,7 +74,7 @@ async function focusWithPad(selector){
 async function confirm(selector){await focusWithPad(selector);await tap(0);}
 async function setFixtureWeapon(id){
   const weapon=WEAPONS.find(w=>w.id===id);assert.ok(weapon);
-  await page.evaluate(w=>{Object.assign(__DF.state.player,{weapon:w.id,ammo:w.magSize,magSize:w.magSize,reserve:w.reserve,reload:0,reloadDuration:w.reloadSeconds,shotTimer:0,cycleDuration:w.fireInterval,heal:0});},weapon);
+  await page.evaluate(w=>{Object.assign(__DF.state.player,{weapon:w.id,weaponStats:{...w,attachments:{},noiseMultiplier:(w.soundRadius??36)/36},attachments:{},adsSeconds:w.adsSeconds,adsZoom:w.adsZoom,ammo:w.magSize,magSize:w.magSize,reserve:w.reserve,reload:0,reloadDuration:w.reloadSeconds,shotTimer:0,cycleDuration:w.fireInterval,heal:0});},weapon);
   await neutral(180);
 }
 async function safeField(){

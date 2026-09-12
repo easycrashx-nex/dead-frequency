@@ -1,4 +1,5 @@
-import { getWeapon, defaultWeapon } from './weapons.js';
+import { getWeapon } from './weapons.js';
+import { resolveLoadout, getPresetKit } from './loadouts.js';
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const statusText = status => ({ hosting: 'EINLADUNG WIRD VORBEREITET', connecting: 'VERBINDUNG WIRD AUFGEBAUT', lobby: 'TEAMVERBINDUNG AKTIV', raid: 'GEMEINSAM IM EINSATZ', error: 'VERBINDUNG UNTERBROCHEN' })[status] || 'BEREIT FÜR ZWEI';
 
@@ -17,10 +18,10 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
         <label class="coop-label" for="coop-name">DEIN RUFNAME</label><input id="coop-name" class="coop-input" autocomplete="nickname" maxlength="20" placeholder="Operator" value="Operator" spellcheck="false">
         <div id="coop-join-fields" hidden><label class="coop-label" for="coop-invite">EINLADUNG DEINES MITSPIELERS</label><input id="coop-invite" class="coop-input" type="text" autocomplete="off" spellcheck="false" placeholder="Einladung hier einfügen"><p class="coop-field-note">Dein Mitspieler erstellt das Team und schickt dir seine Einladung.</p></div>
         <div id="coop-host-fields"><p class="coop-field-note">Erstelle dein Team und teile die Einladung mit einem Freund. Ihr startet, sobald beide bereit sind.</p><details class="coop-options"><summary>Verbindungsoptionen</summary><label><input id="coop-internet" type="checkbox" checked><span>Über das Internet spielen<small>Im selben Netzwerk kannst du diese Option ausschalten.</small></span></label></details></div>
-        <div class="coop-loadout"><span>DEIN EINSATZKIT</span><strong id="coop-kit">SCOUT / VX-9</strong><small>Waffe und Skills werden beim Beitritt festgelegt.</small></div>
+        <div class="coop-loadout"><span>DEIN EINSATZKIT</span><strong id="coop-kit">SCOUT / VX-9</strong><small>Loadout, Aufsätze und Skills werden beim Beitritt festgelegt.</small></div>
         <button id="coop-connect" class="primary-button coop-primary" data-coop-action="connect"><span id="coop-connect-label">TEAM ERSTELLEN</span><span>↗</span></button>
       </div>
-      <div id="coop-session" hidden><p class="coop-field-note">Kit, Waffe und Skills sind für dieses Team festgelegt. Zum Ändern die Lobby verlassen.</p><div class="coop-session-heading"><span class="micro coop-blue">DEIN TEAM</span><span id="coop-player-count" class="micro dim">1 / 2</span></div><div id="coop-players" class="coop-players"></div>
+      <div id="coop-session" hidden><p class="coop-field-note">Loadout, Aufsätze und Skills sind für dieses Team festgelegt. Zum Ändern die Lobby verlassen.</p><div class="coop-session-heading"><span class="micro coop-blue">DEIN TEAM</span><span id="coop-player-count" class="micro dim">1 / 2</span></div><div id="coop-players" class="coop-players"></div>
         <div id="coop-share" hidden><label class="coop-label" for="coop-share-invite">EINLADUNG TEILEN</label><div class="coop-share-row"><input id="coop-share-invite" class="coop-input" readonly aria-label="Einladung zum Kopieren"><button id="coop-copy" class="small-button" data-coop-action="copy">KOPIEREN ↗</button></div><p class="coop-field-note">Schicke diese Einladung deinem Mitspieler. Lass das Spiel geöffnet.</p></div>
         <div class="coop-lobby-actions"><button id="coop-ready" class="secondary-button" data-coop-action="ready">BEREIT MELDEN</button><button id="coop-start" class="primary-button coop-primary" data-coop-action="start" hidden><span>KOOP-RAID STARTEN</span><span>↗</span></button></div><p id="coop-start-hint" class="coop-field-note"></p>
       </div>
@@ -40,7 +41,7 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
   function open() {
     if (state?.phase !== 'hub') return;
     returnFocus = document.activeElement; overlay.hidden = false;
-    const loadout = getLoadout(); setText('coop-kit', `${loadout.kit === 'assault' ? 'ASSAULT' : 'SCOUT'} / ${getWeapon(loadout.weapon || defaultWeapon(loadout.kit)).name}`);
+    const loadout=resolveLoadout(state.profile,getLoadout());setText('coop-kit',`${loadout.name||'EIGENES LOADOUT'} / ${loadout.weapon?.name||'KEINE WAFFE'} · ${loadout.cost} CR`);
     (coop.status === 'lobby' ? node('coop-ready') : node('coop-name')).focus({ preventScroll: true });
   }
   function close() { overlay.hidden = true; if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true }); }
@@ -113,7 +114,7 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
       playerSignature = signature;
       node('coop-players').innerHTML = [0,1].map(i => {
         const p = players[i];
-        return p ? `<div class="coop-player ${p.ready ? 'is-ready' : ''}"><span class="coop-player-icon">0${i + 1}</span><div><strong>${escapeHTML(p.name)}${p.id === coop.id ? ' <small>DU</small>' : ''}</strong><span>${p.kit === 'assault' ? 'ASSAULT' : 'SCOUT'} · ${escapeHTML(getWeapon(p.weapon || defaultWeapon(p.kit))?.name || 'VX-9')}${p.id === coop.hostId ? ' / HOST' : ''}</span></div><b>${p.ready ? 'BEREIT' : 'WARTET'}</b></div>` : '<div class="coop-player vacant"><span class="coop-player-icon">+</span><div><strong>DEIN MITSPIELER</strong><span>WARTET AUF EINLADUNG</span></div></div>';
+        return p ? `<div class="coop-player ${p.ready ? 'is-ready' : ''}"><span class="coop-player-icon">0${i + 1}</span><div><strong>${escapeHTML(p.name)}${p.id === coop.id ? ' <small>DU</small>' : ''}</strong><span>${escapeHTML(p.loadout?.mode==='custom'?'EIGENES LOADOUT':getPresetKit(p.loadout?.presetId||p.kit)?.name||'EINSATZKIT')} · ${escapeHTML(getWeapon(p.weapon)?.name||'EIGENE WAFFE')}${p.id === coop.hostId ? ' / HOST' : ''}</span></div><b>${p.ready ? 'BEREIT' : 'WARTET'}</b></div>` : '<div class="coop-player vacant"><span class="coop-player-icon">+</span><div><strong>DEIN MITSPIELER</strong><span>WARTET AUF EINLADUNG</span></div></div>';
       }).join('');
     }
     node('coop-ready').disabled = !own || !inLobby;

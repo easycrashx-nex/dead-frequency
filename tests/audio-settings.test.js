@@ -87,6 +87,21 @@ test('every weapon and its mechanical cycle routes through the weapon bus with b
   for(const node of started)assert.equal(audiblePath(node,context.destination),false);
 });
 
+test('a suppressed build lowers actual player and teammate shot gain and high frequencies', async t => {
+  const {audio,context,state}=await setup(t);
+  const shotPath=()=>{
+    const source=context.nodes.findLast(node=>node.kind==='BufferSource'),filter=[...source.connections][0],level=[...filter.connections][0];
+    return {gain:level.gain.value,cutoff:filter.frequency.value};
+  };
+  audio.events([{type:'shot',weapon:'AR-4'}],state);const plain=shotPath();
+  state.player.weaponStats={noiseMultiplier:.45};
+  audio.events([{type:'shot',weapon:'AR-4'}],state);const suppressed=shotPath();
+  assert.ok(suppressed.gain<plain.gain*.6);assert.ok(suppressed.cutoff<plain.cutoff);
+  audio.events([{type:'teammateShot',weapon:'AR-4',from:{x:0,y:1.65,z:0}}],state);const teammate=shotPath();
+  audio.events([{type:'teammateShot',weapon:'AR-4',from:{x:0,y:1.65,z:0},noiseMultiplier:.45}],state);const quietTeammate=shotPath();
+  assert.ok(quietTeammate.gain<teammate.gain*.6);assert.ok(quietTeammate.cutoff<teammate.cutoff);
+});
+
 test('focus muting follows current master volume and normal dynamics are restored exactly', async t => {
   const { audio, context } = await setup(t);
   const normal = audio.stats().compressor;

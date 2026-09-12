@@ -145,6 +145,7 @@ export function createControllerUI(root, actions, {onBack=()=>false}={}) {
   function switchTab(amount) {
     const area=scope(); if(!area || area===overlay)return;
     let list=[...area.querySelectorAll('[data-settings-category]')].filter(enabled);
+    if(!list.length && focused?.closest('#hub-arsenal'))list=[...area.querySelectorAll('.armory-tabs [data-armory-tab]')].filter(enabled);
     if(!list.length && focused?.closest('.skill-branch-tabs'))list=[...area.querySelectorAll('[data-skill-branch]')].filter(enabled);
     if(!list.length)list=[...area.querySelectorAll('.hub-navigation [data-hub-tab]')].filter(enabled);
     if(!list.length)return;

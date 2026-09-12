@@ -1,4 +1,5 @@
 import { ECONOMY_BALANCE } from './economy.js';
+import { SHOP_ITEMS, makeCatalogItem } from './loadouts.js';
 
 export const CONTAINER_SEARCH_SECONDS = 1.5;
 export const CONTAINER_TYPES = [
@@ -65,6 +66,13 @@ export const LEGACY_ITEMS = [
 export const ITEM_CATALOG = [...LEGACY_ITEMS, ...NEW_ITEMS];
 export const ITEM_POOLS = Object.fromEntries(CONTAINER_TYPES.map(type => [type.id, ITEM_CATALOG.filter(item => item.type === type.id)]));
 const RARITY_WEIGHTS = { common: 6, rare: 3, epic: 1 };
+// Additional, relatively uncommon working equipment. The original 109 goods
+// and their three-to-five-item rarity rolls remain intact.
+export const EQUIPMENT_POOLS = Object.fromEntries(CONTAINER_TYPES.map(type => [type.id,SHOP_ITEMS.filter(item => {
+  if (item.kind === 'weapon') return ['ammo','security'].includes(type.id);
+  if (item.kind === 'attachment') return ({optic:['electronics','security'],magazine:['ammo'],muzzle:['ammo','tools'],grip:['tools'],stock:['industrial','tools'],barrel:['industrial','ammo']})[item.slot]?.includes(type.id);
+  return ({backpack:['provisions','medical'],carrier:['security'],plate:['industrial','security'],helmet:['security','provisions']})[item.slot]?.includes(type.id);
+})]));
 export function rollContainerItems(spot, random, raid, difficulty = 'normal') {
   const pool = [...ITEM_POOLS[spot.type]], count = 3 + Math.floor(random() * 3), items = [];
   for (let i = 0; i < count; i++) {
@@ -75,5 +83,12 @@ export function rollContainerItems(spot, random, raid, difficulty = 'normal') {
   }
   if (spot.type === 'ammo') items.push({ id: `r${raid}-${spot.id}-supply`, name: 'Munition · +36', value: 0, rarity: 'common', kind: 'ammo', amount: 36, taken: false });
   if (spot.type === 'medical') items.push({ id: `r${raid}-${spot.id}-supply`, name: 'Medkit · +1', value: 0, rarity: 'rare', kind: 'medkit', amount: 1, taken: false });
+  const equipmentPool = EQUIPMENT_POOLS[spot.type];
+  if (equipmentPool?.length && random() < (['ammo','security'].includes(spot.type) ? .24 : .16)) {
+    const rarityWeight = item => item.purchaseCost > 2600 ? .35 : item.purchaseCost > 1300 ? 1 : item.purchaseCost > 650 ? 2 : 4;
+    let draw = random() * equipmentPool.reduce((sum,item) => sum + rarityWeight(item),0), selected = equipmentPool.at(-1);
+    for (const item of equipmentPool) if ((draw -= rarityWeight(item)) <= 0) {selected = item;break;}
+    items.push({...makeCatalogItem(selected.id,`r${raid}-${spot.id}-gear`),taken:false});
+  }
   return items;
 }

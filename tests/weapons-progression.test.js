@@ -5,19 +5,23 @@ import { WEAPONS, getWeapon } from '../src/weapons.js';
 import { SKILL_BRANCHES, SKILL_NODES, getProgression, getSkillEffects, canUnlockSkill } from '../src/progression.js';
 import { EXTRACTIONS } from '../src/layout.js';
 import { approachContainer, openContainer } from './container-helpers.js';
+import { ownedProfile } from './loadout-helpers.js';
+import { resolveLoadout } from '../src/loadouts.js';
 
 const run = (game, seconds, input = {}) => { for (let i = 0; i < Math.ceil(seconds * 60); i++) game.update(1 / 60, input); };
 async function setup(t, saved = {}, weapon = 'VX-9') {
-  const game = await createGame({ credits: 10000, ...saved }, { externalAI: true }); t.after(() => game.dispose());
-  assert.equal(game.startRaid({ weapon, seed: 1701 }), true); game.state.enemies = []; return game;
+  const profile = weapon === 'VX-9' ? {credits:10000,...saved} : ownedProfile({credits:10000,...saved,weapon,gear:['pack-sling','carrier-web','plate-fiber','helmet-bump']});
+  const game = await createGame(profile, { externalAI: true }); t.after(() => game.dispose());
+  assert.equal(game.startRaid({ seed: 1701 }), true); game.state.enemies = []; return game;
 }
 const aim = (game, x, z, y = 1.1) => ({ x: x - game.state.player.x, y: y - game.state.player.y - 1.65, z: z - game.state.player.z });
 const enemy = (id, x, z, hp = 95, kind = 'guard') => ({ id, x, z, hp, kind, dead: false, fireTimer: 100, alert: 0, pathTimer: 0 });
 const allSkills = { xp: 10000, unlocked: SKILL_NODES.map(node => node.id) };
 
-test('eight unique weapons have complete distinct loadouts and original recoil', () => {
-  assert.deepEqual(WEAPONS.map(weapon => weapon.id), ['VX-9', 'AR-4', 'BR-12', 'SG-8', 'DMR-7', 'SR-90', 'MG-60', 'RV-6']);
-  assert.equal(new Set(WEAPONS.map(weapon => weapon.model)).size, 8);
+test('32 unique weapons retain the original eight profiles and provide nine receiver families', () => {
+  assert.equal(WEAPONS.length,32);
+  assert.deepEqual(WEAPONS.slice(0,8).map(weapon => weapon.id), ['VX-9', 'AR-4', 'BR-12', 'SG-8', 'DMR-7', 'SR-90', 'MG-60', 'RV-6']);
+  assert.equal(new Set(WEAPONS.map(weapon => weapon.model)).size, 9);
   assert.equal(getWeapon('invalid'), null);
   for (const weapon of WEAPONS) {
     assert.equal(getWeapon(weapon.id), weapon);
@@ -33,17 +37,21 @@ test('separate weapon selection persists and raid costs are validated before mut
   assert.equal(game.state.profile.selectedWeapon, null);
   assert.equal(game.startRaid({ kit: 'assault' }), true); assert.equal(game.state.player.weapon, 'AR-4');
   assert.equal(game.state.profile.credits, 400); assert.equal(game.selectWeapon('RV-6'), false);
-  game.returnToHub(); assert.equal(game.selectWeapon('SR-90'), true);
+  game.returnToHub(); assert.equal(game.selectWeapon('SR-90'), false);
+  assert.equal(game.purchaseEquipment('SR-90'),false);
+  game.state.profile.credits = 10000;
+  assert.equal(game.purchaseEquipment('SR-90'),true);assert.equal(game.selectWeapon('SR-90'),true);
   assert.equal(game.getSave().profile.selectedWeapon, 'SR-90');
-  const raids = game.state.profile.raids;
-  assert.equal(game.startRaid(), false); assert.equal(game.state.profile.credits, 400); assert.equal(game.state.profile.raids, raids);
+  const raids = game.state.profile.raids, purchasedCredits = game.state.profile.credits;
   assert.equal(game.startRaid({ weapon: 'NO-GUN' }), false);
-  assert.equal(game.selectWeapon('RV-6'), true); assert.equal(game.startRaid(), true); assert.equal(game.state.player.weapon, 'RV-6');
-  assert.equal(game.state.profile.credits, 400);
+  assert.equal(game.state.profile.raids,raids);assert.equal(game.state.profile.credits,purchasedCredits);
+  const supplyCost = resolveLoadout(game.state.profile).cost;
+  assert.equal(game.startRaid(), true);assert.equal(game.state.player.weapon,'SR-90');
+  assert.equal(game.startRaid(),false);assert.equal(game.state.profile.credits,purchasedCredits - supplyCost);
   for (const weapon of WEAPONS) {
     const equipped = await setup(t, {}, weapon.id), p = equipped.state.player;
     assert.equal(p.ammo, weapon.magSize); assert.equal(p.reserve, weapon.reserve); assert.equal(p.reloadDuration, weapon.reloadSeconds);
-    assert.equal(equipped.state.profile.credits, 10000 - KIT_COSTS.scout - weapon.cost);
+    assert.equal(equipped.state.profile.credits, weapon.id === 'VX-9' ? 10000 : 10000 - weapon.purchaseCost - 1060 - weapon.ammoCost - 50);
   }
 });
 
@@ -62,7 +70,7 @@ test('automatic weapons repeat while every semi, pump, bolt and revolver require
     assert.equal(game.fire({ x: 0, y: .1, z: -1 }), false, 'Container UI blocks even a queued trigger');
     game.state.activeContainerId = null; p.ammo = 1; p.reserve = 3;
     assert.equal(game.reload(), true); run(game, weapon.reloadSeconds + .02);
-    assert.equal(p.ammo, 4); assert.equal(p.reserve, 0);
+    assert.equal(p.ammo, Math.min(4,p.magSize)); assert.equal(p.reserve, 4 - Math.min(4,p.magSize));
   }
 });
 
@@ -83,7 +91,8 @@ test('weapon range rejects targets beyond its hitscan reach', async t => {
   const game = await setup(t, {}, 'RV-6'); game.teleport(-140, 130);
   const target = enemy('distant', -140, 45); game.state.enemies = [target];
   game.fire(aim(game, target.x, target.z)); assert.equal(target.hp, 95);
-  game.returnToHub(); game.startRaid({ weapon: 'SR-90', seed: 1701 }); game.teleport(-140, 130); game.state.enemies = [target];
+  game.returnToHub();assert.equal(game.purchaseEquipment('SR-90'),true);assert.equal(game.selectWeapon('SR-90'),true);
+  game.startRaid({ seed: 1701 }); game.teleport(-140, 130); game.state.enemies = [target];
   game.fire(aim(game, target.x, target.z)); assert.ok(target.hp < 95);
 });
 

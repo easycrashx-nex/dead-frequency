@@ -1,3 +1,4 @@
+import { cleanLoadoutItem, makeCatalogItem, repairLoadoutReferences } from './loadouts.js';
 // Local buyers advance on wall-clock time; outcomes are stable across reloads.
 export const MARKET_CHECK_MS = 60_000;
 export const MARKET_DURATIONS = [2, 5, 10];
@@ -10,6 +11,8 @@ const clock = now => integer(now, Date.now());
 const allocate = (profile, prefix) => `${prefix}-${profile.nextItemId++}`;
 
 function cleanItem(item) {
+  if (item?.issued) return null;
+  if (item?.kind && !['ammo','medkit'].includes(item.kind)) return cleanLoadoutItem(item);
   if (!item || typeof item.name !== 'string' || !item.name.trim() || !Number.isFinite(item.value) || item.value < 1) return null;
   return { id: typeof item.id === 'string' ? item.id.slice(0, 100) : '', name: item.name.slice(0, 100),
     value: integer(item.value, 1, 1_000_000), rarity: ['common','rare','epic'].includes(item.rarity) ? item.rarity : 'common' };
@@ -18,7 +21,9 @@ function cleanItem(item) {
 export function createItem(profile, item) {
   const clean = cleanItem(item);
   if (!clean) throw new TypeError('Invalid inventory item');
-  return { ...clean, id: allocate(profile, 'item') };
+  const allocated = { ...clean, id: allocate(profile, 'item') };
+  if (clean.attachments) allocated.attachments = Object.fromEntries(Object.entries(clean.attachments).map(([slot,part]) => [slot,createItem(profile,part)]));
+  return allocated;
 }
 
 export function validateEconomy(src = {}) {
@@ -27,7 +32,8 @@ export function validateEconomy(src = {}) {
   const ids = new Set();
   // Reserve every saved serial before generating a replacement for a damaged ID.
   for (const list of [src.stash, src.intake, src.listings, src.mailbox]) if (Array.isArray(list)) for (const entry of list) {
-    for (const id of [entry?.id, entry?.item?.id]) {
+    const nestedIds = raw => raw && typeof raw === 'object' ? [raw.id, ...Object.values(raw.attachments ?? {}).slice(0,6).map(part => part?.id)] : [];
+    for (const id of [...nestedIds(entry), ...nestedIds(entry?.item)]) {
       const serial = typeof id === 'string' && /^(?:item|listing|mail)-(\d+)$/.exec(id);
       if (serial) result.nextItemId = Math.max(result.nextItemId, integer(Number(serial[1])) + 1);
     }
@@ -36,7 +42,12 @@ export function validateEconomy(src = {}) {
     const item = cleanItem(raw);
     if (!item || ids.has(item.id)) return null;
     if (!/^item-\d+$/.test(item.id)) item.id = allocate(result, 'item');
-    ids.add(item.id); return item;
+    ids.add(item.id);
+    if (item.attachments) {
+      item.attachments = Object.fromEntries(Object.entries(item.attachments).flatMap(([slot,part]) => {const nested = uniqueItem(part);return nested ? [[slot,nested]] : [];}));
+      item.value = makeCatalogItem(item.catalogId,item.id,{attachments:item.attachments}).value;
+    }
+    return item;
   }
   for (const key of ['intake','stash']) if (Array.isArray(src[key])) for (const raw of src[key]) {
     const item = uniqueItem(raw); if (item) result[key].push(item);
@@ -94,11 +105,12 @@ export function storeAll(profile) {
 export function listItem(profile, id, price, durationMinutes = 5, now = Date.now()) {
   if (!Number.isInteger(price) || price < 1 || price > 1_000_000 || !MARKET_DURATIONS.includes(durationMinutes) || profile.listings.length >= 20) return false;
   const index = profile.stash.findIndex(item => item.id === id);
-  if (index < 0) return false;
+  if (index < 0 || profile.stash[index].issued) return false;
   const createdAt = Math.max(clock(now), profile.marketTime), listingId = allocate(profile, 'listing');
   const item = profile.stash.splice(index, 1)[0];
   profile.listings.push({ id: listingId, item, price, createdAt, expiresAt: createdAt + durationMinutes * 60_000,
     nextCheckAt: createdAt + MARKET_CHECK_MS + Math.floor(draw(listingId + createdAt) * 30_000), checks: 0 });
+  if (profile.loadout) repairLoadoutReferences(profile);
   return true;
 }
 

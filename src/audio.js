@@ -1,5 +1,5 @@
 import { hasLineOfSight } from './simulation.js';
-import { getWeapon } from './weapons.js';
+import { getWeapon, WEAPONS } from './weapons.js';
 
 // Characterful mixes of the recorded samples, retaining their real transients.
 export const WEAPON_SOUND_PROFILES = {
@@ -12,6 +12,11 @@ export const WEAPON_SOUND_PROFILES = {
   'MG-60': {sample:'rifle-shot',rate:.9,gain:.64,cutoff:12800,send:.23},
   'RV-6': {sample:'smg-shot',rate:.82,gain:.68,cutoff:16400,send:.19},
 };
+const familySounds={smg:'VX-9',assault:'AR-4',bullpup:'BR-12',shotgun:'SG-8',marksman:'DMR-7',sniper:'SR-90',machinegun:'MG-60',revolver:'RV-6',pistol:'RV-6'};
+for(const [index,weapon] of WEAPONS.entries())if(!WEAPON_SOUND_PROFILES[weapon.id]){
+  const base=WEAPON_SOUND_PROFILES[familySounds[weapon.model]||'AR-4'];
+  WEAPON_SOUND_PROFILES[weapon.id]={...base,rate:base.rate*(1+(index%9-4)*.012),gain:base.gain*(.95+(index%5)*.02),cutoff:base.cutoff-(index%7)*340};
+}
 
 // Recorded CC0 firearm and Foley samples; provenance ships in audio/CREDITS.md.
 const SAMPLES = [
@@ -229,8 +234,9 @@ export function createAudio(options = {}) {
         case 'shot': {
           cancel('heal');
           const weapon=event.weapon||state.player.weapon, sound=WEAPON_SOUND_PROFILES[weapon]||WEAPON_SOUND_PROFILES['VX-9'];
-          play(variant(sound.sample, 3), { gain:sound.gain, rate:sound.rate*(.978 + random() * .044), cutoff:sound.cutoff, pan:.035, send:sound.send, tag:'shot' });
-          if(weapon==='SG-8'||weapon==='SR-90')play('reload-bolt',{gain:.24,rate:weapon==='SG-8'?.76:.98,delay:(getWeapon(weapon)?.fireInterval||.8)*.5,tag:'weapon-cycle',bus:'weapon',cutoff:7000});
+          const noise=clamp(event.noiseMultiplier??state.player.weaponStats?.noiseMultiplier??1,.2,1.3), model=getWeapon(weapon)?.model;
+          play(variant(sound.sample, 3), { gain:sound.gain*noise, rate:sound.rate*(.978 + random() * .044), cutoff:noise<.8?Math.min(sound.cutoff,7000+6000*noise):sound.cutoff, pan:.035, send:sound.send*noise, tag:'shot' });
+          if(model==='shotgun'||model==='sniper')play('reload-bolt',{gain:.24,rate:model==='shotgun'?.76:.98,delay:(state.player.cycleDuration||getWeapon(weapon)?.fireInterval||.8)*.5,tag:'weapon-cycle',bus:'weapon',cutoff:7000});
           break;
         }
         case 'teammateShot':
@@ -239,8 +245,9 @@ export function createAudio(options = {}) {
           const distance = Math.hypot(position.x - player.x, (position.y ?? 1.4) - (player.y + 1.65), position.z - player.z);
           const blocked = !hasLineOfSight(position, { x: player.x, y: player.y + (player.crouching ? 1.17 : 1.65), z: player.z });
           const sound=WEAPON_SOUND_PROFILES[event.type==='teammateShot'?event.weapon:'AR-4']||WEAPON_SOUND_PROFILES['AR-4'];
-          play(variant(sound.sample, 3), { gain: (blocked ? .43 : 1)*sound.gain, rate: sound.rate*(.96 + random() * .075),
-            position, delay: Math.min(.35, distance / 343), cutoff: blocked ? 950 : clamp(17000 / (1 + distance * .065), 2100, 17000), send: .36, tag: 'enemy', bus: 'weapon' });
+          const noise=clamp(event.noiseMultiplier??1,.2,1.3);
+          play(variant(sound.sample, 3), { gain: (blocked ? .43 : 1)*sound.gain*noise, rate: sound.rate*(.96 + random() * .075),
+            position, delay: Math.min(.35, distance / 343), cutoff: blocked ? 950 : clamp(17000*Math.min(1,noise) / (1 + distance * .065), 2100, 17000), send: .36*noise, tag: 'enemy', bus: 'weapon' });
           break;
         }
         case 'reload': reloadSequence(event.duration || state.player.reload, state.player.weapon, event.duration || state.player.reloadDuration, state.player.magSize-state.player.ammo); break;

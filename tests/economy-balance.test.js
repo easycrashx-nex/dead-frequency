@@ -139,7 +139,8 @@ test('new container goods use 65 percent of original values, keep hard-mode upli
     assert.equal(new Set(normal.map(item => item.id)).size, normal.length);
     assert.deepEqual(normal.map(item => item.name), hard.map(item => item.name));
     for (const [difficulty, rolled] of [['normal', normal], ['hard', hard]]) for (const item of rolled) {
-      if (item.kind) { assert.equal(item.value, 0); assert.equal(item.amount, item.kind === 'ammo' ? 36 : 1); }
+      if (['ammo','medkit'].includes(item.kind)) { assert.equal(item.value, 0); assert.equal(item.amount, item.kind === 'ammo' ? 36 : 1); }
+      else if (item.kind) { assert.ok(item.catalogId); assert.ok(item.value > 0); }
       else { const original = sourceByName.get(item.name); assert.ok(original); assert.equal(item.value, Math.round(original.value * .65 * (difficulty === 'hard' ? 1.35 : 1))); }
     }
   }

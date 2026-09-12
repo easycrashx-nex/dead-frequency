@@ -5,7 +5,7 @@ import { SPAWN, EXTRACTIONS, RELAY, POIS } from '../src/layout.js';
 import { storeAll } from '../src/economy.js';
 import { openContainer, takeFirstContainerItem } from './container-helpers.js';
 
-const economyDefaults = { stash: [], intake: [], listings: [], mailbox: [], nextItemId: 1, marketTime: 0 };
+const economyDefaults = { stash: [], intake: [], listings: [], mailbox: [], nextItemId: 1, marketTime: 0,loadout:{mode:'preset',presetId:'scout',custom:{weapon:null,backpack:null,carrier:null,plate:null,helmet:null,medkits:2}} };
 
 const run = (game, seconds, input = {}) => {
   for (let i = 0; i < Math.ceil(seconds * 60); i++) game.update(1 / 60, input);
@@ -145,7 +145,7 @@ test('extraction requires continuous presence and transfers unsold goods exactly
   persisted.profile.intake[0].value = 1;
   assert.equal(game.state.profile.credits, bank);
   assert.equal(game.state.profile.intake[0].value, first.value);
-  assert.equal(persisted.version, 2);
+  assert.equal(persisted.version, 3);
   game.returnToHub();
   const raids = game.state.profile.raids;
   assert.equal(game.startRaid({ kit: 'assault' }), false);
@@ -196,7 +196,7 @@ test('timeout and abandoning a paused raid lose carried value without charging t
   game.state.raid.timeLeft = 0.02; run(game, 0.1);
   assert.equal(game.state.phase, 'dead'); assert.equal(game.state.result.total, 0); assert.equal(game.state.profile.credits, bank);
   game.returnToHub(); assert.equal(game.state.phase, 'hub');
-  game.startRaid({ seed: 9 }); quiet(game); takeFirstContainerItem(game);
+  game.startRaid({ kit:'scout',seed: 9 }); quiet(game); takeFirstContainerItem(game);
   game.pause(true); game.returnToHub(); assert.equal(game.state.phase, 'hub');
   assert.equal(game.state.profile.credits, bank); assert.equal(game.state.profile.raids, 2); assert.equal(game.state.profile.extracts, 0);
 });

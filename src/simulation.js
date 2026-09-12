@@ -2,12 +2,14 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { layout, COLLIDERS, CONTAINER_SPOTS, SPAWN, EXTRACTIONS, RELAY, WORLD_SIZE } from './layout.js';
 import { validateEconomy, createItem, ECONOMY_BALANCE } from './economy.js';
 import { CONTAINER_TYPES, CONTAINER_SEARCH_SECONDS, LEGACY_ITEMS, rollContainerItems } from './loot-catalog.js';
-import { getWeapon, defaultWeapon } from './weapons.js';
+import { getWeapon } from './weapons.js';
+import { PRESET_KITS, GEAR_SLOTS, LOADOUT_SLOTS, resolveLoadout, validateLoadout, deriveWeapon, deriveGear, getEquipment, cleanLoadoutItem,
+  purchaseEquipment as purchaseOwned, equipLoadout as selectOwned, mountAttachment as mountOwned } from './loadouts.js';
 import { validateProgression, getSkillEffects, canUnlockSkill } from './progression.js';
 import { createEnemyAI } from './enemy-ai.js';
 export { ITEM_CATALOG } from './loot-catalog.js';
 
-export const KIT_COSTS = { scout: 0, assault: 350 };
+export const KIT_COSTS = Object.fromEntries(PRESET_KITS.map(kit => [kit.id,kit.cost]));
 export const UPGRADE_COSTS = {
   armor: [600, 1100, 1800], backpack: [500, 900, 1500], weapon: [700, 1300, 2000],
 };
@@ -25,9 +27,11 @@ export function validateProfile(saved) {
   const upgrades = {};
   for (const key of Object.keys(UPGRADE_COSTS)) upgrades[key] = integer(src.upgrades?.[key], 0, 3);
   const raids = integer(src.raids);
-  return { credits: integer(src.credits, 750, 1e12), raids, extracts: Math.min(raids, integer(src.extracts)),
+  const profile = { credits: integer(src.credits, 750, 1e12), raids, extracts: Math.min(raids, integer(src.extracts)),
     best: integer(src.best), upgrades, progression: validateProgression(src.progression, upgrades),
     selectedWeapon: getWeapon(src.selectedWeapon)?.id ?? null, ...validateEconomy(src) };
+  profile.loadout = validateLoadout(profile,src.loadout);
+  return profile;
 }
 
 export function seededRandom(seed) {
@@ -229,6 +233,7 @@ function emptyPlayer() {
   return { ...SPAWN, y: 0.02, pitch: 0, hp: 100, armor: 30, stamina: 100, ammo: 24, reserve: 72,
     magSize: 24, weapon: 'VX-9', medkits: 2, reload: 0, heal: 0, maxHp: 100, maxStamina: 100,
     reloadDuration: 1.7, healDuration: 2.2, recoilMultiplier: 1, shotTimer: 0, cycleDuration: .095,
+    maxArmor:30,bonusArmor:0,weaponInstance:null,attachments:{},weaponStats:deriveWeapon('VX-9'),equipment:{},gearSpeedMultiplier:1,damageReduction:0,adsSeconds:.19,adsZoom:1.35,
     grounded: true, moving: false, sprinting: false, sprintExhausted: false, crouching: false };
 }
 
@@ -252,6 +257,7 @@ export async function createGame(saved = null, options = {}) {
   let events = [], random = seededRandom(1), cooldown = 0, velocityY = 0, jumpHeld = false;
   let extraction = null, raidSerial = 0, disposed = false, lowTimeWarned = false, sprintNeedsRelease = false;
   let skillEffects = getSkillEffects(state.profile);
+  const ownerNamespace = String(options.playerId ?? 'solo').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,30);
   const emit = event => events.push(event);
   const notice = text => emit({ type: 'notice', text });
   const alive = () => !disposed && state.phase === 'raid';
@@ -277,25 +283,41 @@ export async function createGame(saved = null, options = {}) {
   function startRaid(options = {}) {
     if (disposed || state.phase === 'raid' || state.phase === 'paused') return false;
     if (state.profile.intake.length > 0) { notice('Zuerst die zurückgebrachte Beute zuhause einlagern.'); return false; }
-    const kit = options.kit === 'assault' ? 'assault' : 'scout';
     const difficulty = options.difficulty === 'hard' ? 'hard' : 'normal';
-    const weapon = getWeapon(options.weapon ?? state.profile.selectedWeapon ?? defaultWeapon(kit));
-    if (!weapon) { notice('Unbekannte Waffe.'); return false; }
-    const cost = KIT_COSTS[kit] + weapon.cost;
-    if (state.profile.credits < cost) { notice('Nicht genug Credits für Kit und Waffe. Scout mit VX-9 ist kostenlos.'); return false; }
+    const resolved = resolveLoadout(state.profile,options);
+    if (!resolved.valid) { notice(resolved.reason); return false; }
+    const {weapon,cost,gearStats} = resolved;
+    if (state.profile.credits < cost) { notice('Nicht genug Credits für dieses Loadout. Das Notfallkit ist kostenlos.'); return false; }
     state.profile.credits -= cost; state.profile.raids++;
     // Explicit seeds support reproducible QA/replays; regular raids get fresh seeds.
     const seed = Number.isFinite(options.seed) ? options.seed >>> 0 : ((Date.now() ^ ++raidSerial * 2654435761) >>> 0);
+    state.profile.loadout = structuredClone(resolved.selection);
+    const transfer = item => {
+      if (!item) return null;
+      const copy = structuredClone(item); copy.xpClaimed = true;
+      copy.id = `r${seed}-${ownerNamespace}-${item.id}`;
+      if (item.attachments) copy.attachments = Object.fromEntries(Object.entries(item.attachments).map(([slot,part]) => [slot,transfer(part)]));
+      return copy;
+    };
+    if (!resolved.issued) {
+      const carriedIds = new Set(LOADOUT_SLOTS.map(slot => resolved.selection.custom[slot]).filter(Boolean));
+      state.profile.stash = state.profile.stash.filter(item => !carriedIds.has(item.id));
+      for (const slot of LOADOUT_SLOTS) state.profile.loadout.custom[slot] = null;
+    }
+    const weaponInstance = transfer(resolved.weaponInstance);
+    const equipment = Object.fromEntries(Object.entries(resolved.equipment).map(([slot,item]) => [slot,transfer(item)]));
     random = seededRandom(seed);
     enemyAI.reset();
     skillEffects = getSkillEffects(state.profile);
-    state.player = { ...emptyPlayer(), armor: (kit === 'assault' ? 55 : 30) + skillEffects.armorBonus,
+    state.player = { ...emptyPlayer(), armor: gearStats.armor + skillEffects.armorBonus,
       weapon: weapon.id, ammo: weapon.magSize, magSize: weapon.magSize, reserve: Math.round(weapon.reserve * skillEffects.reserveMultiplier),
+      weaponInstance,weaponStats:weapon,attachments:weapon.attachments,equipment,maxArmor:gearStats.maxArmor + skillEffects.armorBonus,bonusArmor:skillEffects.armorBonus,
+      gearSpeedMultiplier:gearStats.speedMultiplier,damageReduction:gearStats.damageReduction,adsSeconds:weapon.adsSeconds,adsZoom:weapon.adsZoom,
       hp: 100 + skillEffects.maxHpBonus, maxHp: 100 + skillEffects.maxHpBonus,
-      stamina: 100 + skillEffects.staminaBonus, maxStamina: 100 + skillEffects.staminaBonus, medkits: 2 + skillEffects.extraMedkits,
+      stamina: 100 + skillEffects.staminaBonus, maxStamina: 100 + skillEffects.staminaBonus, medkits: resolved.medkits + skillEffects.extraMedkits,
       recoilMultiplier: skillEffects.recoilMultiplier, reloadDuration: weapon.reloadSeconds * skillEffects.reloadMultiplier,
       healDuration: 2.2 * skillEffects.healDurationMultiplier, cycleDuration: weapon.fireInterval };
-    state.raid = { ...emptyRaid(), capacity: 8 + skillEffects.capacityBonus, extractionDuration: 8 * skillEffects.extractionMultiplier, difficulty, seed };
+    state.raid = { ...emptyRaid(), capacity: gearStats.capacity + skillEffects.capacityBonus, extractionDuration: 8 * skillEffects.extractionMultiplier, difficulty, seed,loadoutMode:resolved.selection.mode,equipmentSpilled:false };
     state.result = null; state.prompt = null; cooldown = 0; velocityY = 0; jumpHeld = false; extraction = null; lowTimeWarned = false; sprintNeedsRelease = false;
     body.setTranslation({ x: SPAWN.x, y: PLAYER_CENTER + 0.02, z: SPAWN.z }, true);
     body.setNextKinematicTranslation({ x: SPAWN.x, y: PLAYER_CENTER + 0.02, z: SPAWN.z });
@@ -316,13 +338,21 @@ export async function createGame(saved = null, options = {}) {
     const bonus = success ? state.raid.kills * ECONOMY_BALANCE.killBonus + (state.raid.objectiveComplete ? ECONOMY_BALANCE.relayBonus : 0) + skillEffects.extractionBonus : 0;
     const total = bonus;
     const itemCount = state.raid.loot.length;
+    let equipmentCount = 0;
     if (success) {
       grantXP(150, 'extraction');
       state.profile.credits += total; state.profile.extracts++;
-      state.profile.intake.push(...state.raid.loot.map(item => createItem(state.profile, item)));
+      state.profile.intake.push(...state.raid.loot.filter(item => !item.issued).map(item => createItem(state.profile, item)));
+      for (const slot of LOADOUT_SLOTS) {
+        const carried = slot === 'weapon' ? state.player.weaponInstance : state.player.equipment[slot];
+        if (!carried || carried.issued) continue;
+        const recovered = createItem(state.profile,carried);
+        state.profile.intake.push(recovered); equipmentCount++;
+        if (state.raid.loadoutMode === 'custom') state.profile.loadout.custom[slot] = recovered.id;
+      }
       state.profile.best = Math.max(state.profile.best, state.raid.value + bonus);
     }
-    state.result = { success, value: state.raid.value, kills: state.raid.kills, reason, bonus, total, itemCount, xpEarned: state.raid.xpEarned };
+    state.result = { success, value: state.raid.value, kills: state.raid.kills, reason, bonus, total, itemCount,equipmentCount, xpEarned: state.raid.xpEarned };
     state.phase = success ? 'extracted' : 'dead'; state.prompt = null;
     state.player.moving = false; state.player.sprinting = false;
     emit({ type: success ? 'extract' : 'death', ...state.result });
@@ -331,9 +361,15 @@ export async function createGame(saved = null, options = {}) {
   function applyDamage(amount, enemy) {
     if (!alive() || !Number.isFinite(amount) || amount <= 0) return;
     const p = state.player;
-    amount *= 1 - skillEffects.damageReduction;
+    amount *= (1 - skillEffects.damageReduction) * (1 - (p.damageReduction ?? 0));
     const absorbed = Math.min(p.armor, amount * 0.7);
     p.armor -= absorbed; p.hp = Math.max(0, p.hp - (amount - absorbed));
+    let wear = absorbed;
+    const skillAbsorbed = Math.min(p.bonusArmor,wear); p.bonusArmor -= skillAbsorbed; wear -= skillAbsorbed;
+    const intact = GEAR_SLOTS.map(slot => p.equipment[slot]).filter(item => item && getEquipment(item.catalogId)?.armor > 0);
+    const durabilityArmor = intact.reduce((sum,item) => sum + getEquipment(item.catalogId).armor * item.condition,0);
+    if (durabilityArmor > 0) for (const item of intact) item.condition = Math.max(0,item.condition * (1 - wear / durabilityArmor));
+    p.damageReduction = deriveGear(p.equipment).damageReduction;
     emit({ type: 'damage', amount: amount - absorbed, x: enemy.x, z: enemy.z });
     if (p.hp <= 0) finish(false, 'Im Einsatz gefallen');
   }
@@ -408,12 +444,17 @@ export async function createGame(saved = null, options = {}) {
   function closeContainer() { state.activeContainerId = null; state.containerSearchRemaining = 0; return true; }
   function collectItem(item) {
     if (!item || item.taken) return false;
-    if (item.kind === 'ammo') state.player.reserve += item.amount;
+    if (item.kind === 'ammo') {
+      if (!state.player.weaponStats) {notice('Rüste zuerst eine Waffe aus, um Reservemunition aufzunehmen.');return false;}
+      state.player.reserve += item.amount;
+    }
     else if (item.kind === 'medkit') state.player.medkits += item.amount;
     else {
       if (state.raid.loot.length >= state.raid.capacity) { notice('Rucksack voll. Öffne mit Tab den Rucksack und wirf etwas ab.'); return false; }
       if (!item.xpClaimed) { grantXP(10, 'loot'); item.xpClaimed = true; }
-      state.raid.loot.push({ id: item.id, name: item.name, value: item.value, rarity: item.rarity, xpClaimed: true });
+      const carried = {...structuredClone(item),xpClaimed:true};
+      delete carried.x; delete carried.y; delete carried.z; delete carried.taken;
+      state.raid.loot.push(carried);
       state.raid.value += item.value;
     }
     item.taken = true; emit({ type: 'loot', name: item.name, value: item.value, rarity: item.rarity });
@@ -448,7 +489,14 @@ export async function createGame(saved = null, options = {}) {
     if (!alive()) return false;
     const index = state.raid.loot.findIndex(item => item.id === id);
     if (index < 0) return false;
-    const p = state.player, item = state.raid.loot[index];
+    const item = state.raid.loot[index];
+    if (item.issued || !dropWorldItem(item)) return false;
+    state.raid.loot.splice(index, 1);
+    state.raid.value = state.raid.loot.reduce((sum, carried) => sum + carried.value, 0);
+    updatePrompt(); return true;
+  }
+  function dropWorldItem(item) {
+    const p = state.player;
     let spot = null;
     for (const radius of [1.1, 1.7, 2.2, 0]) {
       for (const angle of [0, .8, -.8, 1.6, -1.6, 2.4, -2.4, Math.PI]) {
@@ -461,18 +509,81 @@ export async function createGame(saved = null, options = {}) {
     }
     if (!spot) { notice('Hier ist kein erreichbarer Platz zum Ablegen.'); return false; }
     const existing = state.loot.find(worldItem => worldItem.id === item.id);
-    if (existing) Object.assign(existing, spot, { taken: false });
+    if (existing) Object.assign(existing, structuredClone(item),spot, { taken: false });
     else state.loot.push({ ...item, ...spot, taken: false });
-    state.raid.loot.splice(index, 1);
-    state.raid.value = state.raid.loot.reduce((sum, carried) => sum + carried.value, 0);
     emit({ type: 'drop', id: item.id, name: item.name, value: item.value, ...spot });
-    notice(`${item.name} abgelegt.`); updatePrompt(); return true;
+    notice(`${item.name} abgelegt.`); return true;
+  }
+
+  function refreshEquipment() {
+    const p = state.player, gear = deriveGear(p.equipment);
+    state.raid.capacity = gear.capacity + skillEffects.capacityBonus;
+    p.maxArmor = gear.maxArmor + skillEffects.armorBonus;
+    p.armor = gear.armor + p.bonusArmor;
+    p.gearSpeedMultiplier = gear.speedMultiplier; p.damageReduction = gear.damageReduction;
+  }
+  function rememberWeaponAmmo() {
+    const p = state.player;
+    if (p.weaponInstance) {p.weaponInstance.ammo = p.ammo;p.weaponInstance.reserve = p.reserve;}
+  }
+  function setRaidWeapon(item) {
+    const p = state.player, weapon = item ? deriveWeapon(item.catalogId,item.attachments) : null;
+    p.weaponInstance = item; p.weapon = weapon?.id ?? null; p.weaponStats = weapon; p.attachments = weapon?.attachments ?? {};
+    p.magSize = weapon?.magSize ?? 0;
+    p.ammo = weapon ? Number.isFinite(item.ammo) ? clamp(item.ammo,0,p.magSize) : p.magSize : 0;
+    p.reserve = weapon ? Number.isFinite(item.reserve) ? clamp(item.reserve,0,1000) : 0 : 0;
+    p.reload = 0; cooldown = 0; p.shotTimer = 0;
+    p.reloadDuration = (weapon?.reloadSeconds ?? 1) * skillEffects.reloadMultiplier;
+    p.cycleDuration = weapon?.fireInterval ?? 1; p.adsSeconds = weapon?.adsSeconds ?? .2; p.adsZoom = weapon?.adsZoom ?? 1.35;
+  }
+  function equipRaidItem(id) {
+    if (!alive() || typeof id !== 'string') return false;
+    const index = state.raid.loot.findIndex(item => item.id === id && !item.issued), item = state.raid.loot[index];
+    if (!item || !['weapon','equipment'].includes(item.kind)) return false;
+    const slot = item.kind === 'weapon' ? 'weapon' : getEquipment(item.catalogId)?.slot;
+    if (!slot) return false;
+    const previous = slot === 'weapon' ? state.player.weaponInstance : state.player.equipment[slot];
+    if (slot === 'plate' && !state.player.equipment.carrier) {notice('Die Schutzplatte benötigt einen Plattenträger.');return false;}
+    const nextEquipment = {...state.player.equipment,...(slot === 'weapon' ? {} : {[slot]:item})};
+    const capacity = deriveGear(nextEquipment).capacity + skillEffects.capacityBonus;
+    if (state.raid.loot.length - 1 + (previous && !previous.issued ? 1 : 0) > capacity) {notice('Der kleinere Rucksack reicht nicht. Lege zuerst Beute ab.');return false;}
+    if (slot === 'weapon') rememberWeaponAmmo();
+    state.raid.loot.splice(index,1);
+    if (previous && !previous.issued) state.raid.loot.push(previous);
+    if (slot === 'weapon') setRaidWeapon(item); else state.player.equipment[slot] = item;
+    refreshEquipment();
+    state.raid.value = state.raid.loot.reduce((sum,carried) => sum + carried.value,0);
+    notice(`${item.name} ausgerüstet.`); updatePrompt();return true;
+  }
+  function dropEquipment(slot) {
+    if (!alive() || !LOADOUT_SLOTS.includes(slot)) return false;
+    const item = slot === 'weapon' ? state.player.weaponInstance : state.player.equipment[slot];
+    if (!item || item.issued) {notice('Gestellte Kit-Ausrüstung kann nicht abgelegt werden.');return false;}
+    if (slot === 'carrier' && state.player.equipment.plate) {notice('Lege zuerst die Schutzplatte ab.');return false;}
+    const nextEquipment = {...state.player.equipment}; delete nextEquipment[slot];
+    if (state.raid.loot.length > deriveGear(nextEquipment).capacity + skillEffects.capacityBonus) {notice('Ohne diesen Rucksack passt die Beute nicht. Lege zuerst Beute ab.');return false;}
+    if (slot === 'weapon') rememberWeaponAmmo();
+    if (!dropWorldItem(item)) return false;
+    if (slot === 'weapon') setRaidWeapon(null); else delete state.player.equipment[slot];
+    refreshEquipment(); updatePrompt();return true;
+  }
+  function spillEquipment() {
+    if (!['raid','dead'].includes(state.phase) || state.raid.equipmentSpilled) return 0;
+    rememberWeaponAmmo(); let count = 0;
+    for (const slot of LOADOUT_SLOTS) {
+      const item = slot === 'weapon' ? state.player.weaponInstance : state.player.equipment[slot];
+      if (item && !item.issued) {state.raid.loot.push(item);count++;}
+    }
+    state.raid.equipmentSpilled = true;
+    state.player.weaponInstance = null; state.player.equipment = {};
+    state.raid.value = state.raid.loot.reduce((sum,carried) => sum + carried.value,0);
+    return count;
   }
 
   function reload() {
     const p = state.player;
-    if (!alive() || p.reload > 0 || p.heal > 0 || p.ammo >= p.magSize || p.reserve <= 0) return false;
-    p.reload = p.reloadDuration = getWeapon(p.weapon).reloadSeconds * skillEffects.reloadMultiplier;
+    if (!alive() || !p.weaponStats || p.reload > 0 || p.heal > 0 || p.ammo >= p.magSize || p.reserve <= 0) return false;
+    p.reload = p.reloadDuration = p.weaponStats.reloadSeconds * skillEffects.reloadMultiplier;
     emit({ type: 'reload', duration: p.reload }); return true;
   }
   function heal() {
@@ -483,7 +594,7 @@ export async function createGame(saved = null, options = {}) {
   }
 
   function fire(direction, { triggerPressed = true } = {}) {
-    const p = state.player, weapon = getWeapon(p.weapon);
+    const p = state.player, weapon = p.weaponStats;
     if (!alive() || !weapon || state.activeContainerId || cooldown > 1e-7 || p.reload > 0 || p.sprinting || (!weapon.automatic && triggerPressed !== true)) return false;
     if (!direction || ![direction.x, direction.y, direction.z].every(Number.isFinite)) return false;
     const len = Math.hypot(direction.x, direction.y, direction.z);
@@ -526,8 +637,8 @@ export async function createGame(saved = null, options = {}) {
       }
     }
     const to = pelletEnds[0];
-    emit({ type: 'shot', from: origin, to, ...to, weapon: p.weapon, ...(weapon.pellets > 1 ? { pelletEnds } : {}) });
-    enemyAI.hear(state.enemies, origin, { kind: 'shot', playerId: options.playerId, radius: 36 });
+    emit({ type: 'shot', from: origin, to, ...to, weapon: p.weapon, soundRadius:weapon.soundRadius,noiseMultiplier:weapon.noiseMultiplier, ...(weapon.pellets > 1 ? { pelletEnds } : {}) });
+    enemyAI.hear(state.enemies, origin, { kind: 'shot', playerId: options.playerId, radius: weapon.soundRadius });
     for (const [victim, { damage, headshot, point: to }] of hits) {
       victim.hp -= damage; victim.hitFlash = 0.16; victim.fireTimer = Math.max(victim.fireTimer, 0.27);
       victim.alert = Math.max(victim.alert, 12); enemyAI.hit(victim);
@@ -590,7 +701,7 @@ export async function createGame(saved = null, options = {}) {
     p.sprinting = !!input.sprint && p.moving && forward > 0 && !p.crouching && !input.aim && !p.sprintExhausted && p.stamina > 0 && p.heal <= 0 && p.reload <= 0;
     p.stamina = clamp(p.stamina + (p.sprinting ? -23 * skillEffects.sprintDrainMultiplier : 15 * skillEffects.staminaRegenMultiplier) * dt, 0, p.maxStamina);
     if (p.sprinting && p.stamina === 0) { p.sprinting = false; p.sprintExhausted = true; sprintNeedsRelease = true; }
-    const speed = (p.crouching ? 2.1 : p.sprinting ? 7.2 : input.aim ? 3 : 4.4) * skillEffects.moveSpeedMultiplier * (p.heal > 0 ? 0.62 : 1);
+    const speed = (p.crouching ? 2.1 : p.sprinting ? 7.2 : input.aim ? 3 : 4.4) * skillEffects.moveSpeedMultiplier * p.gearSpeedMultiplier * (p.weaponStats?.moveMultiplier ?? 1) * (p.heal > 0 ? 0.62 : 1);
     if (input.jump && !jumpHeld && p.grounded && !p.crouching && p.stamina > 10) { velocityY = 6.7; p.stamina -= 10; p.grounded = false; }
     jumpHeld = !!input.jump;
     velocityY -= 19 * dt;
@@ -628,7 +739,29 @@ export async function createGame(saved = null, options = {}) {
   }
   function selectWeapon(id) {
     if (disposed || options.loadoutLocked || state.phase !== 'hub' || !getWeapon(id)) return false;
-    state.profile.selectedWeapon = id; return true;
+    const owned = state.profile.stash.find(item => item.kind === 'weapon' && item.catalogId === id);
+    if (!owned) {notice('Kaufe oder sichere diese Waffe zuerst für dein eigenes Kit.');return false;}
+    state.profile.selectedWeapon = id; state.profile.loadout.mode = 'custom';
+    return selectOwned(state.profile,'weapon',owned.id);
+  }
+  const canChangeLoadout = () => !disposed && !options.loadoutLocked && state.phase === 'hub';
+  function selectLoadout(selection) {
+    if (!canChangeLoadout() || !selection || !['preset','custom'].includes(selection.mode)) return false;
+    if (selection.presetId !== undefined && !PRESET_KITS.some(kit => kit.id === selection.presetId)) return false;
+    state.profile.loadout.mode = selection.mode;
+    if (selection.presetId) state.profile.loadout.presetId = selection.presetId;
+    return true;
+  }
+  function purchaseEquipment(catalogId) {
+    if (!canChangeLoadout()) return false;
+    const item = purchaseOwned(state.profile,catalogId,() => `item-${state.profile.nextItemId++}`);
+    if (!item) {notice('Kauf nicht möglich. Prüfe dein Guthaben.');return false;}
+    notice(`${item.name} ins Lager geliefert.`);return true;
+  }
+  function equipLoadout(slot,itemId) { return canChangeLoadout() && selectOwned(state.profile,slot,itemId); }
+  function mountAttachment(weaponItemId,slot,attachmentItemId) {
+    if (!canChangeLoadout()) return false;
+    return mountOwned(state.profile,weaponItemId,slot,attachmentItemId);
   }
   function unlockSkill(id) {
     if (disposed || options.loadoutLocked || state.phase !== 'hub' || !canUnlockSkill(state.profile, id)) return false;
@@ -638,7 +771,7 @@ export async function createGame(saved = null, options = {}) {
   }
 
   return {
-    state, layout, startRaid, update, fire, reload, heal, interact, dropItem, buyUpgrade, selectWeapon, unlockSkill, takeContainerItem, takeAllContainerItems, closeContainer,
+    state, layout, startRaid, update, fire, reload, heal, interact, dropItem, buyUpgrade, selectWeapon, selectLoadout,purchaseEquipment,equipLoadout,mountAttachment,equipRaidItem,dropEquipment,spillEquipment,unlockSkill, takeContainerItem, takeAllContainerItems, closeContainer,
     // Trusted host adapters. The WebSocket protocol never exposes these methods.
     advanceEnemies(dt, targets) {
       if (!disposed && options.externalAI && Number.isFinite(dt) && dt > 0) updateEnemies(Math.min(dt, .05), targets);
@@ -665,7 +798,7 @@ export async function createGame(saved = null, options = {}) {
       if (state.phase === 'raid') finish(false, 'Einsatz abgebrochen');
       state.phase = 'hub'; state.prompt = null; state.result = null; extraction = null; pStop();
     },
-    getSave() { return { version: 2, profile: structuredClone(state.profile) }; },
+    getSave() { return { version: 3, profile: structuredClone(state.profile) }; },
     drainEvents() { const pending = events; events = []; return pending; },
     dispose() { if (disposed) return; disposed = true; world.free(); events = []; },
   };
