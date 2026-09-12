@@ -15,7 +15,7 @@ const read=(key)=>{try{return JSON.parse(localStorage.getItem(key));}catch{retur
 const stored=read(SETTINGS_KEY)||{};
 const settings=sanitizeSettings(stored);
 const keys=new Set();
-let game,view,ui,audio,lookYaw=0,lookPitch=0,fire=false,aim=false,jump=false,lookDX=0,lookDY=0;
+let game,view,ui,audio,lookYaw=0,lookPitch=0,fire=false,firePressed=false,aim=false,jump=false,lookDX=0,lookDY=0;
 let sprintToggle=false,crouchToggle=false,renderElapsed=0,autoReloadDelay=0;
 let mapOpen=false,inventoryOpen=false,lastContainerId=null,lastPhase='hub',savingFailed=false;
 let frames=0,fps=60,fpsTime=0,uiTime=0,clock=0,raf,hidden=false;
@@ -27,7 +27,7 @@ function persist() {
   try{localStorage.setItem(SAVE_KEY,JSON.stringify(game.getSave()));savingFailed=false;}
   catch{if(!savingFailed)ui?.events([{type:'notice',text:'Speicher nicht verfügbar. Fortschritt gilt für diese Sitzung.'}]);savingFailed=true;}
 }
-function clearInputs(){keys.clear();fire=false;aim=false;jump=false;sprintToggle=crouchToggle=false;lookDX=lookDY=0;}
+function clearInputs(){keys.clear();fire=firePressed=false;aim=false;jump=false;sprintToggle=crouchToggle=false;lookDX=lookDY=0;coop?.clearInput?.();}
 function containerOpen(){return !!game?.state.activeContainerId;}
 function closePanels(){mapOpen=inventoryOpen=false;game?.closeContainer?.();lastContainerId=null;ui?.closePanels();}
 function closeFieldPanel(){closePanels();clearInputs();if(game.state.phase==='raid')lock();}
@@ -112,7 +112,7 @@ function onMouseMove(e){
 }
 function onMouseDown(e){
   if(game.state.phase!=='raid'||mapOpen||inventoryOpen||containerOpen()||document.pointerLockElement!==canvas)return;
-  if(e.button===0)fire=true;if(e.button===2)aim=settings.aimMode==='toggle'?!aim:true;
+  if(e.button===0){fire=true;firePressed=true;}if(e.button===2)aim=settings.aimMode==='toggle'?!aim:true;
 }
 function onMouseUp(e){if(e.button===0)fire=false;if(e.button===2&&settings.aimMode==='hold')aim=false;}
 function onLock(){
@@ -123,12 +123,12 @@ function inputState(){
   const offset=recoil.offset();
   if(mapOpen||inventoryOpen||containerOpen()||ui?.isUtilityOpen?.())return {yaw:lookYaw+offset.yaw,pitch:clamp(lookPitch+offset.pitch,-1.45,1.45)};
   if(game?.state.player.sprintExhausted&&settings.sprintMode==='toggle')sprintToggle=false;
-  return {forward:Number(actionDown('forward'))-Number(actionDown('backward')),right:Number(actionDown('right'))-Number(actionDown('left')),yaw:lookYaw+offset.yaw,pitch:clamp(lookPitch+offset.pitch,-1.45,1.45),sprint:settings.sprintMode==='toggle'?sprintToggle:actionDown('sprint'),crouch:settings.crouchMode==='toggle'?crouchToggle:actionDown('crouch'),jump,aim,fire};
+  return {forward:Number(actionDown('forward'))-Number(actionDown('backward')),right:Number(actionDown('right'))-Number(actionDown('left')),yaw:lookYaw+offset.yaw,pitch:clamp(lookPitch+offset.pitch,-1.45,1.45),sprint:settings.sprintMode==='toggle'?sprintToggle:actionDown('sprint'),crouch:settings.crouchMode==='toggle'?crouchToggle:actionDown('crouch'),jump,aim,fire,firePressed};
 }
 function aimDirection(){const p=game.state.player,cp=Math.cos(p.pitch);return {x:-Math.sin(p.yaw)*cp,y:Math.sin(p.pitch),z:-Math.cos(p.yaw)*cp};}
 function pumpEvents(){
   const events=game.drainEvents();
-  if(coop)for(const event of events)if(event.type==='shot')recoil.shot({weapon:game.state.player.weapon,aim,crouch:game.state.player.crouching});
+  if(coop)for(const event of events)if(event.type==='shot')recoil.shot({weapon:game.state.player.weapon,aim,crouch:game.state.player.crouching,multiplier:game.state.player.recoilMultiplier});
   if(events.length){view.events(events);audio.events(events,game.state);ui.events(events);}
 }
 function frame(now){
@@ -145,11 +145,11 @@ function frame(now){
         const p=game.state.player;
         if(p.ammo===0&&p.reserve>0&&!p.reload&&!p.heal){game.reload();autoReloadDelay=.5;}
       }
-      if(game.state.phase==='raid'&&fire&&!mapOpen&&!inventoryOpen&&!containerOpen()&&game.fire(aimDirection())){
-        recoil.shot({weapon:game.state.player.weapon,aim,crouch:game.state.player.crouching});
+      if(game.state.phase==='raid'&&(fire||firePressed)&&!mapOpen&&!inventoryOpen&&!containerOpen()&&game.fire(aimDirection(),{triggerPressed:firePressed})){
+        recoil.shot({weapon:game.state.player.weapon,aim,crouch:game.state.player.crouching,multiplier:game.state.player.recoilMultiplier});
         const offset=recoil.offset();game.state.player.yaw=lookYaw+offset.yaw;game.state.player.pitch=clamp(lookPitch+offset.pitch,-1.45,1.45);
       }
-      jump=false;input.jump=false;accumulator-=1/60;
+      jump=firePressed=false;input.jump=input.firePressed=false;accumulator-=1/60;
     }
     pumpEvents();
     const state=game.state;
@@ -181,6 +181,11 @@ function homeAction(action,...args){
   marketTick();const result=economy[action](game.state.profile,...args);persist();
   if(!result)ui.events([{type:'notice',text:'Aktion nicht möglich. Prüfe Auswahl, Preis und freie Angebotsplätze.'}]);
   return result;
+}
+function hubGameAction(action,...args){
+  if(game.state.phase!=='hub')return false;
+  if(coop||coopBusy){ui.events([{type:'notice',text:'Verlasse zuerst die Koop-Lobby, um Ausrüstung oder Fähigkeiten zu ändern.'}]);return false;}
+  const result=game[action](...args);pumpEvents();persist();return result;
 }
 async function leaveCoop(){
   coopGeneration++;
@@ -227,6 +232,7 @@ async function boot(){
   ui=createUI(root,{start,resume,hub(){if(coop){leaveCoop();return;}game.returnToHub();closePanels();clearInputs();unlock();persist();},upgrade(kind){const ok=game.buyUpgrade(kind);pumpEvents();persist();return ok;},
     coopHost:options=>joinCoop(options,true),coopJoin:options=>joinCoop(options,false),coopReady:ready=>coop?.ready(ready),coopStart:()=>coop?.start(),coopLeave:leaveCoop,
     coopCopyInvite:()=>window.platform?.copyInvite(coop?.info.invite||'').then(()=>ui.events([{type:'notice',text:'Einladung kopiert. Deinem Kollegen schicken und im Spiel einfügen.'}])),
+    selectWeapon:id=>hubGameAction('selectWeapon',id),unlockSkill:id=>hubGameAction('unlockSkill',id),
     dropItem(id){const result=game.dropItem(id);pumpEvents();return result;},closeFieldPanel,
     takeContainerItem(containerId,itemId){const result=game.takeContainerItem(containerId,itemId);pumpEvents();return result;},
     takeAllContainerItems(containerId){const result=game.takeAllContainerItems(containerId);pumpEvents();return result;},closeContainer:closeFieldPanel,

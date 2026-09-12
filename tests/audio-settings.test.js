@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAudio } from '../src/audio.js';
+import { createAudio, WEAPON_SOUND_PROFILES } from '../src/audio.js';
+import { WEAPONS } from '../src/weapons.js';
 
 // Graph-level contract tests: automation timing/PCM are verified by qa-audio.
 class Parameter {
@@ -66,6 +67,24 @@ test('audio channel changes affect existing dry/reflection paths and future voic
   audio.setSettings({ weaponVolume: 1, ambientVolume: .5 });
   assert.equal(audiblePath(shot, context.destination), true);
   assert.equal(audiblePath(wind, context.destination), true);
+});
+
+test('every weapon and its mechanical cycle routes through the weapon bus with bounded voices', async t => {
+  const {audio,context,state}=await setup(t);
+  const ambientNodes=new Set(context.nodes);
+  assert.deepEqual(Object.keys(WEAPON_SOUND_PROFILES).sort(),WEAPONS.map(w=>w.id).sort());
+  for(const weapon of WEAPONS){
+    state.player.weapon=weapon.id;state.player.magSize=weapon.magSize;state.player.ammo=0;
+    audio.events([{type:'shot',weapon:weapon.id}],state);
+    const sound=WEAPON_SOUND_PROFILES[weapon.id];
+    assert.ok(context.nodes.some(node=>node.kind==='BufferSource'&&Math.abs(node.playbackRate.value-sound.rate)<1e-8));
+    state.player.reload=weapon.reloadSeconds*.88;state.player.reloadDuration=state.player.reload;
+    audio.events([{type:'reload',duration:state.player.reload}],state);
+    assert.ok(audio.stats().activeVoices<=audio.stats().maxVoices);
+  }
+  audio.setSettings({weaponVolume:0});
+  const started=context.nodes.filter(node=>!ambientNodes.has(node)&&node.kind==='BufferSource'&&node.started&&!node.stopped&&!node.loop);
+  for(const node of started)assert.equal(audiblePath(node,context.destination),false);
 });
 
 test('focus muting follows current master volume and normal dynamics are restored exactly', async t => {

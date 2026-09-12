@@ -17,6 +17,9 @@ async function boot(label){
 }
 try{
   const host=await boot('host'),guest=await boot('guest');pass('Two packaged Windows clients boot with isolated persistent profiles');
+  for(const [client,weapon] of [[host,'SG-8'],[guest,'DMR-7']]){
+    await client.page.locator('#tab-arsenal').click();await client.page.locator(`[data-select-weapon="${weapon}"]`).click();await client.page.locator('#tab-deploy').click();
+  }
   await host.page.locator('#coop-open').click();await host.page.locator('#coop-name').fill('Alpha');
   if(!internet){await host.page.locator('.coop-options summary').click();await host.page.locator('#coop-internet').uncheck();}
   await host.page.locator('#coop-connect').click();
@@ -32,6 +35,8 @@ try{
   await host.page.locator('#coop-start').click();
   for(const {page} of [host,guest])await page.waitForFunction(()=>['raid','paused'].includes(__DF.state.phase)&&__DF.state.teammates?.length===1,null,{timeout:20000});
   assert.equal(await host.page.evaluate(()=>__DF.state.raid.seed),await guest.page.evaluate(()=>__DF.state.raid.seed));pass('Only a ready team can start; both enter the same seeded raid');
+  assert.equal(await host.page.evaluate(()=>__DF.state.player.weapon),'SG-8');assert.equal(await guest.page.evaluate(()=>__DF.state.player.weapon),'DMR-7');
+  assert.equal(await host.page.evaluate(()=>__DF.state.teammates[0].weapon),'DMR-7');assert.equal(await guest.page.evaluate(()=>__DF.state.teammates[0].weapon),'SG-8');pass('Distinct shotgun and marksman loadouts selected in the arsenal survive the Internet lobby and replicate to the teammate');
   await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];global.__DF_QAEnemy=structuredClone(members[0].game.state.enemies[0]);for(const member of members)member.game.state.enemies.splice(0);});
   await guest.page.bringToFront();await guest.page.evaluate(()=>__DF.resume());await guest.page.locator('#game').click().catch(()=>{});
   await guest.page.waitForTimeout(350);const before=await guest.page.evaluate(()=>__DF.state.player.z);
@@ -42,11 +47,12 @@ try{
   await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];members[0].game.teleport(-142,122);members[1].game.teleport(-142,130);});
   await guest.page.waitForTimeout(500);await guest.page.evaluate(()=>{__DF.state.player.yaw=0;__DF.state.player.pitch=0;__DF.syncLook();});await guest.page.waitForTimeout(200);
   await host.page.screenshot({path:path.join(out,'01-host-coop.png')});await guest.page.screenshot({path:path.join(out,'02-guest-coop.png')});
+  const beforeTriggerAmmo=await guest.page.evaluate(()=>__DF.state.player.ammo);
   await guest.page.mouse.down();await guest.page.waitForTimeout(100);await guest.page.mouse.up();await guest.page.waitForTimeout(350);assert.equal(await host.page.evaluate(()=>__DF.state.player.hp),100);pass('Shooting directly at the teammate causes no friendly fire');
   await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];members[0].game.teleport(-145,130);const enemy={...global.__DF_QAEnemy,id:'qa-guard',x:-142,z:118,y:0,hp:45,dead:false,fireTimer:9999,alert:10,lastSeen:{x:-142,z:130},mode:'attack',path:[],pathTimer:9999,flank:false};members[0].game.state.enemies.push(enemy);});
   await guest.page.waitForTimeout(350);await guest.page.mouse.down();await guest.page.waitForTimeout(250);await guest.page.mouse.up();
   for(const {page} of [host,guest])await page.waitForFunction(()=>__DF.state.enemies.find(e=>e.id==='qa-guard')?.dead,null,{timeout:5000});
-  assert.ok(await guest.page.evaluate(()=>__DF.state.player.ammo<24));assert.equal(await host.page.evaluate(()=>__DF.state.player.ammo),24);pass('Real mouse fire synchronizes enemy damage and death while ammunition stays per player');
+  assert.equal(await guest.page.evaluate(()=>__DF.state.player.ammo),beforeTriggerAmmo-2);assert.equal(await host.page.evaluate(()=>__DF.state.player.ammo===__DF.state.player.magSize),true);pass('Two real semi-automatic trigger presses synchronize enemy damage and death while ammunition stays per player');
   await guest.page.keyboard.press('Escape');await guest.page.waitForFunction(()=>__DF.state.phase==='paused');const raidTime=await guest.page.evaluate(()=>__DF.state.raid.timeLeft);await guest.page.waitForTimeout(700);assert.ok(await guest.page.evaluate(t=>__DF.state.raid.timeLeft<t-.4,raidTime));pass('The shared raid continues while one player opens the local menu');
   await host.app.evaluate(()=>{for(const member of global.__DF_HOST().players.values())member.game.state.enemies.splice(0);});
   const interiorDoor=await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];const room=members[0].game.layout.interiors.find(room=>room.id==='warehouse'),door=room.doors.find(door=>door.side==='south');members.forEach((member,index)=>member.game.teleport(door.outside.x+(index? .45:-.45),door.outside.z));return door;});

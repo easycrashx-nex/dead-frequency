@@ -18,9 +18,9 @@ function aimAt(game, enemy, y = 1.69) {
 }
 
 test('saved profiles reject non-finite numbers and clamp progression', () => {
-  assert.deepEqual(validateProfile(null), { credits: 750, raids: 0, extracts: 0, best: 0, upgrades: { armor: 0, backpack: 0, weapon: 0 }, ...economyDefaults });
+  assert.deepEqual(validateProfile(null), { credits: 750, raids: 0, extracts: 0, best: 0, upgrades: { armor: 0, backpack: 0, weapon: 0 }, progression: { xp: 0, unlocked: [], legacyPoints: 0 }, selectedWeapon: null, ...economyDefaults });
   assert.deepEqual(validateProfile({ credits: -300, raids: 2.8, extracts: 900, best: NaN, upgrades: { armor: 50, backpack: -4, weapon: '3' } }),
-    { credits: 0, raids: 2, extracts: 2, best: 0, upgrades: { armor: 3, backpack: 0, weapon: 0 }, ...economyDefaults });
+    { credits: 0, raids: 2, extracts: 2, best: 0, upgrades: { armor: 3, backpack: 0, weapon: 0 }, progression: { xp: 0, unlocked: ['armor-1', 'armor-2', 'armor-3'], legacyPoints: 3 }, selectedWeapon: null, ...economyDefaults });
   assert.equal(validateProfile({ profile: { credits: Infinity } }).credits, 750);
 });
 

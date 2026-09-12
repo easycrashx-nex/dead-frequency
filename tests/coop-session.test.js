@@ -25,6 +25,41 @@ function take(session, id, game, item) {
   } else { game.teleport(item.x, item.z); session.action(id, 'interact'); step(session, .1); }
 }
 
+test('weapon lobby choices validate combined costs and freeze skills before entering the raid', async t => {
+  const { session, a, b, ga, gb } = await setup(t, false);
+  assert.equal(ga.unlockSkill('weapon-1'), false); assert.equal(ga.selectWeapon('DMR-7'), false);
+  assert.throws(() => session.ready(a, true, 'assault', 'SR-90'), /verfügbar/);
+  assert.equal(session.players.get(a).ready, false); assert.equal(session.players.get(a).kit, 'scout');
+  session.ready(a, true, 'scout', 'SG-8'); session.ready(b, true, 'assault', 'SR-90');
+  assert.deepEqual(session.lobby().players.map(player => player.weapon), ['SG-8', 'SR-90']);
+  session.start(a); quiet(ga);
+  assert.equal(ga.state.player.weapon, 'SG-8'); assert.equal(gb.state.player.weapon, 'SR-90');
+  assert.equal(ga.state.profile.credits, 575); assert.equal(gb.state.profile.credits, 600);
+  const snapshot = session.snapshot(a);
+  assert.equal(snapshot.state.player.cycleDuration, .82); assert.equal(snapshot.state.teammates[0].weapon, 'SR-90');
+  assert.equal(snapshot.state.teammates[0].reloadDuration, 3.1); assert.equal(snapshot.state.profile.progression.xp, 0);
+  assert.equal(snapshot.state.teammates[0].progression, undefined);
+});
+
+test('server preserves short clicks and legacy fire edges without repeating a held semi trigger', async t => {
+  const { session, a, b, ga } = await setup(t, false);
+  session.ready(a, true, 'scout', 'RV-6'); session.ready(b, true); session.start(a); quiet(ga);
+  session.input(a, 1, { fire: false, firePressed: true }); session.input(a, 2, { fire: false, firePressed: false });
+  session.update(1 / 60); assert.equal(ga.state.player.ammo, 5, 'Mouse down/up between network frames must still shoot once');
+  step(session, .5); assert.equal(ga.state.player.ammo, 5);
+  session.input(a, 3, { fire: true }); session.update(1 / 60); assert.equal(ga.state.player.ammo, 4);
+  // Keep refreshing input beyond the cadence to distinguish trigger gating from stale-input release.
+  for (let seq = 4; seq < 14; seq++) { session.input(a, seq, { fire: true }); step(session, .1); }
+  assert.equal(ga.state.player.ammo, 4);
+  session.input(a, 14, { fire: false }); session.input(a, 15, { fire: true }); session.input(a, 16, { fire: false });
+  session.update(1 / 60); assert.equal(ga.state.player.ammo, 3);
+  session.input(a, 17, { firePressed: true }); session.update(1 / 60); step(session, .6);
+  assert.equal(ga.state.player.ammo, 3, 'Click during the cooldown expires instead of firing late');
+  assert.equal(sanitizeCoopInput({ firePressed: 'true' }, ga.state.player).firePressed, false);
+  const events = session.snapshot(b).events.filter(event => event.type === 'teammateShot');
+  assert.equal(events.length, 3); assert.ok(events.every(event => event.weapon === 'RV-6'));
+});
+
 test('lobby reserves exactly two slots, requires both ready and starts kits only once', async t => {
   const { session, a, b, ga, gb } = await setup(t, false);
   await assert.rejects(session.join({ name: 'Third' }), /voll/);
@@ -82,6 +117,7 @@ test('simultaneous looting has one owner and a dropped item can be passed to the
   session.action(a, 'take', item.id, container.id); session.action(b, 'take', item.id, container.id); step(session, .1);
   assert.equal(ga.state.raid.loot.length, 1); assert.equal(gb.state.raid.loot.length, 0);
   assert.equal(ga.state.raid.value + gb.state.raid.value, item.value);
+  assert.equal(ga.state.profile.progression.xp, 10); assert.equal(gb.state.profile.progression.xp, 0);
   assert.equal(session.action(b, 'drop', item.id), true); step(session, .1);
   assert.equal(item.taken, true, 'A partner cannot drop another player’s item');
   session.action(a, 'drop', item.id); step(session, .1);
@@ -90,6 +126,7 @@ test('simultaneous looting has one owner and a dropped item can be passed to the
   session.action(b, 'interact'); step(session, .1);
   assert.equal(ga.state.raid.loot.length, 0); assert.equal(gb.state.raid.loot[0].id, item.id);
   assert.equal(ga.state.loot.filter(value => value.id === item.id).length, 1);
+  assert.equal(ga.state.profile.progression.xp, 10); assert.equal(gb.state.profile.progression.xp, 0, 'Passing loot cannot create another first-claim XP reward');
 });
 
 test('each player extracts personal goods and bonus independently; the other raid continues', async t => {
@@ -101,10 +138,12 @@ test('each player extracts personal goods and bonus independently; the other rai
   assert.equal(ga.state.phase, 'extracted'); assert.equal(gb.state.phase, 'raid'); assert.equal(session.phase, 'raid');
   assert.equal(ga.state.profile.intake.length, 1); assert.equal(ga.state.profile.intake[0].name, first.name);
   assert.equal(ga.state.profile.credits, 830); assert.equal(gb.state.profile.credits, 1150);
+  assert.equal(ga.state.profile.progression.xp, 160); assert.equal(gb.state.profile.progression.xp, 10);
   const remaining = gb.state.raid.timeLeft; step(session, 1); assert.ok(gb.state.raid.timeLeft < remaining);
   gb.teleport(exit.x, exit.z); session.action(b, 'interact'); step(session, 8.2);
   assert.equal(session.phase, 'finished'); assert.equal(gb.state.phase, 'extracted');
   assert.equal(gb.state.profile.intake.length, 1); assert.equal(gb.state.profile.intake[0].name, second.name);
+  assert.equal(gb.state.profile.progression.xp, 160); assert.equal(gb.state.result.xpEarned, 160);
   assert.equal(ga.state.profile.intake.length, 1); assert.equal(ga.state.profile.credits, 830);
   const frozen = ga.state.profile.credits; step(session, 60); assert.equal(ga.state.profile.credits, frozen);
   assert.equal(session.snapshot(a).state.teammates[0].phase, 'extracted');

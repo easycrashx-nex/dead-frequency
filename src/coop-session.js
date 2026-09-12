@@ -1,5 +1,6 @@
 import { createGame, validateProfile, KIT_COSTS, isWalkable, hasLineOfSight } from './simulation.js';
 import { SPAWN } from './layout.js';
+import { getWeapon, defaultWeapon } from './weapons.js';
 
 export const COOP_PROTOCOL = 1;
 export const COOP_TICK_RATE = 60;
@@ -7,7 +8,7 @@ export const COOP_SNAPSHOT_RATE = 20;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const copy = value => structuredClone(value);
 const neutral = player => ({ forward: 0, right: 0, yaw: player.yaw, pitch: player.pitch,
-  sprint: false, crouch: false, jump: false, aim: false, fire: false });
+  sprint: false, crouch: false, jump: false, aim: false, fire: false, firePressed: false });
 const publicEnemy = e => ({ id: e.id, x: e.x, y: e.y, z: e.z, yaw: e.yaw, hp: e.hp,
   kind: e.kind, mode: e.mode, attackFlash: e.attackFlash, hitFlash: e.hitFlash, dead: e.dead,
   ...(e.targetPlayerId ? { targetPlayerId: e.targetPlayerId } : {}) });
@@ -21,7 +22,7 @@ export function sanitizeCoopInput(raw, player) {
   return { forward: clamp(raw.forward ?? 0, -1, 1), right: clamp(raw.right ?? 0, -1, 1),
     yaw: ((yaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2), pitch: clamp(raw.pitch ?? player.pitch, -1.5, 1.5),
     sprint: raw.sprint === true, crouch: raw.crouch === true, jump: raw.jump === true,
-    aim: raw.aim === true, fire: raw.fire === true };
+    aim: raw.aim === true, fire: raw.fire === true, firePressed: raw.firePressed === true };
 }
 
 // Two server-owned controllers share enemies, containers and dynamic ground drops.
@@ -81,21 +82,23 @@ export function createCoopSession({ seed } = {}) {
     }
   }
 
-  async function join({ name, profile, kit = 'scout' } = {}) {
+  async function join({ name, profile, kit = 'scout', weapon } = {}) {
     if (disposed || phase !== 'lobby') throw new Error('Dieser Raid hat bereits begonnen.');
     if (players.size >= 2) throw new Error('Die Koop-Lobby ist voll (2 Spieler).');
     const clean = validateProfile(profile);
     if (clean.intake.length) throw new Error('Zuerst die zurückgebrachte Beute zuhause einlagern.');
     if (!Object.hasOwn(KIT_COSTS, kit)) throw new Error('Unbekanntes Ausrüstungspaket.');
-    if (clean.credits < KIT_COSTS[kit]) throw new Error('Nicht genug Credits für dieses Kit. Scout ist kostenlos.');
+    const selectedWeapon = weapon ?? clean.selectedWeapon, definition = getWeapon(selectedWeapon ?? defaultWeapon(kit));
+    if (!definition) throw new Error('Unbekannte Waffe.');
+    if (clean.credits < KIT_COSTS[kit] + definition.cost) throw new Error('Nicht genug Credits für Kit und Waffe.');
     const id = `player-${nextId++}`;
     const player = { id, name: typeof name === 'string' ? name.replace(/[\p{C}<>]/gu, '').trim().slice(0, 24) || 'Operator' : 'Operator',
-      ready: false, kit, connected: true, game: null, events: [], input: null, lastSeq: -1, lastInputAt: time,
-      jumpQueued: false, jumpHeld: false, lastActionAt: -1 };
+      ready: false, kit, weapon: selectedWeapon, connected: true, game: null, events: [], input: null, lastSeq: -1, lastInputAt: time,
+      jumpQueued: false, jumpHeld: false, fireQueued: false, fireHeld: false, lastActionAt: -1 };
     players.set(id, player); // Reserve the slot before asynchronous WASM initialization.
     hostId ??= id;
     try {
-      player.game = await createGame(clean, { externalAI: true, playerId: id });
+      player.game = await createGame(clean, { externalAI: true, playerId: id, loadoutLocked: true });
       if (disposed || !players.has(id)) { player.game.dispose(); throw new Error('Sitzung wurde geschlossen.'); }
       player.input = neutral(player.game.state.player);
       return id;
@@ -105,14 +108,14 @@ export function createCoopSession({ seed } = {}) {
       throw error;
     }
   }
-  function ready(id, value, kit) {
+  function ready(id, value, kit, weapon) {
     const player = member(id);
     if (phase !== 'lobby') throw new Error('Der Raid läuft bereits.');
     if (typeof value !== 'boolean') throw new Error('Ungültiger Bereitschaftsstatus.');
-    if (kit !== undefined) {
-      if (!Object.hasOwn(KIT_COSTS, kit) || player.game.state.profile.credits < KIT_COSTS[kit]) throw new Error('Dieses Kit ist nicht verfügbar.');
-      player.kit = kit;
-    }
+    const nextKit = kit ?? player.kit, nextWeapon = weapon === undefined ? player.weapon : weapon;
+    const definition = getWeapon(nextWeapon ?? defaultWeapon(nextKit));
+    if (!Object.hasOwn(KIT_COSTS, nextKit) || !definition || player.game.state.profile.credits < KIT_COSTS[nextKit] + definition.cost) throw new Error('Dieses Kit oder diese Waffe ist nicht verfügbar.');
+    player.kit = nextKit; player.weapon = nextWeapon;
     player.ready = value; return true;
   }
   function start(id, { difficulty = 'normal', seed: requestedSeed = seed } = {}) {
@@ -120,15 +123,15 @@ export function createCoopSession({ seed } = {}) {
     if (id !== hostId) throw new Error('Nur der Host kann den Raid starten.');
     if (players.size !== 2 || [...players.values()].some(p => !p.connected || !p.game || !p.ready)) throw new Error('Beide Spieler müssen bereit sein.');
     if (!['normal', 'hard'].includes(difficulty)) throw new Error('Unbekannter Schwierigkeitsgrad.');
-    for (const p of players.values()) if (p.game.state.profile.intake.length || p.game.state.profile.credits < KIT_COSTS[p.kit]) throw new Error('Ausrüstung oder Beute eines Spielers ist noch nicht bereit.');
+    for (const p of players.values()) if (p.game.state.profile.intake.length || p.game.state.profile.credits < KIT_COSTS[p.kit] + getWeapon(p.weapon ?? defaultWeapon(p.kit)).cost) throw new Error('Ausrüstung oder Beute eines Spielers ist noch nicht bereit.');
     const raidSeed = Number.isFinite(requestedSeed) ? requestedSeed >>> 0 : (Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0;
     let index = 0;
     for (const p of players.values()) {
-      if (!p.game.startRaid({ difficulty, kit: p.kit, seed: raidSeed })) throw new Error('Raid konnte nicht gestartet werden.');
+      if (!p.game.startRaid({ difficulty, kit: p.kit, weapon: p.weapon ?? defaultWeapon(p.kit), seed: raidSeed })) throw new Error('Raid konnte nicht gestartet werden.');
       if (!primary) primary = p.game;
       else { p.game.state.enemies = primary.state.enemies; p.game.state.loot = primary.state.loot; p.game.state.containers = primary.state.containers; }
       p.game.teleport(SPAWN.x + index * 2.2, SPAWN.z + index * .8);
-      p.input = neutral(p.game.state.player); p.jumpQueued = p.jumpHeld = false; p.lastInputAt = time;
+      p.input = neutral(p.game.state.player); p.jumpQueued = p.jumpHeld = p.fireQueued = p.fireHeld = false; p.lastInputAt = time;
       index++;
     }
     phase = 'raid'; collectEvents(); return true;
@@ -141,6 +144,8 @@ export function createCoopSession({ seed } = {}) {
     player.lastSeq = seq; player.input = sanitized; player.lastInputAt = time;
     if (sanitized.jump && !player.jumpHeld) player.jumpQueued = true;
     player.jumpHeld = sanitized.jump;
+    if (sanitized.firePressed || (sanitized.fire && !player.fireHeld)) player.fireQueued = true;
+    player.fireHeld = sanitized.fire;
     return true;
   }
   function action(id, actionName, itemId, containerId) {
@@ -165,8 +170,8 @@ export function createCoopSession({ seed } = {}) {
     const currentInputs = new Map();
     for (const player of players.values()) {
       if (!player.game || !player.connected) continue;
-      const current = time - player.lastInputAt > .3 ? neutral(player.game.state.player) : { ...player.input, jump: player.jumpQueued };
-      player.jumpQueued = false; currentInputs.set(player.id, current); player.game.update(dt, current);
+      const current = time - player.lastInputAt > .3 ? neutral(player.game.state.player) : { ...player.input, jump: player.jumpQueued, firePressed: player.fireQueued };
+      player.jumpQueued = player.fireQueued = false; currentInputs.set(player.id, current); player.game.update(dt, current);
     }
     const pending = actions; actions = [];
     for (const request of pending) {
@@ -179,9 +184,10 @@ export function createCoopSession({ seed } = {}) {
       synchronizeRelay();
     }
     for (const player of players.values()) {
-      if (!currentInputs.get(player.id)?.fire) continue;
+      const input = currentInputs.get(player.id);
+      if (!input?.fire && !input?.firePressed) continue;
       const p = player.game.state.player, cp = Math.cos(p.pitch);
-      player.game.fire({ x: -Math.sin(p.yaw) * cp, y: Math.sin(p.pitch), z: -Math.cos(p.yaw) * cp });
+      player.game.fire({ x: -Math.sin(p.yaw) * cp, y: Math.sin(p.pitch), z: -Math.cos(p.yaw) * cp }, { triggerPressed: input.firePressed });
     }
     const targets = [...players.values()].filter(p => p.connected && p.game).map(p => ({ id: p.id, state: p.game.state, damage: p.game.receiveDamage }));
     primary.advanceEnemies(dt, targets);
@@ -214,7 +220,7 @@ export function createCoopSession({ seed } = {}) {
     return { type: 'snapshot', seq: tick, ack: player.lastSeq, state, events: copy(events) };
   }
   function lobby() {
-    return { type: 'lobby', hostId, phase, players: [...players.values()].filter(p => p.connected && p.game).map(p => ({ id: p.id, name: p.name, ready: p.ready, kit: p.kit })) };
+    return { type: 'lobby', hostId, phase, players: [...players.values()].filter(p => p.connected && p.game).map(p => ({ id: p.id, name: p.name, ready: p.ready, kit: p.kit, weapon: p.weapon ?? defaultWeapon(p.kit) })) };
   }
   return { join, ready, start, input, action, update, leave, snapshot, lobby, players,
     get hostId() { return hostId; }, get phase() { return phase; },

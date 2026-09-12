@@ -2,8 +2,12 @@ import { layout } from './layout.js';
 import { CONTAINER_TYPES, CONTAINER_SEARCH_SECONDS } from './loot-catalog.js';
 import { createCoopUI } from './coop-ui.js';
 import { createSettingsUI } from './settings-ui.js';
+import { createArmoryUI, weaponSilhouette } from './armory-ui.js';
+import { createProgressionUI } from './progression-ui.js';
+import { getWeapon, defaultWeapon } from './weapons.js';
+import { getProgression, getSkillEffects } from './progression.js';
 import { BINDING_ACTIONS, defaultSettings, keyLabel } from './settings.js';
-import { KIT_COSTS, UPGRADE_COSTS, RAID_SECONDS } from './simulation.js';
+import { KIT_COSTS, RAID_SECONDS } from './simulation.js';
 import { marketQuote, saleChance, MARKET_DURATIONS, MARKET_CHECK_MS } from './economy.js';
 
 const number = value => Math.round(Number(value) || 0).toLocaleString('de-DE');
@@ -13,7 +17,7 @@ const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':
 const rarityLabel = rarity => ({ common: 'STANDARD', uncommon: 'INDUSTRIE', rare: 'SELTEN', epic: 'HOCHWERTIG', legendary: 'KRITISCH' })[rarity] || 'FUNDSTÜCK';
 const emptyRows = (title, description) => `<div class="logistics-empty"><span aria-hidden="true">▤</span><strong>${title}</strong><p>${description}</p></div>`;
 const carriedItemsMarkup = items => items.length ? items.map((item, index) => `<div class="inventory-item rarity-${escapeHTML(item.rarity || 'common')}"><span class="inventory-slot">${String(index+1).padStart(2,'0')}</span><div><strong>${escapeHTML(item.name || 'Fracht')}</strong><small>${rarityLabel(item.rarity)}</small></div><span class="carried-value">${number(item.value)} <small>CR</small></span><button class="drop-item-button" data-drop-item="${escapeHTML(item.id)}" aria-label="${escapeHTML(item.name)} abwerfen">ABWERFEN <span>↓</span></button></div>`).join('') : `<div class="inventory-empty"><span>▤</span><strong>NOCH KEINE FRACHT.</strong><p>Öffne Kisten in der Zone.<br>Wähle aus, was du mitnehmen möchtest.</p></div>`;
-const hubNavigation = `<nav class="hub-navigation" aria-label="Basisbereiche"><button id="tab-deploy" data-hub-tab="deploy" class="selected" aria-pressed="true"><span>01</span> EINSATZ</button><button id="tab-storage" data-hub-tab="storage" aria-pressed="false"><span>02</span> LAGER <b id="nav-storage-count">0</b></button><button id="tab-market" data-hub-tab="market" aria-pressed="false"><span>03</span> MARKT <b id="nav-market-count">0</b></button><button id="tab-mailbox" data-hub-tab="mailbox" aria-pressed="false"><span>04</span> POSTFACH <b id="nav-mail-count">0</b></button><div class="nav-bank"><span>GUTHABEN</span><strong id="nav-bank">750 CR</strong></div></nav>`;
+const hubNavigation = `<nav class="hub-navigation" aria-label="Basisbereiche"><button id="tab-deploy" data-hub-tab="deploy" class="selected" aria-pressed="true"><span>01</span> EINSATZ</button><button id="tab-arsenal" data-hub-tab="arsenal" aria-pressed="false"><span>02</span> ARSENAL</button><button id="tab-skills" data-hub-tab="skills" aria-pressed="false"><span>03</span> SKILLTREE</button><button id="tab-storage" data-hub-tab="storage" aria-pressed="false"><span>04</span> LAGER <b id="nav-storage-count">0</b></button><button id="tab-market" data-hub-tab="market" aria-pressed="false"><span>05</span> MARKT <b id="nav-market-count">0</b></button><button id="tab-mailbox" data-hub-tab="mailbox" aria-pressed="false"><span>06</span> POSTFACH <b id="nav-mail-count">0</b></button><div class="nav-bank"><span>GUTHABEN</span><strong id="nav-bank">750 CR</strong></div></nav>`;
 const logisticsPanels = `<section id="hub-logistics" class="hub-logistics" hidden>
   <header class="logistics-heading"><div><span class="eyebrow"><span class="orange-dash"></span> BLACKLINE / BASIS</span><h2 id="logistics-title">DEIN LAGER<span class="orange">.</span></h2><p id="logistics-description">Beute einlagern. Vorräte behalten. Den nächsten Einsatz vorbereiten.</p></div><span class="logistics-stamp">SEKTOR 07<br><b>LOKAL GESICHERT</b></span></header>
   <div id="hub-storage" class="storage-layout logistics-content"><section class="logistics-card intake-card"><div class="logistics-card-heading"><div><span class="micro orange">FRISCH EXTRAHIERT</span><h3>ANLIEFERUNG <b id="intake-count">0</b></h3></div><button id="store-all" class="small-button accent-button" data-action="store-all">ALLES EINLAGERN ↗</button></div><p class="card-description">Dein Extraktionsrucksack. Vor dem nächsten Raid ins sichere Lager übertragen.</p><div id="intake-list" class="logistics-list"></div></section><section class="logistics-card stash-card"><div class="logistics-card-heading"><div><span class="micro dim">BLEIBT BEI TOD ERHALTEN</span><h3>LAGERBESTAND <b id="stash-count">0</b></h3></div><span id="stash-total" class="inventory-total">0 CR <small>RICHTWERT</small></span></div><div class="list-column-labels"><span>GEGENSTAND</span><span>AKTUELLER RICHTWERT</span></div><div id="stash-list" class="logistics-list"></div><p class="logistics-note">Lagerware kannst du behalten oder auf dem lokalen Markt anbieten. Es findet kein automatischer Verkauf statt.</p></section></div>
@@ -39,13 +43,14 @@ export function createUI(root, actions) {
       </div>
       <aside class="deployment-panel"><div class="panel-heading"><span class="micro">EINSATZVORBEREITUNG</span><span class="tiny dim">01 / 03</span></div>
         <div class="bank-row"><div><span class="micro dim">VERFÜGBARES GUTHABEN</span><strong><span id="hub-credits">0</span><small>CR</small></strong></div><span class="bank-emblem" aria-hidden="true">⌁</span></div>
-        <div class="selector-label"><span class="micro">AUSRÜSTUNG</span><span class="tiny dim">VERBRAUCH PRO RAID</span></div>
-        <div class="kit-choices"><button id="kit-scout" class="kit-choice selected" data-kit="scout"><span class="choice-top"><strong>SCOUT</strong><span class="kit-cost" id="scout-price">KOSTENLOS</span></span><span class="choice-description" id="scout-description">Leichtes Einsatzkit. Jederzeit bereit.</span><span class="choice-line"><span class="selection-dot"></span> <span id="scout-details">VX-9 · 2 MEDKITS</span></span></button><button id="kit-assault" class="kit-choice" data-kit="assault"><span class="choice-top"><strong>ASSAULT</strong><span class="kit-cost" id="assault-price">350 CR</span></span><span class="choice-description" id="assault-description">Mehr Schutz. Mehr Reserven.</span><span class="choice-line"><span class="selection-dot"></span> <span id="assault-details">AR-4 · VERSTÄRKTE PANZERUNG</span></span></button></div>
+        <div class="selector-label"><span class="micro">SCHUTZ-KIT</span><span class="tiny dim">VERBRAUCH PRO RAID</span></div>
+        <div class="kit-choices"><button id="kit-scout" class="kit-choice selected" data-kit="scout"><span class="choice-top"><strong>SCOUT</strong><span class="kit-cost" id="scout-price">KOSTENLOS</span></span><span class="choice-description" id="scout-description">Leichtes Einsatzkit. Jederzeit bereit.</span><span class="choice-line"><span class="selection-dot"></span> <span id="scout-details">VX-9 · 2 MEDKITS</span></span></button><button id="kit-assault" class="kit-choice" data-kit="assault"><span class="choice-top"><strong>ASSAULT</strong><span class="kit-cost" id="assault-price">350 CR</span></span><span class="choice-description" id="assault-description">Verstärkte Panzerung für deinen Einsatz.</span><span class="choice-line"><span class="selection-dot"></span> <span id="assault-details">AR-4 · VERSTÄRKTE PANZERUNG</span></span></button></div>
         <div class="difficulty-row"><span class="micro">BEDROHUNG</span><div class="segmented"><button id="difficulty-normal" data-difficulty="normal" class="selected">NORMAL</button><button id="difficulty-hard" data-difficulty="hard">HOCH <span>↗</span></button></div></div>
         <p id="difficulty-description" class="tiny dim difficulty-description">Standardpatrouillen. Ein sauberer Einstieg.</p>
-        <div class="upgrades-heading"><span class="micro">PERMANENTE UPGRADES</span><span class="tiny dim">BLEIBEN BEI TOD</span></div>
-        <div class="upgrade-list">${['armor','backpack','weapon'].map((kind, index) => `<button class="upgrade-button" id="upgrade-${kind}" data-upgrade="${kind}"><span class="upgrade-icon" aria-hidden="true">${['◇','▤','⌖'][index]}</span><span class="upgrade-copy"><strong>${['Panzerung','Rucksack','Waffentuning'][index]}</strong><small id="upgrade-${kind}-level">STUFE 0 / 3</small></span><span class="upgrade-price" id="upgrade-${kind}-price">— CR</span><span class="upgrade-plus">+</span></button>`).join('')}</div>
-      </aside></div>${logisticsPanels}
+        <button class="deployment-weapon" data-hub-tab="arsenal" aria-label="Waffe im Arsenal ändern"><span id="deployment-weapon-art"></span><span><small class="micro dim">PRIMÄRWAFFE</small><strong id="deployment-weapon-name">VX-9</strong><small id="deployment-weapon-cost">KOSTENLOS PRO RAID</small></span><b>↗</b></button>
+        <div class="deployment-cost"><span>AUSRÜSTUNG FÜR DIESEN EINSATZ</span><strong id="deployment-total-cost">0 CR</strong></div>
+        <button class="deployment-skills" data-hub-tab="skills"><span><small class="micro dim">DEIN OPERATOR</small><strong id="deployment-skill-level">LEVEL 01</strong></span><span><b id="deployment-skill-points">3 SKILLPUNKTE</b><small>SKILLTREE ÖFFNEN ↗</small></span></button>
+      </aside></div><section id="hub-arsenal" class="hub-feature" hidden></section><section id="hub-skills" class="hub-feature" hidden></section>${logisticsPanels}
       <footer class="menu-footer"><div class="footer-hint"><span class="micro"><span data-binding-code="forward">W</span> <span data-binding-code="left">A</span> <span data-binding-code="backward">S</span> <span data-binding-code="right">D</span></span> BEWEGEN <span class="footer-separator">/</span> <span class="micro">MAUS</span> ZIELEN <span class="footer-separator">/</span> <span class="micro" data-binding-code="interact">E</span> INTERAGIEREN</div><button data-action="help" class="text-button">FELDHANDBUCH & STEUERUNG <span>↗</span></button><span class="tiny dim build-label">SINGLEPLAYER · OFFLINE</span></footer>
     </section>
     <section id="raid-hud" class="raid-hud" hidden>
@@ -70,8 +75,8 @@ export function createUI(root, actions) {
       <div class="field-panel inventory-panel" id="inventory-panel" data-panel="inventory" hidden><div class="field-panel-header"><div><span class="micro orange">MITGEFÜHRTE AUSRÜSTUNG</span><h2>RUCKSACK</h2></div><button id="close-inventory" class="field-close" data-action="close-field"><kbd data-binding-code="inventory">TAB</kbd> / ESC <span>×</span></button></div><div class="inventory-summary"><span id="inventory-value">0 CR</span><span id="inventory-capacity" class="micro dim">0 / 6 PLÄTZE</span></div><div id="inventory-list" class="inventory-list"></div><div class="inventory-supplies"><span>RESERVEMUNITION <b id="inventory-reserve">90</b></span><span>MEDKITS <b id="inventory-medkits">1</b></span></div><p class="field-footnote">Der Raid läuft weiter. Abgeworfene Ware bleibt hier in der Zone.</p></div>
     </section>
     <section id="pause-screen" class="screen pause-screen" hidden><div class="pause-content"><span class="eyebrow"><span class="orange-dash"></span> VERBINDUNG GEHALTEN</span><h2 id="pause-title">EINSATZ<br>PAUSIERT<span class="orange">.</span></h2><p class="dim" id="pause-description">Durchatmen. Die Zone wartet.</p><button id="resume-raid" class="primary-button" data-action="resume"><span>FORTSETZEN</span><span>↗</span></button><div class="pause-secondary"><button class="secondary-button" data-action="settings">EINSTELLUNGEN</button><button class="secondary-button" data-action="help">STEUERUNG</button></div><button id="abandon-raid" class="text-button abandon-button" data-action="abandon">EINSATZ ABBRECHEN <span>↗</span></button><p id="abandon-note" class="tiny dim">Mitgeführte Beute geht beim Abbruch verloren.</p></div><div id="pause-coordinate" class="pause-coordinate micro dim">BLACKLINE / SEKTOR 07 / OFFLINE</div></section>
-    <section id="result-screen" class="screen result-screen" hidden><div class="result-content"><span class="eyebrow" id="result-eyebrow"><span class="orange-dash"></span> OPERATION ABGESCHLOSSEN</span><h2 id="result-title">ERFOLGREICH<br>EXTRAHIERT<span class="orange">.</span></h2><p id="result-description" class="result-description">Die Fracht ist sicher.</p><div class="result-stats"><div><span class="micro dim">WARENRICHTWERT</span><strong id="result-loot">0 <small>CR</small></strong></div><div><span class="micro dim">BONUS</span><strong id="result-bonus">0 <small>CR</small></strong></div><div><span class="micro dim">ABSCHÜSSE</span><strong id="result-kills">0</strong></div></div><div class="result-total"><span class="micro">BONUS DIREKT GUTGESCHRIEBEN</span><strong id="result-total">0 CR</strong></div><button id="result-hub" class="primary-button" data-action="hub"><span id="result-hub-label">ZURÜCK ZUR BASIS</span><span>↗</span></button><p id="result-storage-note" class="tiny dim">Extrahierte Gegenstände warten unter Lager → Anlieferung.</p></div></section>
-    <div id="utility-overlay" class="utility-overlay" hidden><section class="utility-dialog" role="dialog" aria-modal="true" aria-labelledby="utility-title"><div class="utility-heading"><div><span class="micro orange">BLACKLINE / FELDHANDBUCH</span><h2 id="utility-title">STEUERUNG</h2></div><button class="close-button" data-action="close-utility" aria-label="Schließen">×</button></div><div id="help-content"><p class="help-intro">Zwölf Minuten in der Sperrzone. Sieben Kistentypen, 100 neue Fundstücke. Extrahiere deine Funde, lagere sie zu Hause ein und verkaufe sie auf dem lokalen Markt.</p><p id="help-interiors" class="help-interiors"><b>FÜNF GEBÄUDE SIND BEGEHBAR.</b> Wachhaus bei Ankunft · Lager 04 nördlich des Frachthofs · Bahnbüro am Güterbahnhof · Zollbüro an der Zollstation · Südwerkstatt im Südlager. Helle Umrisse auf der Karte markieren diese Gebäude, helle Punkte ihre Eingänge.</p>${controls}<div class="help-rules"><p><b>01 / SICHERN</b> Werkzeug, Elektronik, Medizin, Munition, Proviant, Industrie und Sicherheit: Mit <span data-binding-code="interact">E</span> eine Kiste öffnen und kurz durchsuchen. Gegenstände im Kistenfenster nehmen; rechts kannst du Rucksackware abwerfen und Platz schaffen.</p><p><b>02 / SENDEN</b> Das optionale Funkrelais auf der Karte aktivieren und den Bonus sichern.</p><p><b>03 / VERSCHWINDEN</b> Einen markierten Extraktionspunkt erreichen. <span data-binding-code="interact">E</span> drücken und 8 Sekunden in der Zone bleiben.</p></div></div><div id="settings-content" hidden></div><button data-action="close-utility" class="secondary-button utility-done">ZURÜCK</button></section></div>
+    <section id="result-screen" class="screen result-screen" hidden><div class="result-content"><span class="eyebrow" id="result-eyebrow"><span class="orange-dash"></span> OPERATION ABGESCHLOSSEN</span><h2 id="result-title">ERFOLGREICH<br>EXTRAHIERT<span class="orange">.</span></h2><p id="result-description" class="result-description">Die Fracht ist sicher.</p><div class="result-stats"><div><span class="micro dim">WARENRICHTWERT</span><strong id="result-loot">0 <small>CR</small></strong></div><div><span class="micro dim">BONUS</span><strong id="result-bonus">0 <small>CR</small></strong></div><div><span class="micro dim">ABSCHÜSSE</span><strong id="result-kills">0</strong></div></div><div class="result-xp"><span class="micro dim">OPERATOR-FORTSCHRITT</span><strong id="result-xp">+0 XP</strong></div><div class="result-total"><span class="micro">BONUS DIREKT GUTGESCHRIEBEN</span><strong id="result-total">0 CR</strong></div><button id="result-hub" class="primary-button" data-action="hub"><span id="result-hub-label">ZURÜCK ZUR BASIS</span><span>↗</span></button><p id="result-storage-note" class="tiny dim">Extrahierte Gegenstände warten unter Lager → Anlieferung.</p></div></section>
+    <div id="utility-overlay" class="utility-overlay" hidden><section class="utility-dialog" role="dialog" aria-modal="true" aria-labelledby="utility-title"><div class="utility-heading"><div><span class="micro orange">BLACKLINE / FELDHANDBUCH</span><h2 id="utility-title">STEUERUNG</h2></div><button class="close-button" data-action="close-utility" aria-label="Schließen">×</button></div><div id="help-content"><p class="help-intro">Zwölf Minuten in der Sperrzone. Sieben Kistentypen, 100 neue Fundstücke. Extrahiere deine Funde, lagere sie zu Hause ein und verkaufe sie auf dem lokalen Markt.</p><p id="help-interiors" class="help-interiors"><b>FÜNF GEBÄUDE SIND BEGEHBAR.</b> Wachhaus bei Ankunft · Lager 04 nördlich des Frachthofs · Bahnbüro am Güterbahnhof · Zollbüro an der Zollstation · Südwerkstatt im Südlager. Helle Umrisse auf der Karte markieren diese Gebäude, helle Punkte ihre Eingänge.</p>${controls}<div class="help-rules"><p><b>01 / SICHERN</b> Werkzeug, Elektronik, Medizin, Munition, Proviant, Industrie und Sicherheit: Mit <span data-binding-code="interact">E</span> eine Kiste öffnen und kurz durchsuchen. Gegenstände im Kistenfenster nehmen; rechts kannst du Rucksackware abwerfen und Platz schaffen.</p><p><b>02 / SENDEN</b> Das optionale Funkrelais auf der Karte aktivieren und den Bonus sichern.</p><p><b>03 / VERSCHWINDEN</b> Einen markierten Extraktionspunkt erreichen. <span data-binding-code="interact">E</span> drücken und <span id="help-extraction-duration">8</span> Sekunden in der Zone bleiben.</p></div></div><div id="settings-content" hidden></div><button data-action="close-utility" class="secondary-button utility-done">ZURÜCK</button></section></div>
     <div id="menu-notice" class="menu-notice" role="status" hidden></div>
   `;
 
@@ -102,7 +107,12 @@ export function createUI(root, actions) {
   const timeoutIds = new Set();
   const mapCanvas = el('tactical-map');
   const mapContext = mapCanvas.getContext('2d');
-  let economy = { assault: KIT_COSTS.assault, upgradeCosts: UPGRADE_COSTS, maxLevel: 3 };
+  let economy = { assault: KIT_COSTS.assault };
+  const loadoutWeapon = () => getWeapon(state?.profile?.selectedWeapon)?.id || defaultWeapon(selectedKit);
+  const loadoutLocked = () => !!state?.multiplayer || ['hosting','connecting','lobby'].includes(coopInfo.status);
+  const loadoutCost = () => KIT_COSTS[selectedKit] + getWeapon(loadoutWeapon()).cost;
+  const armoryUI = createArmoryUI(nodes['hub-arsenal'], actions);
+  const progressionUI = createProgressionUI(nodes['hub-skills'], actions);
   const settingsUI = createSettingsUI(nodes['settings-content'], actions);
   const fpsNode = document.createElement('span'); fpsNode.id = 'hud-fps'; fpsNode.className = 'hud-fps'; fpsNode.hidden = true; nodes['raid-hud'].append(fpsNode);
 
@@ -142,14 +152,15 @@ export function createUI(root, actions) {
   }
   const homeNow = () => Math.max(Date.now(), state?.profile?.marketTime || 0);
   function selectHubTab(tab) {
-    if (!['deploy','storage','market','mailbox'].includes(tab)) return;
+    if (!['deploy','arsenal','skills','storage','market','mailbox'].includes(tab)) return;
     hubTab = tab;
     nodes['hub-screen'].dataset.tab = tab;
     root.querySelectorAll('.hub-navigation [data-hub-tab]').forEach(button => {
       button.classList.toggle('selected', button.dataset.hubTab === tab);
       button.setAttribute('aria-pressed', String(button.dataset.hubTab === tab));
     });
-    show('hub-deploy', tab === 'deploy'); show('hub-logistics', tab !== 'deploy');
+    show('hub-deploy', tab === 'deploy'); show('hub-logistics', ['storage','market','mailbox'].includes(tab));
+    show('hub-arsenal', tab === 'arsenal'); show('hub-skills', tab === 'skills');
     for (const name of ['storage','market','mailbox']) show(`hub-${name}`, name === tab);
     nodes['logistics-title'].innerHTML = (({ storage:'DEIN LAGER', market:'DER MARKT', mailbox:'DEIN POSTFACH' })[tab] || '') + '<span class="orange">.</span>';
     setText('logistics-description', ({ storage:'Extrahierte Beute einlagern. Sicher aufbewahren. Für den Handel auswählen.', market:'Deine Ware. Dein Preis. Finde Käufer im dynamischen lokalen Handel.', mailbox:'Verkäufe abschließen. Erlöse abholen. Unverkaufte Ware zurückholen.' })[tab] || '');
@@ -247,9 +258,8 @@ export function createUI(root, actions) {
   const onClick = event => {
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
-    if (button.dataset.kit) return selectKit(button.dataset.kit);
-    if (button.dataset.difficulty) return selectDifficulty(button.dataset.difficulty);
-    if (button.dataset.upgrade) return actions.upgrade(button.dataset.upgrade);
+    if (button.dataset.kit) return !loadoutLocked() && selectKit(button.dataset.kit);
+    if (button.dataset.difficulty) return !loadoutLocked() && selectDifficulty(button.dataset.difficulty);
     if (button.dataset.hubTab) return selectHubTab(button.dataset.hubTab);
     if (button.dataset.storeItem) return economyAction('storeItem',button.dataset.storeItem);
     if (button.dataset.marketItem) return chooseMarketItem(button.dataset.marketItem);
@@ -258,7 +268,7 @@ export function createUI(root, actions) {
     if (button.dataset.dropItem) { actions.dropItem?.(button.dataset.dropItem); previousInventory=''; return; }
     if (button.dataset.takeContainerItem) return actions.takeContainerItem?.(button.dataset.containerId, button.dataset.takeContainerItem);
     switch (button.dataset.action) {
-      case 'start': if(state?.profile?.intake?.length){selectHubTab('storage');return;} if (selectedKit === 'assault' && (state?.profile?.credits || 0) < economy.assault) { notice(`Assault benötigt ${number(economy.assault)} CR. Das Scout-Kit ist kostenlos.`); return; } closePanels(); actions.start({ difficulty: selectedDifficulty, kit: selectedKit }); break;
+      case 'start': if(state?.profile?.intake?.length){selectHubTab('storage');return;} if (loadoutLocked()) { notice('Dein Team startet den Einsatz über die Koop-Lobby.'); return; } if ((state?.profile?.credits || 0) < loadoutCost()) { notice(`Kit und Waffe benötigen ${number(loadoutCost())} CR für diesen Einsatz. Wähle bei Bedarf eine kostenlose Waffe im Arsenal.`); return; } closePanels(); actions.start({ difficulty: selectedDifficulty, kit: selectedKit, weapon: loadoutWeapon() }); break;
       case 'resume': closePanels(); actions.resume(); break;
       case 'hub':
         if (hostPartnerActive() && !resultExitArmed) { resultExitArmed = true; setText('result-hub-label', 'TEAM BEENDEN BESTÄTIGEN'); setText('result-storage-note', 'Mitspieler noch im Einsatz – Team wirklich beenden? Erneut klicken beendet auch seinen Raid.'); return; }
@@ -383,7 +393,7 @@ export function createUI(root, actions) {
     const changed = currentContainerId !== container.id;
     if (changed) {
       currentContainerId = container.id; containerSignature = ''; containerBackpackSignature = '';
-      searchDuration = CONTAINER_SEARCH_SECONDS;
+      searchDuration = state.player?.searchDuration || CONTAINER_SEARCH_SECONDS * getSkillEffects(state.profile).searchMultiplier;
       nodes['container-items'].scrollTop = 0; nodes['container-backpack-list'].scrollTop = 0;
     }
     const type = CONTAINER_TYPES.find(value => value.id === container.type);
@@ -493,15 +503,16 @@ export function createUI(root, actions) {
     setText('hub-credits', number(profile.credits));
     setText('assault-price', `${number(economy.assault)} CR`);
     nodes['kit-assault'].classList.toggle('unaffordable', (profile.credits || 0) < economy.assault);
-    for (const kind of ['armor','backpack','weapon']) {
-      const level = profile.upgrades?.[kind] || 0;
-      const max = economy.maxLevel || 3;
-      const cost = economy.upgradeCosts?.[kind]?.[level] ?? ((economy.upgradeBase?.[kind] || 400) + level * (economy.upgradeStep?.[kind] || 250));
-      setText(`upgrade-${kind}-level`, `STUFE ${level} / ${max}`);
-      setText(`upgrade-${kind}-price`, level >= max ? 'MAX.' : `${number(cost)} CR`);
-      nodes[`upgrade-${kind}`].disabled = level >= max || (profile.credits || 0) < cost;
-      nodes[`upgrade-${kind}`].title = level >= max ? 'Maximale Stufe erreicht' : `${({armor:'+20 Panzerung',backpack:'+2 Plätze',weapon:'+10 % Schaden'})[kind]} pro Stufe · ${number(cost)} CR`;
-    }
+    const lockedLoadout = loadoutLocked(), equipped = getWeapon(loadoutWeapon()), progress = getProgression(profile), effects = getSkillEffects(profile);
+    armoryUI.update(profile, { weapon: equipped.id, locked: lockedLoadout }); progressionUI.update(profile, { locked: lockedLoadout });
+    for (const button of root.querySelectorAll('[data-kit],[data-difficulty]')) button.disabled = lockedLoadout;
+    setText('scout-details', `${30 + effects.armorBonus} PANZERUNG · ${2 + effects.extraMedkits} MEDKITS`);
+    setText('assault-details', `${55 + effects.armorBonus} PANZERUNG · ${2 + effects.extraMedkits} MEDKITS`);
+    setText('deployment-weapon-name', equipped.name); setText('deployment-weapon-cost', equipped.cost ? `${number(equipped.cost)} CR PRO RAID` : 'KOSTENLOS PRO RAID');
+    if (nodes['deployment-weapon-art'].dataset.weapon !== equipped.id) { nodes['deployment-weapon-art'].dataset.weapon = equipped.id; nodes['deployment-weapon-art'].innerHTML = weaponSilhouette(equipped.id); }
+    setText('deployment-total-cost', `${number(loadoutCost())} CR`); nodes['deployment-total-cost'].classList.toggle('orange', loadoutCost() > (profile.credits || 0));
+    setText('deployment-skill-level', `LEVEL ${String(progress.level).padStart(2, '0')}`); setText('deployment-skill-points', `${progress.availablePoints} ${progress.availablePoints === 1 ? 'SKILLPUNKT' : 'SKILLPUNKTE'}`);
+    setText('help-extraction-duration', Number((8 * effects.extractionMultiplier).toFixed(1)).toLocaleString('de-DE'));
     if (phase === 'raid') {
       const p = state.player, raid = state.raid;
       setText('raid-clock', clock(raid.timeLeft)); nodes['raid-clock'].classList.toggle('urgent', raid.timeLeft <= 60);
@@ -510,11 +521,11 @@ export function createUI(root, actions) {
       setText('relay-status', raid.objectiveComplete ? 'FUNKRELAIS AKTIV / BONUS BEREIT' : 'OPTIONAL / FUNKRELAIS AKTIVIEREN');
       nodes['relay-status'].classList.toggle('complete', !!raid.objectiveComplete);
       setText('hud-health', Math.max(0, Math.ceil(p.hp))); setText('hud-armor', Math.max(0, Math.ceil(p.armor))); setText('hud-medkits', p.medkits);
-      nodes['health-fill'].style.width = `${clamp(p.hp, 0, 100)}%`; nodes['health-fill'].classList.toggle('critical', p.hp <= 30);
-      nodes['stamina-fill'].style.width = `${clamp(p.stamina, 0, 100)}%`;
+      nodes['health-fill'].style.width = `${clamp(p.hp / (p.maxHp || 100) * 100, 0, 100)}%`; nodes['health-fill'].classList.toggle('critical', p.hp <= 30);
+      nodes['stamina-fill'].style.width = `${clamp(p.stamina / (p.maxStamina || 100) * 100, 0, 100)}%`;
       setText('hud-ammo', String(p.ammo).padStart(2,'0')); setText('hud-reserve', p.reserve); nodes['hud-ammo'].classList.toggle('urgent', p.ammo <= 5);
       setText('hud-weapon', typeof p.weapon === 'string' ? p.weapon.toUpperCase() : 'MX-4 / 5.56');
-      setText('hud-firemode', p.reload > 0 ? 'NACHLADEN …' : p.ammo === 0 ? 'MAGAZIN LEER' : 'AUTO');
+      setText('hud-firemode', p.reload > 0 ? 'NACHLADEN …' : p.ammo === 0 ? 'MAGAZIN LEER' : getWeapon(p.weapon)?.automatic ? 'AUTO' : p.weapon === 'SG-8' ? 'PUMPAKTION' : p.weapon === 'SR-90' ? 'REPETIERER' : 'EINZELFEUER');
       setText('hud-player-action', p.heal > 0 ? 'BEHANDLUNG …' : p.sprinting ? 'SPRINT' : p.sprintExhausted ? settings.sprintMode === 'toggle' ? `ERHOLEN · ${keyLabel(settings.bindings.sprint).toUpperCase()} ERNEUT DRÜCKEN` : `${keyLabel(settings.bindings.sprint).toUpperCase()} LOSLASSEN` : '');
       setText('hud-loot-value', `${number(raid.value)} CR`); setText('hud-loot-space', `${raid.loot?.length || 0} / ${raid.capacity}`);
       const bearing = ((-(p.yaw || 0) * 180 / Math.PI) % 360 + 360) % 360;
@@ -538,6 +549,7 @@ export function createUI(root, actions) {
       nodes['result-title'].innerHTML = result.success ? 'ERFOLGREICH<br>EXTRAHIERT<span class="orange">.</span>' : 'SIGNAL<br>VERLOREN<span class="orange">.</span>';
       setText('result-description', result.success ? `${result.itemCount ?? state.raid?.loot?.length ?? 0} Gegenstände extrahiert. Lagere deine Beute zu Hause ein und entscheide selbst, was du verkaufst.` : result.reason || 'Einsatz beendet. Deine mitgeführte Beute bleibt in der Zone.');
       setText('result-loot', `${number(result.value)} CR`); setText('result-bonus', `${number(result.bonus)} CR`); setText('result-kills', number(result.kills));
+      setText('result-xp', `+${number(result.xpEarned)} XP · LEVEL ${progress.level}`);
       setText('result-total', `${number(result.success ? result.total : 0)} CR`);
       setText('result-storage-note',result.success ? 'Deine Gegenstände warten unter Lager → Anlieferung. Der Warenwert wurde nicht als Guthaben ausgezahlt.' : 'Dein bereits eingelagerter Bestand und bestehende Marktangebote bleiben erhalten.');
       setText('result-hub-label', state.multiplayer ? resultExitArmed && hostPartnerActive() ? 'TEAM BEENDEN BESTÄTIGEN' : 'ZUR BASIS / TEAM VERLASSEN' : 'ZURÜCK ZUR BASIS');
@@ -572,7 +584,7 @@ export function createUI(root, actions) {
     if (panel === 'inventory') renderInventory();
   }
   function closePanels() { panel = null; show('map-panel', false); show('inventory-panel', false); showUtility(null); }
-  const coopUI = createCoopUI(root, actions, { getLoadout: () => ({ kit: selectedKit, difficulty: selectedDifficulty }), notice });
+  const coopUI = createCoopUI(root, actions, { getLoadout: () => ({ kit: selectedKit, difficulty: selectedDifficulty, weapon: loadoutWeapon() }), notice });
   selectKit('scout'); selectDifficulty('normal'); selectHubTab('deploy');
-  return { update, events, togglePanel, closePanels, isUtilityOpen: () => !!utility, isCapturingBinding: () => settingsUI.isCapturingBinding(), closeUtility: () => showUtility(null), dispose() { settingsUI.dispose(); coopUI.dispose(); root.removeEventListener('click',onClick); root.removeEventListener('input',onInput); document.removeEventListener('keydown',onKey,true); clearTimeout(noticeTimer); clearTimeout(hitTimer); clearTimeout(damageTimer); for (const timer of timeoutIds) clearTimeout(timer); root.innerHTML = ''; } };
+  return { update, events, togglePanel, closePanels, isUtilityOpen: () => !!utility, isCapturingBinding: () => settingsUI.isCapturingBinding(), closeUtility: () => showUtility(null), dispose() { armoryUI.dispose(); progressionUI.dispose(); settingsUI.dispose(); coopUI.dispose(); root.removeEventListener('click',onClick); root.removeEventListener('input',onInput); document.removeEventListener('keydown',onKey,true); clearTimeout(noticeTimer); clearTimeout(hitTimer); clearTimeout(damageTimer); for (const timer of timeoutIds) clearTimeout(timer); root.innerHTML = ''; } };
 }

@@ -81,7 +81,7 @@ test('search takes 1.5 seconds, repeated interaction never resets it, and reopen
   assert.equal(game.takeContainerItem(container.id, items[0].id), true);
   game.closeContainer(); game.interact();
   assert.equal(game.state.containerSearchRemaining, 0);
-  assert.deepEqual(container.items, items.map((item, index) => ({ ...item, taken: index === 0 })));
+  assert.deepEqual(container.items, items.map((item, index) => ({ ...item, taken: index === 0, ...(index === 0 ? { xpClaimed: true } : {}) })));
   assert.equal(game.takeContainerItem(container.id, items[0].id), false);
   const events = game.drainEvents();
   assert.ok(events.some(event => event.type === 'containerOpen' && event.containerId === container.id));

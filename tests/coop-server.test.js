@@ -143,3 +143,29 @@ test('WebSocket authentication, protocol, capacity, ping and graceful shutdown a
   assert.match((await aClosed).message, /Host/); assert.match((await bClosed).message, /Host/);
   await server.close();
 });
+
+test('real WebSocket loadouts validate weapons, retain migrated skills and award combat XP only to the shooter', {timeout:10000}, async t=>{
+  const server=await createCoopServer();t.after(()=>server.close());
+  const url=`ws://127.0.0.1:${server.port}/coop?token=${server.token}`;
+  const a=await connect(t,url),b=await connect(t,url);
+  a.send({type:'join',protocol:1,version:'1.3.0',weapon:'invented-gun',profile:{credits:750}});
+  assert.match((await a.wait(m=>m.type==='error')).message,/Waffe/);
+  a.send({type:'join',protocol:1,version:'1.3.0',weapon:'RV-6',profile:{credits:750,upgrades:{armor:2}},name:'Revolver'});
+  const aid=(await a.wait(m=>m.type==='welcome')).id;
+  b.send({type:'join',protocol:1,version:'1.3.0',weapon:'SG-8',profile:{credits:750},name:'Shotgun'});
+  const bid=(await b.wait(m=>m.type==='welcome')).id;
+  a.send({type:'ready',ready:true});b.send({type:'ready',ready:true});
+  await a.wait(m=>m.type==='lobby'&&m.players.length===2&&m.players.every(p=>p.ready));
+  a.send({type:'start'});
+  const start=await a.wait(m=>m.type==='snapshot'&&m.state.phase==='raid');
+  assert.equal(start.state.player.weapon,'RV-6');assert.equal(start.state.player.magSize,6);assert.equal(start.state.player.armor,70);
+  const partner=await b.wait(m=>m.type==='snapshot'&&m.state.phase==='raid');
+  assert.equal(partner.state.player.weapon,'SG-8');assert.equal(partner.state.player.magSize,8);assert.equal(partner.state.profile.credits,575);
+  const game=server.session.players.get(aid).game,target=game.state.enemies[0];
+  game.state.enemies.splice(1);Object.assign(target,{x:-7,z:42,hp:20,fireTimer:9999,pathTimer:9999,alert:0});
+  a.send({type:'input',seq:1,input:{fire:false,firePressed:true,yaw:0,pitch:0}});
+  const killed=await a.wait(m=>m.type==='snapshot'&&m.state.enemies.find(e=>e.id===target.id)?.dead);
+  assert.equal(killed.state.player.ammo,5);assert.ok(killed.state.profile.progression.xp>=50);
+  assert.equal(server.session.players.get(bid).game.state.profile.progression.xp,0);
+  advance(server,.7);assert.equal(game.state.player.ammo,5);
+});

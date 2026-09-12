@@ -1,4 +1,17 @@
 import { hasLineOfSight } from './simulation.js';
+import { getWeapon } from './weapons.js';
+
+// Characterful mixes of the recorded samples, retaining their real transients.
+export const WEAPON_SOUND_PROFILES = {
+  'VX-9': {sample:'smg-shot',rate:1,gain:.57,cutoff:19000,send:.26},
+  'AR-4': {sample:'rifle-shot',rate:1,gain:.67,cutoff:19000,send:.26},
+  'BR-12': {sample:'rifle-shot',rate:1.12,gain:.61,cutoff:14200,send:.2},
+  'SG-8': {sample:'rifle-shot',rate:.72,gain:.76,cutoff:11500,send:.32},
+  'DMR-7': {sample:'rifle-shot',rate:.88,gain:.7,cutoff:16700,send:.3},
+  'SR-90': {sample:'rifle-shot',rate:.68,gain:.79,cutoff:15500,send:.36},
+  'MG-60': {sample:'rifle-shot',rate:.9,gain:.64,cutoff:12800,send:.23},
+  'RV-6': {sample:'smg-shot',rate:.82,gain:.68,cutoff:16400,send:.19},
+};
 
 // Recorded CC0 firearm and Foley samples; provenance ships in audio/CREDITS.md.
 const SAMPLES = [
@@ -178,17 +191,23 @@ export function createAudio(options = {}) {
       gameplay.gain.cancelScheduledValues(ctx.currentTime); gameplay.gain.setTargetAtTime(0, ctx.currentTime, .018);
     } else {
       gameplay.gain.cancelScheduledValues(ctx.currentTime); gameplay.gain.setTargetAtTime(1, ctx.currentTime, .018);
-      if (state.player.reload > 0) reloadSequence(state.player.reload, state.player.weapon);
+      if (state.player.reload > 0) reloadSequence(state.player.reload, state.player.weapon, state.player.reloadDuration, state.player.magSize-state.player.ammo);
     }
     ambience.gain.cancelScheduledValues(ctx.currentTime);
     ambience.gain.setTargetAtTime(state.phase === 'raid' ? .065 : state.phase === 'hub' ? .035 : .018, ctx.currentTime, .3);
     lastPhase = state.phase; lastPlayer = null; travel = 0; enemySteps.clear();
   }
 
-  function reloadSequence(remaining, weapon) {
+  function reloadSequence(remaining, weapon, duration, missing=1) {
     cancel('reload');
-    const full = weapon === 'AR-4' ? 2.1 : 1.7, elapsed = Math.max(0, full - remaining);
-    for (const [id, at, gain] of [['reload-out', .045, .34], ['reload-in', full * .53, .43], ['reload-bolt', full - .27, .4]]) {
+    const full = duration || getWeapon(weapon)?.reloadSeconds || 1.7, elapsed = Math.max(0, full - remaining);
+    let steps=[['reload-out', .045, .34], ['reload-in', full * .53, .43], ['reload-bolt', full - .27, .4]];
+    if(weapon==='SG-8'){
+      const shells=Math.max(1,Math.min(8,missing));
+      steps=[['reload-out',.05,.2],...Array.from({length:shells},(_,i)=>['reload-in',full*(.18+i*.64/shells),.2]),['reload-bolt',full*.92,.32]];
+    }else if(weapon==='RV-6')steps=[['reload-out',.05,.26],['reload-bolt',full*.25,.18],['reload-in',full*.62,.32],['reload-bolt',full*.92,.24]];
+    else if(weapon==='MG-60')steps=[['reload-bolt',full*.1,.34],['reload-out',full*.3,.3],['reload-in',full*.59,.43],['reload-bolt',full*.88,.4]];
+    for (const [id, at, gain] of steps) {
       if (at >= elapsed) play(id, { gain, delay: at - elapsed, pan: .07, rate: .98 + random() * .04, tag: 'reload' });
     }
   }
@@ -209,8 +228,9 @@ export function createAudio(options = {}) {
       switch (event.type) {
         case 'shot': {
           cancel('heal');
-          const rifle = (event.weapon || state.player.weapon) === 'AR-4';
-          play(variant(rifle ? 'rifle-shot' : 'smg-shot', 3), { gain: rifle ? .67 : .57, rate: .978 + random() * .044, pan: .035, send: .26, tag: 'shot' });
+          const weapon=event.weapon||state.player.weapon, sound=WEAPON_SOUND_PROFILES[weapon]||WEAPON_SOUND_PROFILES['VX-9'];
+          play(variant(sound.sample, 3), { gain:sound.gain, rate:sound.rate*(.978 + random() * .044), cutoff:sound.cutoff, pan:.035, send:sound.send, tag:'shot' });
+          if(weapon==='SG-8'||weapon==='SR-90')play('reload-bolt',{gain:.24,rate:weapon==='SG-8'?.76:.98,delay:(getWeapon(weapon)?.fireInterval||.8)*.5,tag:'weapon-cycle',bus:'weapon',cutoff:7000});
           break;
         }
         case 'teammateShot':
@@ -218,11 +238,12 @@ export function createAudio(options = {}) {
           const position = event.from || event, player = state.player;
           const distance = Math.hypot(position.x - player.x, (position.y ?? 1.4) - (player.y + 1.65), position.z - player.z);
           const blocked = !hasLineOfSight(position, { x: player.x, y: player.y + (player.crouching ? 1.17 : 1.65), z: player.z });
-          play(variant(event.type==='teammateShot'&&event.weapon==='VX-9'?'smg-shot':'rifle-shot', 3), { gain: blocked ? .27 : .63, rate: .96 + random() * .075,
+          const sound=WEAPON_SOUND_PROFILES[event.type==='teammateShot'?event.weapon:'AR-4']||WEAPON_SOUND_PROFILES['AR-4'];
+          play(variant(sound.sample, 3), { gain: (blocked ? .43 : 1)*sound.gain, rate: sound.rate*(.96 + random() * .075),
             position, delay: Math.min(.35, distance / 343), cutoff: blocked ? 950 : clamp(17000 / (1 + distance * .065), 2100, 17000), send: .36, tag: 'enemy', bus: 'weapon' });
           break;
         }
-        case 'reload': reloadSequence(event.duration || state.player.reload, state.player.weapon); break;
+        case 'reload': reloadSequence(event.duration || state.player.reload, state.player.weapon, event.duration || state.player.reloadDuration, state.player.magSize-state.player.ammo); break;
         case 'heal':
           if (event.stage === 'complete') { cancel('heal'); play('reload-in', { gain: .075, rate: 1.25, cutoff: 3700 }); }
           else { cancel('reload'); play('reload-out', { gain: .12, rate: .8, cutoff: 4200, tag: 'heal' }); play('reload-in', { gain: .085, delay: .7, rate: .9, cutoff: 3000, tag: 'heal' }); }

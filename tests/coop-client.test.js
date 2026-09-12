@@ -10,6 +10,40 @@ import { approachContainer } from './container-helpers.js';
 
 const token = 'a1'.repeat(32);
 
+test('short semi-automatic clicks survive the network send interval and cleared input never fires later', async () => {
+  const originalWebSocket=globalThis.WebSocket,session=createCoopSession({seed:1717}),localGame=await createGame();
+  let client,wire,seq=0;
+  try{
+    const a=await session.join({name:'Host',weapon:'RV-6'}),b=await session.join({name:'Partner'});
+    session.ready(a,true);session.ready(b,true);session.start(a);
+    const game=session.players.get(a).game;game.state.enemies.length=0;
+    globalThis.WebSocket=class extends EventTarget{
+      static OPEN=1;readyState=1;
+      constructor(){super();wire=this;queueMicrotask(()=>this.dispatchEvent(new Event('open')));}
+      send(raw){const m=JSON.parse(raw);if(m.type==='join')queueMicrotask(()=>this.receive({type:'welcome',id:a,hostId:a}));else if(m.type==='input')session.input(a,m.seq,m.input);}
+      receive(m){this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify(m)}));}
+      close(){this.readyState=3;}
+    };
+    client=createCoopClient({localGame});await client.connect(`ws://127.0.0.1:1/coop?token=${token}`);
+    wire.receive({...session.snapshot(a),seq:++seq});assert.equal(client.state.player.weapon,'RV-6');
+    client.update(1/60,{fire:false,firePressed:true}); // Click already released before a network send.
+    client.update(1/60,{fire:false,firePressed:false});session.update(1/60);
+    assert.equal(game.state.player.ammo,5);
+    for(let i=0;i<90;i++)session.update(1/60);
+    assert.equal(game.state.player.ammo,5,'The buffered trigger is consumed exactly once');
+    client.update(1/60,{fire:false,firePressed:true});client.clearInput();
+    for(let i=0;i<4;i++){client.update(1/60,{fire:false});session.update(1/60);}
+    assert.equal(game.state.player.ammo,5,'A menu/focus change cancels an unsent click');
+    client.update(1/60,{fire:true,firePressed:true});client.update(1/60,{fire:true});
+    for(let i=0;i<90;i++){client.update(1/60,{fire:true});session.update(1/60);}
+    assert.equal(game.state.player.ammo,4,'Holding a semi-automatic trigger cannot become automatic fire');
+    game.state.raid.xpEarned=110;game.state.profile.progression.xp=110;
+    wire.receive({...session.snapshot(a),seq:++seq});wire.receive({type:'closed',message:'Host left'});
+    assert.equal(client.state.phase,'dead');assert.equal(client.state.result.xpEarned,110);
+    assert.equal(localGame.state.profile.progression.xp,110,'Disconnected result and persistent profile agree on earned XP');
+  }finally{client?.dispose();globalThis.WebSocket=originalWebSocket;session.close();localGame.dispose();}
+});
+
 test('explicit same-container reopen survives a close without an intervening closed snapshot', async () => {
   const originalWebSocket = globalThis.WebSocket;
   const session = createCoopSession({ seed: 414 }), localGame = await createGame();

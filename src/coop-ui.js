@@ -1,3 +1,4 @@
+import { getWeapon, defaultWeapon } from './weapons.js';
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const statusText = status => ({ hosting: 'EINLADUNG WIRD VORBEREITET', connecting: 'VERBINDUNG WIRD AUFGEBAUT', lobby: 'TEAMVERBINDUNG AKTIV', raid: 'GEMEINSAM IM EINSATZ', error: 'VERBINDUNG UNTERBROCHEN' })[status] || 'BEREIT FÜR ZWEI';
 
@@ -6,7 +7,7 @@ const statusText = status => ({ hosting: 'EINLADUNG WIRD VORBEREITET', connectin
 export function createCoopUI(root, actions, { getLoadout, notice }) {
   const access = document.createElement('button');
   access.id = 'coop-open'; access.className = 'coop-hub-access'; access.dataset.coopAction = 'open';
-  access.innerHTML = '<span>05</span> <strong id="coop-nav-label">KOOP</strong><i class="coop-nav-dot"></i>';
+  access.innerHTML = '<span>07</span> <strong id="coop-nav-label">KOOP</strong><i class="coop-nav-dot"></i>';
   root.querySelector('.hub-navigation').insertBefore(access, root.querySelector('.nav-bank'));
   const overlay = document.createElement('div'); overlay.id = 'coop-overlay'; overlay.className = 'coop-overlay'; overlay.hidden = true;
   overlay.innerHTML = `<section class="coop-dialog" role="dialog" aria-modal="true" aria-labelledby="coop-title">
@@ -16,16 +17,16 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
         <label class="coop-label" for="coop-name">DEIN RUFNAME</label><input id="coop-name" class="coop-input" autocomplete="nickname" maxlength="20" placeholder="Operator" value="Operator" spellcheck="false">
         <div id="coop-join-fields" hidden><label class="coop-label" for="coop-invite">EINLADUNG DEINES MITSPIELERS</label><input id="coop-invite" class="coop-input" type="text" autocomplete="off" spellcheck="false" placeholder="Einladung hier einfügen"><p class="coop-field-note">Dein Mitspieler erstellt das Team und schickt dir seine Einladung.</p></div>
         <div id="coop-host-fields"><p class="coop-field-note">Erstelle dein Team und teile die Einladung mit einem Freund. Ihr startet, sobald beide bereit sind.</p><details class="coop-options"><summary>Verbindungsoptionen</summary><label><input id="coop-internet" type="checkbox" checked><span>Über das Internet spielen<small>Im selben Netzwerk kannst du diese Option ausschalten.</small></span></label></details></div>
-        <div class="coop-loadout"><span>DEIN EINSATZKIT</span><strong id="coop-kit">SCOUT / VX-9</strong><small>Aus deiner Einsatzvorbereitung übernommen.</small></div>
+        <div class="coop-loadout"><span>DEIN EINSATZKIT</span><strong id="coop-kit">SCOUT / VX-9</strong><small>Waffe und Skills werden beim Beitritt festgelegt.</small></div>
         <button id="coop-connect" class="primary-button coop-primary" data-coop-action="connect"><span id="coop-connect-label">TEAM ERSTELLEN</span><span>↗</span></button>
       </div>
-      <div id="coop-session" hidden><div class="coop-session-heading"><span class="micro coop-blue">DEIN TEAM</span><span id="coop-player-count" class="micro dim">1 / 2</span></div><div id="coop-players" class="coop-players"></div>
+      <div id="coop-session" hidden><p class="coop-field-note">Kit, Waffe und Skills sind für dieses Team festgelegt. Zum Ändern die Lobby verlassen.</p><div class="coop-session-heading"><span class="micro coop-blue">DEIN TEAM</span><span id="coop-player-count" class="micro dim">1 / 2</span></div><div id="coop-players" class="coop-players"></div>
         <div id="coop-share" hidden><label class="coop-label" for="coop-share-invite">EINLADUNG TEILEN</label><div class="coop-share-row"><input id="coop-share-invite" class="coop-input" readonly aria-label="Einladung zum Kopieren"><button id="coop-copy" class="small-button" data-coop-action="copy">KOPIEREN ↗</button></div><p class="coop-field-note">Schicke diese Einladung deinem Mitspieler. Lass das Spiel geöffnet.</p></div>
         <div class="coop-lobby-actions"><button id="coop-ready" class="secondary-button" data-coop-action="ready">BEREIT MELDEN</button><button id="coop-start" class="primary-button coop-primary" data-coop-action="start" hidden><span>KOOP-RAID STARTEN</span><span>↗</span></button></div><p id="coop-start-hint" class="coop-field-note"></p>
       </div>
       <div id="coop-connection-status" class="coop-connection-status" role="status" aria-live="polite"><span class="coop-status-dot"></span><div><strong id="coop-status-label">BEREIT FÜR ZWEI</strong><p id="coop-status-message">Gemeinsam bergen. Gemeinsam extrahieren.</p></div></div>
       <div class="coop-bottom-actions"><button id="coop-retry" class="text-button" data-coop-action="retry" hidden>ERNEUT VERSUCHEN ↗</button><button id="coop-leave" class="text-button" data-coop-action="leave" hidden>TEAM VERLASSEN ↗</button></div>
-    </div><aside class="coop-brief"><div class="coop-diagram" aria-hidden="true"><div class="coop-signal-ring ring-a"></div><div class="coop-signal-ring ring-b"></div><span class="coop-operator operator-one">01<i></i></span><span class="coop-operator operator-two">02<i></i></span><span class="coop-diagram-coordinate">SEKTOR 07 / VERBINDUNG STEHT</span></div><span class="micro coop-blue">ZWEI OPERATOREN · EIN ZIEL</span><h3>DECKT EUCH.<br>HOLT DIE FRACHT.</h3><p>Gegner und Beute sind für euch beide dieselben. Jeder trägt seinen eigenen Rucksack und sichert seine eigene Extraktion.</p><div class="coop-rules"><span><b>01</b> Dein Kit wählst du in der Basis.</span><span><b>02</b> Beide bereit? Der Host startet.</span><span><b>03</b> Das Menü hält den Raid nicht an.</span></div></aside></div>
+    </div><aside class="coop-brief"><div class="coop-diagram" aria-hidden="true"><div class="coop-signal-ring ring-a"></div><div class="coop-signal-ring ring-b"></div><span class="coop-operator operator-one">01<i></i></span><span class="coop-operator operator-two">02<i></i></span><span class="coop-diagram-coordinate">SEKTOR 07 / VERBINDUNG STEHT</span></div><span class="micro coop-blue">ZWEI OPERATOREN · EIN ZIEL</span><h3>DECKT EUCH.<br>HOLT DIE FRACHT.</h3><p>Gegner und Beute sind für euch beide dieselben. Jeder trägt seinen eigenen Rucksack und sichert seine eigene Extraktion.</p><div class="coop-rules"><span><b>01</b> Kit, Waffe und Skills wählst du in der Basis.</span><span><b>02</b> Beide bereit? Der Host startet.</span><span><b>03</b> Das Menü hält den Raid nicht an.</span></div></aside></div>
   </section>`;
   root.append(overlay);
   const teamHud = document.createElement('div'); teamHud.id = 'teammate-hud'; teamHud.className = 'teammate-hud'; teamHud.hidden = true;
@@ -39,7 +40,7 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
   function open() {
     if (state?.phase !== 'hub') return;
     returnFocus = document.activeElement; overlay.hidden = false;
-    const loadout = getLoadout(); setText('coop-kit', loadout.kit === 'assault' ? 'ASSAULT / AR-4' : 'SCOUT / VX-9');
+    const loadout = getLoadout(); setText('coop-kit', `${loadout.kit === 'assault' ? 'ASSAULT' : 'SCOUT'} / ${getWeapon(loadout.weapon || defaultWeapon(loadout.kit)).name}`);
     (coop.status === 'lobby' ? node('coop-ready') : node('coop-name')).focus({ preventScroll: true });
   }
   function close() { overlay.hidden = true; if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true }); }
@@ -47,7 +48,7 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
     const name = node('coop-name').value.trim() || 'Operator';
     const invite = node('coop-invite').value.trim();
     if (!retry && mode === 'join' && !invite) { notice('Füge zuerst die Einladung deines Mitspielers ein.'); node('coop-invite').focus(); return; }
-    const request = retry && lastRequest ? lastRequest : { mode, args: { name, ...getLoadout(), ...(mode === 'host' ? { internet: node('coop-internet').checked } : { invite }) } };
+    const request = retry && lastRequest ? { mode: lastRequest.mode, args: { ...lastRequest.args, ...getLoadout() } } : { mode, args: { name, ...getLoadout(), ...(mode === 'host' ? { internet: node('coop-internet').checked } : { invite }) } };
     lastRequest = request;
     const callback = request.mode === 'host' ? actions.coopHost : actions.coopJoin;
     if (callback) callback(request.args);
@@ -112,7 +113,7 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
       playerSignature = signature;
       node('coop-players').innerHTML = [0,1].map(i => {
         const p = players[i];
-        return p ? `<div class="coop-player ${p.ready ? 'is-ready' : ''}"><span class="coop-player-icon">0${i + 1}</span><div><strong>${escapeHTML(p.name)}${p.id === coop.id ? ' <small>DU</small>' : ''}</strong><span>${p.kit === 'assault' ? 'ASSAULT · AR-4' : 'SCOUT · VX-9'}${p.id === coop.hostId ? ' / HOST' : ''}</span></div><b>${p.ready ? 'BEREIT' : 'WARTET'}</b></div>` : '<div class="coop-player vacant"><span class="coop-player-icon">+</span><div><strong>DEIN MITSPIELER</strong><span>WARTET AUF EINLADUNG</span></div></div>';
+        return p ? `<div class="coop-player ${p.ready ? 'is-ready' : ''}"><span class="coop-player-icon">0${i + 1}</span><div><strong>${escapeHTML(p.name)}${p.id === coop.id ? ' <small>DU</small>' : ''}</strong><span>${p.kit === 'assault' ? 'ASSAULT' : 'SCOUT'} · ${escapeHTML(getWeapon(p.weapon || defaultWeapon(p.kit))?.name || 'VX-9')}${p.id === coop.hostId ? ' / HOST' : ''}</span></div><b>${p.ready ? 'BEREIT' : 'WARTET'}</b></div>` : '<div class="coop-player vacant"><span class="coop-player-icon">+</span><div><strong>DEIN MITSPIELER</strong><span>WARTET AUF EINLADUNG</span></div></div>';
       }).join('');
     }
     node('coop-ready').disabled = !own || !inLobby;
@@ -123,11 +124,11 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
     if (shouldOpen) open();
     const team = state.multiplayer ? state.teammates || [] : [];
     teamHud.hidden = !team.length || state.phase !== 'raid';
-    const hudData = team.map(p => ({ name: p.name, hp: Math.round(Math.max(0, p.hp || 0)), dead: p.dead || p.phase === 'dead', phase: p.phase, distance: Math.round(Math.hypot(p.x - state.player.x, p.z - state.player.z)) }));
+    const hudData = team.map(p => ({ name: p.name, hp: Math.round(Math.max(0, p.hp || 0)), maxHp: p.maxHp || 100, dead: p.dead || p.phase === 'dead', phase: p.phase, distance: Math.round(Math.hypot(p.x - state.player.x, p.z - state.player.z)) }));
     const nextHudSignature = JSON.stringify([hudData, Math.round(coop.ping || 0)]);
     if (nextHudSignature !== hudSignature) {
       hudSignature = nextHudSignature;
-      teamHud.innerHTML = hudData.map(p => `<div class="teammate-status ${p.dead ? 'is-dead' : ''}"><span class="teammate-diamond">◇</span><div><strong>${escapeHTML(p.name)}</strong><span>${p.dead ? 'GEFALLEN' : p.phase === 'extracted' ? 'EXTRAHIERT' : p.phase === 'disconnected' ? 'VERBINDUNG VERLOREN' : `${p.distance} M ENTFERNT`}<i>${p.dead || p.phase === 'extracted' ? '' : `${p.hp} HP`}</i></span><div class="teammate-health"><b style="width:${Math.min(100,p.hp)}%"></b></div></div></div>`).join('');
+      teamHud.innerHTML = hudData.map(p => `<div class="teammate-status ${p.dead ? 'is-dead' : ''}"><span class="teammate-diamond">◇</span><div><strong>${escapeHTML(p.name)}</strong><span>${p.dead ? 'GEFALLEN' : p.phase === 'extracted' ? 'EXTRAHIERT' : p.phase === 'disconnected' ? 'VERBINDUNG VERLOREN' : `${p.distance} M ENTFERNT`}<i>${p.dead || p.phase === 'extracted' ? '' : `${p.hp} HP`}</i></span><div class="teammate-health"><b style="width:${Math.min(100,p.hp / p.maxHp * 100)}%"></b></div></div></div>`).join('');
     }
     setText('connection-label', status === 'offline' ? 'LOKALE OPERATION' : status === 'error' ? 'VERBINDUNG GETRENNT' : 'KOOP-TEAM');
     const online = !!state.multiplayer;

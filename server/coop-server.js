@@ -71,7 +71,7 @@ export async function createCoopServer({ host = '127.0.0.1', port = 0, token = r
           if (message.protocol !== COOP_PROTOCOL) { failure(ws, 'Die Koop-Protokollversion stimmt nicht überein.'); ws.close(1008, 'Protocol mismatch'); return; }
           if (message.version !== undefined && String(message.version) !== String(version)) { failure(ws, 'Beide Spieler benötigen dieselbe Spielversion.'); ws.close(1008, 'Version mismatch'); return; }
           info.joining = true;
-          try { info.id = await session.join({ name: message.name, profile: message.profile, kit: message.kit }); }
+          try { info.id = await session.join({ name: message.name, profile: message.profile, kit: message.kit, weapon: message.weapon }); }
           finally { info.joining = false; }
           if (closing || ws.readyState !== WebSocket.OPEN) {
             session.leave(info.id);
@@ -83,7 +83,7 @@ export async function createCoopServer({ host = '127.0.0.1', port = 0, token = r
           broadcastLobby(); snapshots(ws); return;
         }
         if (!info.id) throw new Error('Zuerst der Koop-Lobby beitreten.');
-        if (message.type === 'ready') { session.ready(info.id, message.ready, message.kit); broadcastLobby(); }
+        if (message.type === 'ready') { session.ready(info.id, message.ready, message.kit, message.weapon); broadcastLobby(); }
         else if (message.type === 'start') { session.start(info.id, { difficulty: message.difficulty }); broadcastLobby(); snapshots(); }
         else if (message.type === 'input') session.input(info.id, message.seq, message.input);
         else if (message.type === 'action') session.action(info.id, message.action, message.id, message.containerId);

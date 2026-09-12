@@ -2,6 +2,15 @@
 
 A Windows 3D FPS extraction shooter: offline solo and private two-player cooperative raids. German interface. Industrial coastal exclusion zone at warm sunset, olive concrete, orange industrial accents, teal shadows. Twelve-minute repeatable raids on a 300×300 metre map. Extraction sends loot into a personal intake; manual stash, local real-time market and mailbox. GitHub Releases provide automatic verified updates. Internet co-op uses a temporary cloudflared tunnel; LAN mode connects directly. Current implementation and tests take precedence over historical notes below.
 
+## Version 1.7 weapons and progression
+- `weapons.js` is the shared catalog of eight distinct weapons: VX-9, AR-4, BR-12, SG-8, DMR-7, SR-90, MG-60 and RV-6. It controls costs, magazine/reserve, cadence, fire mode, damage, pellets, range, reload time and model identity. Kit and weapon costs are charged once on raid start.
+- `progression.js` defines 24 nodes in four branches, prerequisites, two-point capstones, three starter points and one point per 250 XP. Legacy armor/backpack/weapon ranks migrate to equivalent learned nodes with compensating legacy points. Their effects are applied once. Save validation bounds values and rejects invalid graph unlocks.
+- `selectWeapon(id)` and `unlockSkill(id)` are hub-only actions, locked during connection/lobby/raid. Profile stores `selectedWeapon` (null means kit default) and `progression`. Join and ready carry weapon selection; the host validates each participant's loadout and derived skills.
+- Automatic weapons use held `fire`; other weapons consume a discrete `firePressed` edge. The client buffers brief presses until the 30 Hz packet; the server consumes each pending press once. Pause/focus/panel transitions clear input. One shotgun trigger consumes one shell, emits one shot event with multiple pellet endpoints and awards each kill once.
+- Raid state includes `xpEarned`; XP rewards are personal (guard 50, elite 100, first trade pickup 10, extraction 150). `xpClaimed` follows items through pickup, drop, multiplayer handover and disconnect spill to prevent pickup farming.
+- Player state carries actual `maxHp`, `maxStamina`, `reloadDuration`, `healDuration`, `recoilMultiplier`, `shotTimer` and `cycleDuration`. UI meters, audio and weapon animation consume effective values. The rendered camera and authoritative shot direction retain identical recoil angles.
+- Package both shared catalog/progression modules into the native host, as well as the browser bundle. Preserve old releases and verify new Windows binaries, two-client Internet play, saved progress migration and automatic launcher handoff.
+
 ## Version 1.6 loot containers
 - `loot-catalog.js` defines seven container types, exactly 100 new named trade items and the nine legacy items. Pools are keyed by container type; consumable ammo/medical supplies are additional and do not count toward the 100 new trade items.
 - `layout.CONTAINER_SPOTS` supplies logical shared positions and solid crate dimensions, including all five interiors. Static raid loot lives in `state.containers`; `state.loot` contains dynamic backpack/enemy drops.

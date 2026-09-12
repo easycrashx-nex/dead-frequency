@@ -2,6 +2,8 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { layout, COLLIDERS, CONTAINER_SPOTS, SPAWN, EXTRACTIONS, RELAY, WORLD_SIZE } from './layout.js';
 import { validateEconomy, createItem } from './economy.js';
 import { CONTAINER_TYPES, CONTAINER_SEARCH_SECONDS, LEGACY_ITEMS, rollContainerItems } from './loot-catalog.js';
+import { getWeapon, defaultWeapon } from './weapons.js';
+import { validateProgression, getSkillEffects, canUnlockSkill } from './progression.js';
 export { ITEM_CATALOG } from './loot-catalog.js';
 
 export const KIT_COSTS = { scout: 0, assault: 350 };
@@ -23,7 +25,8 @@ export function validateProfile(saved) {
   for (const key of Object.keys(UPGRADE_COSTS)) upgrades[key] = integer(src.upgrades?.[key], 0, 3);
   const raids = integer(src.raids);
   return { credits: integer(src.credits, 750, 1e12), raids, extracts: Math.min(raids, integer(src.extracts)),
-    best: integer(src.best), upgrades, ...validateEconomy(src) };
+    best: integer(src.best), upgrades, progression: validateProgression(src.progression, upgrades),
+    selectedWeapon: getWeapon(src.selectedWeapon)?.id ?? null, ...validateEconomy(src) };
 }
 
 export function seededRandom(seed) {
@@ -219,11 +222,13 @@ const PATROLS = [
 function emptyRaid() {
   return { timeLeft: RAID_SECONDS, kills: 0, loot: [], value: 0, capacity: 8,
     extractionProgress: 0, extractionDuration: 8, extractionName: '', objectiveComplete: false,
-    seed: 0, difficulty: 'normal' };
+    seed: 0, difficulty: 'normal', xpEarned: 0 };
 }
 function emptyPlayer() {
   return { ...SPAWN, y: 0.02, pitch: 0, hp: 100, armor: 30, stamina: 100, ammo: 24, reserve: 72,
-    magSize: 24, weapon: 'VX-9', medkits: 2, reload: 0, heal: 0, grounded: true, moving: false, sprinting: false, sprintExhausted: false, crouching: false };
+    magSize: 24, weapon: 'VX-9', medkits: 2, reload: 0, heal: 0, maxHp: 100, maxStamina: 100,
+    reloadDuration: 1.7, healDuration: 2.2, recoilMultiplier: 1, shotTimer: 0, cycleDuration: .095,
+    grounded: true, moving: false, sprinting: false, sprintExhausted: false, crouching: false };
 }
 
 export async function createGame(saved = null, options = {}) {
@@ -245,10 +250,19 @@ export async function createGame(saved = null, options = {}) {
   const state = { phase: 'hub', profile: validateProfile(saved), player: emptyPlayer(), raid: emptyRaid(), enemies: [], loot: [], containers: [], activeContainerId: null, containerSearchRemaining: 0, prompt: null, result: null };
   let events = [], random = seededRandom(1), cooldown = 0, velocityY = 0, jumpHeld = false;
   let extraction = null, raidSerial = 0, disposed = false, lowTimeWarned = false, sprintNeedsRelease = false;
+  let skillEffects = getSkillEffects(state.profile);
   const emit = event => events.push(event);
   const notice = text => emit({ type: 'notice', text });
   const alive = () => !disposed && state.phase === 'raid';
   const eye = () => ({ x: state.player.x, y: state.player.y + (state.player.crouching ? 1.17 : 1.65), z: state.player.z });
+  function grantXP(amount, reason) {
+    if (!alive()) return;
+    const before = state.profile.progression.xp;
+    state.profile.progression.xp = Math.min(1e9, before + amount);
+    const earned = state.profile.progression.xp - before;
+    state.raid.xpEarned += earned;
+    if (earned > 0) emit({ type: 'xp', amount: earned, reason });
+  }
 
   function spawnEnemy(x, z, index, kind = 'guard') {
     const home = isWalkable(x, z) ? { x, z } : gridPoint(closestFree({ x, z }));
@@ -263,15 +277,22 @@ export async function createGame(saved = null, options = {}) {
     if (state.profile.intake.length > 0) { notice('Zuerst die zurückgebrachte Beute zuhause einlagern.'); return false; }
     const kit = options.kit === 'assault' ? 'assault' : 'scout';
     const difficulty = options.difficulty === 'hard' ? 'hard' : 'normal';
-    if (state.profile.credits < KIT_COSTS[kit]) { notice('Nicht genug Credits für dieses Kit. Scout ist kostenlos.'); return false; }
-    state.profile.credits -= KIT_COSTS[kit]; state.profile.raids++;
+    const weapon = getWeapon(options.weapon ?? state.profile.selectedWeapon ?? defaultWeapon(kit));
+    if (!weapon) { notice('Unbekannte Waffe.'); return false; }
+    const cost = KIT_COSTS[kit] + weapon.cost;
+    if (state.profile.credits < cost) { notice('Nicht genug Credits für Kit und Waffe. Scout mit VX-9 ist kostenlos.'); return false; }
+    state.profile.credits -= cost; state.profile.raids++;
     // Explicit seeds support reproducible QA/replays; regular raids get fresh seeds.
     const seed = Number.isFinite(options.seed) ? options.seed >>> 0 : ((Date.now() ^ ++raidSerial * 2654435761) >>> 0);
     random = seededRandom(seed);
-    state.player = { ...emptyPlayer(), armor: (kit === 'assault' ? 55 : 30) + state.profile.upgrades.armor * 20,
-      weapon: kit === 'assault' ? 'AR-4' : 'VX-9', ammo: kit === 'assault' ? 30 : 24,
-      magSize: kit === 'assault' ? 30 : 24, reserve: kit === 'assault' ? 120 : 72 };
-    state.raid = { ...emptyRaid(), capacity: 8 + state.profile.upgrades.backpack * 2, difficulty, seed };
+    skillEffects = getSkillEffects(state.profile);
+    state.player = { ...emptyPlayer(), armor: (kit === 'assault' ? 55 : 30) + skillEffects.armorBonus,
+      weapon: weapon.id, ammo: weapon.magSize, magSize: weapon.magSize, reserve: Math.round(weapon.reserve * skillEffects.reserveMultiplier),
+      hp: 100 + skillEffects.maxHpBonus, maxHp: 100 + skillEffects.maxHpBonus,
+      stamina: 100 + skillEffects.staminaBonus, maxStamina: 100 + skillEffects.staminaBonus, medkits: 2 + skillEffects.extraMedkits,
+      recoilMultiplier: skillEffects.recoilMultiplier, reloadDuration: weapon.reloadSeconds * skillEffects.reloadMultiplier,
+      healDuration: 2.2 * skillEffects.healDurationMultiplier, cycleDuration: weapon.fireInterval };
+    state.raid = { ...emptyRaid(), capacity: 8 + skillEffects.capacityBonus, extractionDuration: 8 * skillEffects.extractionMultiplier, difficulty, seed };
     state.result = null; state.prompt = null; cooldown = 0; velocityY = 0; jumpHeld = false; extraction = null; lowTimeWarned = false; sprintNeedsRelease = false;
     body.setTranslation({ x: SPAWN.x, y: PLAYER_CENTER + 0.02, z: SPAWN.z }, true);
     body.setNextKinematicTranslation({ x: SPAWN.x, y: PLAYER_CENTER + 0.02, z: SPAWN.z });
@@ -289,15 +310,16 @@ export async function createGame(saved = null, options = {}) {
   function finish(success, reason) {
     if (!alive()) return;
     closeContainer();
-    const bonus = success ? state.raid.kills * 40 + (state.raid.objectiveComplete ? 450 : 0) : 0;
+    const bonus = success ? state.raid.kills * 40 + (state.raid.objectiveComplete ? 450 : 0) + skillEffects.extractionBonus : 0;
     const total = bonus;
     const itemCount = state.raid.loot.length;
     if (success) {
+      grantXP(150, 'extraction');
       state.profile.credits += total; state.profile.extracts++;
       state.profile.intake.push(...state.raid.loot.map(item => createItem(state.profile, item)));
       state.profile.best = Math.max(state.profile.best, state.raid.value + bonus);
     }
-    state.result = { success, value: state.raid.value, kills: state.raid.kills, reason, bonus, total, itemCount };
+    state.result = { success, value: state.raid.value, kills: state.raid.kills, reason, bonus, total, itemCount, xpEarned: state.raid.xpEarned };
     state.phase = success ? 'extracted' : 'dead'; state.prompt = null;
     state.player.moving = false; state.player.sprinting = false;
     emit({ type: success ? 'extract' : 'death', ...state.result });
@@ -306,6 +328,7 @@ export async function createGame(saved = null, options = {}) {
   function applyDamage(amount, enemy) {
     if (!alive() || !Number.isFinite(amount) || amount <= 0) return;
     const p = state.player;
+    amount *= 1 - skillEffects.damageReduction;
     const absorbed = Math.min(p.armor, amount * 0.7);
     p.armor -= absorbed; p.hp = Math.max(0, p.hp - (amount - absorbed));
     emit({ type: 'damage', amount: amount - absorbed, x: enemy.x, z: enemy.z });
@@ -338,7 +361,7 @@ export async function createGame(saved = null, options = {}) {
       state.prompt = { kind: 'container', id: container.id, text: `${containerNames[container.type]} · ${empty ? 'Leer' : container.searched ? 'Öffnen' : 'Durchsuchen'}` }; return;
     }
     const zone = EXTRACTIONS.find(ex => distance(p, ex) <= ex.radius);
-    if (zone && !extraction) state.prompt = { kind: 'extract', id: zone.id, text: `${zone.name} · Extraktion anfordern (8 s)` };
+    if (zone && !extraction) state.prompt = { kind: 'extract', id: zone.id, text: `${zone.name} · Extraktion anfordern (${state.raid.extractionDuration} s)` };
   }
 
   function interact() {
@@ -354,7 +377,7 @@ export async function createGame(saved = null, options = {}) {
       if (!container || !canReachContainer(container)) return false;
       if (state.activeContainerId === container.id) return true;
       state.activeContainerId = container.id;
-      state.containerSearchRemaining = container.searched ? 0 : CONTAINER_SEARCH_SECONDS;
+      state.containerSearchRemaining = container.searched ? 0 : CONTAINER_SEARCH_SECONDS * skillEffects.searchMultiplier;
       container.opened = true;
       emit({ type: 'containerOpen', containerId: container.id, x: container.x, z: container.z });
     } else if (prompt.kind === 'relay') {
@@ -370,7 +393,7 @@ export async function createGame(saved = null, options = {}) {
     } else {
       extraction = EXTRACTIONS.find(ex => ex.id === prompt.id);
       state.raid.extractionName = extraction.name; state.raid.extractionProgress = 0;
-      notice('Signal gesendet. Bleibe 8 Sekunden in der Extraktionszone.');
+      notice(`Signal gesendet. Bleibe ${state.raid.extractionDuration} Sekunden in der Extraktionszone.`);
       for (const enemy of state.enemies) if (!enemy.dead && distance(enemy, extraction) < 35) {
         enemy.alert = 14; enemy.lastSeen = { x: state.player.x, z: state.player.z }; enemy.pathTimer = 0;
       }
@@ -390,7 +413,8 @@ export async function createGame(saved = null, options = {}) {
     else if (item.kind === 'medkit') state.player.medkits += item.amount;
     else {
       if (state.raid.loot.length >= state.raid.capacity) { notice('Rucksack voll. Öffne mit Tab den Rucksack und wirf etwas ab.'); return false; }
-      state.raid.loot.push({ id: item.id, name: item.name, value: item.value, rarity: item.rarity });
+      if (!item.xpClaimed) { grantXP(10, 'loot'); item.xpClaimed = true; }
+      state.raid.loot.push({ id: item.id, name: item.name, value: item.value, rarity: item.rarity, xpClaimed: true });
       state.raid.value += item.value;
     }
     item.taken = true; emit({ type: 'loot', name: item.name, value: item.value, rarity: item.rarity });
@@ -449,51 +473,73 @@ export async function createGame(saved = null, options = {}) {
   function reload() {
     const p = state.player;
     if (!alive() || p.reload > 0 || p.heal > 0 || p.ammo >= p.magSize || p.reserve <= 0) return false;
-    p.reload = p.weapon === 'AR-4' ? 2.1 : 1.7;
+    p.reload = p.reloadDuration = getWeapon(p.weapon).reloadSeconds * skillEffects.reloadMultiplier;
     emit({ type: 'reload', duration: p.reload }); return true;
   }
   function heal() {
     const p = state.player;
-    if (!alive() || p.medkits <= 0 || p.hp >= 100 || p.heal > 0 || p.reload > 0) return false;
-    p.heal = 2.2; emit({ type: 'heal', duration: 2.2, stage: 'start' }); return true;
+    if (!alive() || p.medkits <= 0 || p.hp >= p.maxHp || p.heal > 0 || p.reload > 0) return false;
+    p.heal = p.healDuration = 2.2 * skillEffects.healDurationMultiplier;
+    emit({ type: 'heal', duration: p.healDuration, stage: 'start' }); return true;
   }
 
-  function fire(direction) {
-    const p = state.player;
-    if (!alive() || cooldown > 1e-7 || p.reload > 0 || p.sprinting) return false;
+  function fire(direction, { triggerPressed = true } = {}) {
+    const p = state.player, weapon = getWeapon(p.weapon);
+    if (!alive() || !weapon || state.activeContainerId || cooldown > 1e-7 || p.reload > 0 || p.sprinting || (!weapon.automatic && triggerPressed !== true)) return false;
     if (!direction || ![direction.x, direction.y, direction.z].every(Number.isFinite)) return false;
     const len = Math.hypot(direction.x, direction.y, direction.z);
     if (len < 0.01) return false;
     if (p.ammo <= 0) { reload(); return false; }
     if (p.heal > 0) { p.heal = 0; notice('Behandlung abgebrochen.'); }
-    p.ammo--; cooldown = p.weapon === 'AR-4' ? 0.12 : 0.095;
+    p.ammo--; cooldown = p.shotTimer = p.cycleDuration = weapon.fireInterval;
     const origin = eye(), dir = { x: direction.x / len, y: direction.y / len, z: direction.z / len };
-    let nearest = traceObstacle(origin, dir), victim = null, headshot = false;
-    for (const e of state.enemies) {
-      if (e.dead) continue;
-      const torso = rayBox(origin, dir, { x: e.x - 0.34, y: 0.22, z: e.z - 0.28 }, { x: e.x + 0.34, y: 1.48, z: e.z + 0.28 });
-      const ox = origin.x - e.x, oy = origin.y - 1.69, oz = origin.z - e.z;
-      const b = ox * dir.x + oy * dir.y + oz * dir.z;
-      const discriminant = b * b - (ox * ox + oy * oy + oz * oz - 0.24 * 0.24);
-      const head = discriminant >= 0 && -b - Math.sqrt(discriminant) > 0 ? -b - Math.sqrt(discriminant) : Infinity;
-      const hitDistance = Math.min(torso, head);
-      if (hitDistance < nearest) { nearest = hitDistance; victim = e; headshot = head < torso; }
+    const pelletEnds = [], hits = new Map();
+    // Trace the complete shot before applying damage, so early pellets cannot
+    // delete a target and let later pellets pass through its body.
+    const horizontal = Math.hypot(dir.x, dir.z);
+    const right = horizontal > 1e-7 ? { x: -dir.z / horizontal, y: 0, z: dir.x / horizontal } : { x: 1, y: 0, z: 0 };
+    const up = { x: right.y * dir.z - right.z * dir.y, y: right.z * dir.x - right.x * dir.z, z: right.x * dir.y - right.y * dir.x };
+    for (let pellet = 0; pellet < weapon.pellets; pellet++) {
+      const angle = weapon.spread > 0 ? random() * Math.PI * 2 : 0;
+      const radius = weapon.spread > 0 ? Math.sqrt(random()) * weapon.spread : 0;
+      const dx = dir.x + (right.x * Math.cos(angle) + up.x * Math.sin(angle)) * radius;
+      const dy = dir.y + up.y * Math.sin(angle) * radius;
+      const dz = dir.z + (right.z * Math.cos(angle) + up.z * Math.sin(angle)) * radius;
+      const length = Math.hypot(dx, dy, dz), ray = { x: dx / length, y: dy / length, z: dz / length };
+      let nearest = traceObstacle(origin, ray, weapon.range), victim = null, headshot = false;
+      for (const e of state.enemies) {
+        if (e.dead) continue;
+        const torso = rayBox(origin, ray, { x: e.x - .34, y: .22, z: e.z - .28 }, { x: e.x + .34, y: 1.48, z: e.z + .28 });
+        const ox = origin.x - e.x, oy = origin.y - 1.69, oz = origin.z - e.z;
+        const b = ox * ray.x + oy * ray.y + oz * ray.z;
+        const discriminant = b * b - (ox * ox + oy * oy + oz * oz - .24 * .24);
+        const head = discriminant >= 0 && -b - Math.sqrt(discriminant) > 0 ? -b - Math.sqrt(discriminant) : Infinity;
+        const hitDistance = Math.min(torso, head);
+        if (hitDistance < nearest) { nearest = hitDistance; victim = e; headshot = head < torso; }
+      }
+      const point = { x: origin.x + ray.x * nearest, y: origin.y + ray.y * nearest, z: origin.z + ray.z * nearest };
+      pelletEnds.push(point);
+      if (victim) {
+        const hit = hits.get(victim) ?? { damage: 0, headshot: false, point };
+        const falloff = clamp(1 - Math.max(0, nearest - 20) * .009, .62, 1);
+        hit.damage += weapon.damage * (1 + skillEffects.damageBonus) * (headshot ? 2.9 : 1) * falloff;
+        hit.headshot ||= headshot; hits.set(victim, hit);
+      }
     }
-    const to = { x: origin.x + dir.x * nearest, y: origin.y + dir.y * nearest, z: origin.z + dir.z * nearest };
-    emit({ type: 'shot', from: origin, to, ...to, weapon: p.weapon });
+    const to = pelletEnds[0];
+    emit({ type: 'shot', from: origin, to, ...to, weapon: p.weapon, ...(weapon.pellets > 1 ? { pelletEnds } : {}) });
     for (const e of state.enemies) if (!e.dead && distance(e, p) < 36) {
       e.alert = Math.max(e.alert, 7); e.lastSeen = { x: p.x, z: p.z }; e.pathTimer = Math.min(e.pathTimer, 0.15);
       if (options.playerId) e.targetPlayerId = options.playerId;
     }
-    if (victim) {
-      const falloff = clamp(1 - Math.max(0, nearest - 20) * 0.009, 0.62, 1);
-      const damage = (p.weapon === 'AR-4' ? 37 : 28) * (1 + state.profile.upgrades.weapon * 0.1) * (headshot ? 2.9 : 1) * falloff;
+    for (const [victim, { damage, headshot, point: to }] of hits) {
       victim.hp -= damage; victim.hitFlash = 0.16; victim.fireTimer = Math.max(victim.fireTimer, 0.27);
       victim.alert = 12; victim.lastSeen = { x: p.x, z: p.z };
       emit({ type: 'hit', ...to, headshot, damage, enemyId: victim.id });
       if (victim.hp <= 0) {
         victim.hp = 0; victim.dead = true; victim.mode = 'dead'; victim.attackFlash = 0;
         state.raid.kills++; emit({ type: 'kill', ...to, headshot, enemyId: victim.id });
+        grantXP(victim.kind === 'elite' ? 100 : 50, 'kill');
         state.loot.push({ id: `drop-${victim.id}`, x: victim.x, z: victim.z, name: 'Wachmunition · +18', value: 0, rarity: 'common', kind: 'ammo', amount: 18, taken: false });
         if (victim.kind === 'elite') state.loot.push({ id: `raid-${state.profile.raids}-elite-${victim.id}`, x: victim.x, z: victim.z, name: 'Offiziers-Chip', value: 420, rarity: 'epic', taken: false });
       }
@@ -574,7 +620,7 @@ export async function createGame(saved = null, options = {}) {
     if (!alive() || !Number.isFinite(dt) || dt <= 0) return;
     dt = Math.min(dt, 0.05);
     const p = state.player;
-    cooldown = Math.max(0, cooldown - dt);
+    cooldown = Math.max(0, cooldown - dt); p.shotTimer = Math.max(0, p.shotTimer - dt);
     state.raid.timeLeft = Math.max(0, state.raid.timeLeft - dt);
     if (state.raid.timeLeft <= 0) { finish(false, 'Einsatzzeit abgelaufen'); return; }
     if (state.raid.timeLeft < 60 && !lowTimeWarned) { lowTimeWarned = true; notice('Noch 60 Sekunden. Jetzt extrahieren.'); }
@@ -586,7 +632,7 @@ export async function createGame(saved = null, options = {}) {
     }
     if (p.heal > 0) {
       p.heal = Math.max(0, p.heal - dt);
-      if (p.heal === 0) { p.medkits--; p.hp = Math.min(100, p.hp + 55); emit({ type: 'heal', stage: 'complete' }); }
+      if (p.heal === 0) { p.medkits--; p.hp = Math.min(p.maxHp, p.hp + 55 + skillEffects.healBonus); emit({ type: 'heal', stage: 'complete' }); }
     }
     const forward = Number.isFinite(input.forward) ? clamp(input.forward, -1, 1) : 0;
     const right = Number.isFinite(input.right) ? clamp(input.right, -1, 1) : 0;
@@ -599,9 +645,9 @@ export async function createGame(saved = null, options = {}) {
     if (!input.sprint) sprintNeedsRelease = false;
     if (p.sprintExhausted && p.stamina >= 20 && !sprintNeedsRelease) p.sprintExhausted = false;
     p.sprinting = !!input.sprint && p.moving && forward > 0 && !p.crouching && !input.aim && !p.sprintExhausted && p.stamina > 0 && p.heal <= 0 && p.reload <= 0;
-    p.stamina = clamp(p.stamina + (p.sprinting ? -23 : 15) * dt, 0, 100);
+    p.stamina = clamp(p.stamina + (p.sprinting ? -23 * skillEffects.sprintDrainMultiplier : 15 * skillEffects.staminaRegenMultiplier) * dt, 0, p.maxStamina);
     if (p.sprinting && p.stamina === 0) { p.sprinting = false; p.sprintExhausted = true; sprintNeedsRelease = true; }
-    const speed = (p.crouching ? 2.1 : p.sprinting ? 7.2 : input.aim ? 3 : 4.4) * (p.heal > 0 ? 0.62 : 1);
+    const speed = (p.crouching ? 2.1 : p.sprinting ? 7.2 : input.aim ? 3 : 4.4) * skillEffects.moveSpeedMultiplier * (p.heal > 0 ? 0.62 : 1);
     if (input.jump && !jumpHeld && p.grounded && !p.crouching && p.stamina > 10) { velocityY = 6.7; p.stamina -= 10; p.grounded = false; }
     jumpHeld = !!input.jump;
     velocityY -= 19 * dt;
@@ -630,15 +676,26 @@ export async function createGame(saved = null, options = {}) {
   }
 
   function buyUpgrade(kind) {
-    if (disposed || state.phase !== 'hub' || !Object.hasOwn(UPGRADE_COSTS, kind)) return false;
+    if (disposed || options.loadoutLocked || state.phase !== 'hub' || !Object.hasOwn(UPGRADE_COSTS, kind)) return false;
     const level = state.profile.upgrades[kind], cost = UPGRADE_COSTS[kind][level];
     if (cost === undefined || state.profile.credits < cost) return false;
     state.profile.credits -= cost; state.profile.upgrades[kind]++;
+    state.profile.progression = validateProgression(state.profile.progression, state.profile.upgrades);
     notice('Upgrade installiert. Im nächsten Raid aktiv.'); return true;
+  }
+  function selectWeapon(id) {
+    if (disposed || options.loadoutLocked || state.phase !== 'hub' || !getWeapon(id)) return false;
+    state.profile.selectedWeapon = id; return true;
+  }
+  function unlockSkill(id) {
+    if (disposed || options.loadoutLocked || state.phase !== 'hub' || !canUnlockSkill(state.profile, id)) return false;
+    state.profile.progression.unlocked.push(id);
+    state.profile.progression = validateProgression(state.profile.progression, state.profile.upgrades);
+    notice('Fähigkeit freigeschaltet. Im nächsten Raid aktiv.'); return true;
   }
 
   return {
-    state, layout, startRaid, update, fire, reload, heal, interact, dropItem, buyUpgrade, takeContainerItem, takeAllContainerItems, closeContainer,
+    state, layout, startRaid, update, fire, reload, heal, interact, dropItem, buyUpgrade, selectWeapon, unlockSkill, takeContainerItem, takeAllContainerItems, closeContainer,
     // Trusted host adapters. The WebSocket protocol never exposes these methods.
     advanceEnemies(dt, targets) {
       if (!disposed && options.externalAI && Number.isFinite(dt) && dt > 0) updateEnemies(Math.min(dt, .05), targets);

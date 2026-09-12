@@ -13,13 +13,14 @@ export function createCoopClient({localGame,onChange=()=>{},onRaid=()=>{},onProf
   let socket=null,events=[],sequence=0,lastSnapshot=-1,sendTime=0,paused=false,target=null,closed=false,lastMessage=0,watchdog,pendingJump=false;
   let state=structuredClone(localGame.state);
   let closingContainerId=null;
+  let pendingFirePressed=false;
   const info={status:'offline',name:'',invite:'',players:[],id:null,hostId:null,message:'',ping:0};
   function change(values){Object.assign(info,values);onChange(info);}
   function send(message){if(socket?.readyState===WebSocket.OPEN){socket.send(JSON.stringify(message));return true;}return false;}
   function disconnect(message='Verbindung beendet.'){
     if(closed)return;closed=true;clearInterval(watchdog);socket?.close();
     const wasRaid=['raid','paused'].includes(state.phase);
-    if(wasRaid){state.phase='dead';state.result={success:false,value:state.raid.value,kills:state.raid.kills,reason:message,bonus:0,total:0,itemCount:state.raid.loot.length};state.prompt=null;events.push({type:'death',...state.result});}
+    if(wasRaid){state.phase='dead';state.result={success:false,value:state.raid.value,kills:state.raid.kills,reason:message,bonus:0,total:0,itemCount:state.raid.loot.length,xpEarned:state.raid.xpEarned??0};state.prompt=null;events.push({type:'death',...state.result});}
     change({status:'error',message,players:[]});onDisconnect({message,wasRaid});
   }
   function receive(data){
@@ -48,14 +49,14 @@ export function createCoopClient({localGame,onChange=()=>{},onRaid=()=>{},onProf
     }
     else if(message.type==='pong'&&Number.isFinite(message.time))info.ping=Math.round(performance.now()-message.time);
   }
-  async function connect(invite,{name,profile,kit='scout',invitation=invite,difficulty='normal'}={}){
+  async function connect(invite,{name,profile,kit='scout',weapon,invitation=invite,difficulty='normal'}={}){
     const url=parseInvite(invite);closed=false;state=structuredClone(localGame.state);state.multiplayer=true;
-    state.teammates=[];lastSnapshot=-1;events=[];paused=false;sequence=0;
+    state.teammates=[];lastSnapshot=-1;events=[];paused=false;sequence=0;pendingJump=pendingFirePressed=false;
     change({status:'connecting',name:String(name||'Operator').trim().slice(0,20),invite:invitation,players:[],message:'Verbindung wird aufgebaut …',difficulty});
     await new Promise((resolve,reject)=>{
       socket=new WebSocket(url);let welcomed=false;
       const timer=setTimeout(()=>{reject(new Error('Keine Antwort vom Host. Prüfe, ob die Einladung noch aktiv ist.'));socket.close();},20000);
-      socket.addEventListener('open',()=>send({type:'join',protocol:1,version:packageInfo.version,name:info.name,profile,kit}));
+      socket.addEventListener('open',()=>send({type:'join',protocol:1,version:packageInfo.version,name:info.name,profile,kit,weapon}));
       socket.addEventListener('message',event=>{
         receive(event.data);
         if(info.id&&!welcomed){welcomed=true;clearTimeout(timer);resolve();}
@@ -73,6 +74,7 @@ export function createCoopClient({localGame,onChange=()=>{},onRaid=()=>{},onProf
     update(dt,input={}){
       if(closed)return;
       pendingJump ||= !!input.jump;
+      pendingFirePressed ||= !!input.firePressed;
       if(target&&['raid','paused'].includes(state.phase)){
         const factor=1-Math.exp(-25*dt);
         for(const axis of ['x','y','z'])state.player[axis]+= (target[axis]-state.player[axis])*factor;
@@ -81,20 +83,21 @@ export function createCoopClient({localGame,onChange=()=>{},onRaid=()=>{},onProf
       }
       sendTime+=dt;
       if(sendTime>=1/30&&['raid','paused'].includes(state.phase)){
-        sendTime=0;send({type:'input',seq:++sequence,input:paused?{yaw:state.player.yaw,pitch:state.player.pitch}:{...input,jump:pendingJump}});pendingJump=false;
+        sendTime=0;send({type:'input',seq:++sequence,input:paused?{yaw:state.player.yaw,pitch:state.player.pitch}:{...input,jump:pendingJump,firePressed:pendingFirePressed}});pendingJump=pendingFirePressed=false;
       }
     },
     fire(){return false;},
+    clearInput(){pendingJump=pendingFirePressed=false;sendTime=0;send({type:'input',seq:++sequence,input:{yaw:state.player.yaw,pitch:state.player.pitch}});},
     reload(){return send({type:'action',action:'reload'});},heal(){return send({type:'action',action:'heal'});},
     interact(){closingContainerId=null;return send({type:'action',action:'interact'});},dropItem(id){return send({type:'action',action:'drop',id});},
     takeContainerItem(containerId,id){return send({type:'action',action:'take',id,containerId});},
     takeAllContainerItems(containerId){return send({type:'action',action:'takeAll',containerId});},
     closeContainer(){if(!state.activeContainerId)return false;closingContainerId=state.activeContainerId;state.activeContainerId=null;state.containerSearchRemaining=0;return send({type:'action',action:'closeContainer'});},
-    pause(value=true){paused=value;if(value&&state.phase==='raid')state.phase='paused';else if(!value&&state.phase==='paused')state.phase='raid';send({type:'input',seq:++sequence,input:{yaw:state.player.yaw,pitch:state.player.pitch}});},
+    pause(value=true){paused=value;pendingJump=pendingFirePressed=false;if(value&&state.phase==='raid')state.phase='paused';else if(!value&&state.phase==='paused')state.phase='raid';send({type:'input',seq:++sequence,input:{yaw:state.player.yaw,pitch:state.player.pitch}});},
     ready(ready){send({type:'ready',ready:!!ready});},start(){send({type:'start',difficulty:info.difficulty||'normal'});},
     leave(){closed=true;clearInterval(watchdog);send({type:'leave'});socket?.close();change({status:'offline',players:[],message:'',id:null,hostId:null});},
     drainEvents(){const list=events;events=[];return list;},getSave(){return localGame.getSave();},
-    dispose(){this.leave();},returnToHub(){this.leave();},buyUpgrade(){return false;},startRaid(){return false;},
+    dispose(){this.leave();},returnToHub(){this.leave();},buyUpgrade(){return false;},unlockSkill(){return false;},selectWeapon(){return false;},startRaid(){return false;},
   };
   return adapter;
 }

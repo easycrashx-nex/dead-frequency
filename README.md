@@ -1,4 +1,4 @@
-# DEAD FREQUENCY 1.6.0
+# DEAD FREQUENCY 1.7.0
 
 Ein Extraction-Shooter aus der Ego-Perspektive für Windows x64: allein offline oder zu zweit im Koop. Durchsuche den 300 × 300 Meter großen Sektor 07, bekämpfe Patrouillen, sichere Beute und handle nach der Extraktion damit.
 
@@ -11,12 +11,12 @@ Das Windows-ZIP einmal vollständig entpacken und `DEAD FREQUENCY.exe` starten. 
 ## Mit einem Freund spielen
 
 1. Beide starten dieselbe aktuelle Windows-Version und wählen ihr Kit in der Basis. Vorherige Extraktionsbeute zuerst einlagern.
-2. Der Host öffnet **05 KOOP**, gibt seinen Rufnamen ein und klickt **TEAM ERSTELLEN**. Die Internetoption ist bereits eingeschaltet.
+2. Der Host öffnet **KOOP**, gibt seinen Rufnamen ein und klickt **TEAM ERSTELLEN**. Die Internetoption ist bereits eingeschaltet.
 3. Sobald die Verbindung bereit ist, **KOPIEREN** drücken und die Einladung dem Freund schicken.
-4. Der Freund öffnet **05 KOOP → TEAM BEITRETEN**, fügt die Einladung ein und verbindet sich.
+4. Der Freund öffnet **KOOP → TEAM BEITRETEN**, fügt die Einladung ein und verbindet sich.
 5. Beide klicken **BEREIT MELDEN**; der Host klickt **KOOP-RAID STARTEN**. Falls das Spiel die Maus noch nicht übernommen hat, **FORTSETZEN** drücken.
 
-Beide sehen dieselben Gegner und dieselbe Beute. Jeder Gegenstand einer Kiste kann nur einmal entnommen werden. Abgeworfene Rucksackgegenstände kann der Partner aufnehmen. Gesundheit, Munition, Ausdauer, Kits und Extraktionsrucksäcke bleiben getrennt. Es gibt kein Friendly Fire. Jeder fordert seine eigene Extraktion an und bleibt acht Sekunden in der Zone. Der blaue Operator und die Teamanzeige zeigen deinen Mitspieler.
+Beide sehen dieselben Gegner und dieselbe Beute. Jeder Gegenstand einer Kiste kann nur einmal entnommen werden. Abgeworfene Rucksackgegenstände kann der Partner aufnehmen. Gesundheit, Munition, Ausdauer, Waffen, Skills und Extraktionsrucksäcke bleiben getrennt. Es gibt kein Friendly Fire. Jeder fordert seine eigene Extraktion an und bleibt acht Sekunden in der Zone (mit Logistik-Meisterschaft sieben). Der blaue Operator mit seiner gewählten Waffe und die Teamanzeige zeigen deinen Mitspieler. Waffen und Skills vor dem Verbinden auswählen; in der Lobby ist die Ausrüstung gesperrt.
 
 **Im Koop läuft die Welt bei geöffnetem Menü oder Fensterwechsel weiter.** Bei einem Verbindungsabbruch scheidet der getrennte Spieler aus; seine ungesicherte Beute kann der Partner bergen. Wenn der Host das Team beendet oder die Anwendung schließt, endet die Verbindung für beide. Nach seiner eigenen Extraktion sollte der Host warten, bis der Kollege ebenfalls draußen ist. Beute aus einer bereits abgeschlossenen Extraktion bleibt erhalten.
 
@@ -27,6 +27,32 @@ Die Internet-Einladung läuft über den mitgelieferten Cloudflare-Tunnel, benöt
 Bei jedem normalen Start prüft der Launcher das neueste stabile [GitHub-Release](https://github.com/easycrashx-nex/dead-frequency/releases/latest). Eine neuere Version wird ohne Bestätigung heruntergeladen, anhand von SHA-256 geprüft und in einem separaten Versionsordner vorbereitet. Anschließend startet automatisch die neue Version. Es muss kein ZIP von Hand heruntergeladen oder entpackt werden. Während eines Raids wird kein Update eingespielt.
 
 Bei fehlendem Internet oder einem fehlerhaften Download startet die vorhandene Version. Frühere vollständige Installationen bleiben erhalten; ältere Releases ersetzen keine neuere Version. Spielstände liegen getrennt von den Programmdateien im Windows-Benutzerprofil. Für Updates werden ausschließlich öffentliche GitHub-Release-Dateien dieses Projekts verwendet; Zugangstoken werden nicht mitgeliefert.
+
+## Arsenal und Skilltree
+
+Im **ARSENAL** wählst du eine von acht Waffen. Alle besitzen eigene Modelle, auch beim Mitspieler, sowie unterschiedliche Schussrhythmen, Rückstoß, Reichweiten, Klänge und Nachladebewegungen. Waffenpreis und Kitpreis werden zusammen pro Einsatz berechnet. VX-9, AR-4 und RV-6 bleiben kostenlos; ohne ausdrückliche Waffenwahl bestimmt das Kit die Standardwaffe.
+
+| Waffe | Bauart | Magazin | Feuerart | Credits pro Einsatz |
+| --- | --- | --- | --- | --- |
+| VX-9 | Kompakte Maschinenpistole | 24 | Automatik | 0 |
+| AR-4 | Sturmgewehr | 30 | Automatik | 0 |
+| BR-12 | Bullpup mit hinten liegendem Magazin | 32 | Automatik | 250 |
+| SG-8 | Pumpgun mit Röhrenmagazin | 8 | Einzelschuss, zehn Schrotpellets | 175 |
+| DMR-7 | Langes Präzisionsgewehr | 12 | Halbautomatik | 325 |
+| SR-90 | Repetiergewehr mit Zielfernrohr | 5 | Einzelschuss mit Repetierzyklus | 550 |
+| MG-60 | Maschinengewehr mit Munitionsgurt | 60 | Automatik | 425 |
+| RV-6 | Revolver mit ausschwenkbarer Trommel | 6 | Ein Schuss pro Klick | 0 |
+
+Der **SKILLTREE** ersetzt den bisherigen Upgrade-Shop. Vier Äste enthalten je sechs Fähigkeiten mit sichtbaren Verbindungen und Voraussetzungen:
+
+- **Kampf:** Schaden, schnelleres Nachladen und weniger Rückstoß.
+- **Schutz:** Rüstung, bessere Heilung, Schadensminderung und mehr Lebenspunkte.
+- **Feld:** Ausdauer, Regeneration, Bewegung, schnellere Versorgung und zusätzliche Medkits.
+- **Logistik:** Rucksackplätze, schnellere Kistensuche, Reservemunition und kürzere Extraktion.
+
+Du beginnst mit drei Skillpunkten. Alle 250 XP steigt dein Level und du erhältst einen weiteren Punkt. Ein normaler Gegner bringt 50 XP, ein Elitegegner 100 XP, das erstmalige Aufnehmen eines Handelsgegenstands 10 XP und eine erfolgreiche Extraktion 150 XP. Abwerfen und erneutes Aufnehmen vergibt keine zusätzlichen XP. Verdiente XP bleiben auch bei einem gescheiterten Raid erhalten. Normale Knoten kosten einen Punkt, Meisterschaften zwei und benötigen beide vorhergehenden Pfade. Freigeschaltete Fähigkeiten bleiben dauerhaft aktiv.
+
+Bereits gekaufte Rüstungs-, Rucksack- und Waffenränge werden beim Laden automatisch in passende Skillknoten übernommen. Ihr Effekt bleibt erhalten, wird nicht doppelt angewendet und verbraucht keine der drei neuen Startpunkte. Credits, Lager und Einstellungen bleiben erhalten.
 
 ## Kisten und Beute
 
@@ -69,9 +95,9 @@ Die Suche findet Einstellungen über alle Kategorien. Änderungen wirken sofort 
 4. An einer Extraktionszone E drücken und acht Sekunden in der Zone bleiben.
 5. In der Basis unter **Lager** den Extraktionsrucksack einzeln oder mit **Alles einlagern** leeren. Vorher ist der nächste Raid gesperrt.
 6. Unter **Markt** einen gelagerten Gegenstand auswählen, den Wunschpreis eingeben und eine Laufzeit von 2, 5 oder 10 Minuten wählen.
-7. Unter **Postfach** Verkaufserlöse beanspruchen oder unverkaufte Waren wieder ins Lager holen. Credits finanzieren Kits und permanente Upgrades.
+7. Unter **Postfach** Verkaufserlöse beanspruchen oder unverkaufte Waren wieder ins Lager holen. Credits finanzieren Kits und Waffen; XP liefern die Punkte für permanente Skills.
 
-Die Runde dauert maximal zwölf Minuten. Tod, Ablauf der Zeit oder Aufgabe verlieren die ungesicherte Beute. Erfolgreich extrahierte Gegenstände bleiben erhalten; nur Abschuss- und Relaisboni werden direkt gutgeschrieben. Das Scout-Kit kostet nichts, das Assault-Kit wird beim Raidstart bezahlt. Kontostand, Upgrades, Lager, Extraktionsrucksack, Angebote und Postfach werden lokal gespeichert. Ein laufender Raid wird beim Schließen nicht gespeichert. Vorhandene Spielstände behalten Credits und Upgrades.
+Die Runde dauert maximal zwölf Minuten. Tod, Ablauf der Zeit oder Aufgabe verlieren die ungesicherte Beute. Erfolgreich extrahierte Gegenstände bleiben erhalten; Abschuss- und Relaisboni werden direkt gutgeschrieben. Das Scout-Kit kostet nichts, das Assault-Kit und kostenpflichtige Waffen werden beim Raidstart bezahlt. Kontostand, Skills, XP, Waffenwahl, Lager, Extraktionsrucksack, Angebote und Postfach werden lokal gespeichert. Ein laufender Raid wird beim Schließen nicht gespeichert.
 
 ## Markt und Rucksack
 
@@ -122,6 +148,9 @@ pnpm package
 
 - `src/simulation.js`: Regeln, Gegner, Treffer, Physik, Extraktion, Wirtschaft und Speicherprüfung.
 - `src/economy.js`: dauerhafte Gegenstände, Lager, zeitabhängige Preise, Käuferprüfungen und Postfach.
+- `src/weapons.js`: gemeinsame Werte, Feuerarten, Modelle und Einsatzpreise aller acht Waffen.
+- `src/progression.js`: 24 Skillknoten, Voraussetzungen, XP, Effekte und Migration alter Upgrades.
+- `src/armory-ui.js` / `src/progression-ui.js`: Waffenwahl und interaktiver Skilltree.
 - `src/recoil.js`: sanfte, begrenzte Rückstoßwinkel, gemeinsam für Kamera und Trefferberechnung.
 - `src/layout.js`: gemeinsame Karte für Kollisionen, Darstellung und Übersicht.
 - `src/render.js`: Three.js-Welt, Beleuchtung, Waffe, Gegneranimationen und Effekte.
@@ -135,7 +164,7 @@ pnpm package
 - `platform.cjs` / `preload.cjs`: schmale Desktop-Schnittstelle, Host-Lebensdauer und Internet-Tunnel.
 - `launcher/`: automatische GitHub-Prüfung, verifizierter Download, sichere Archivextraktion und Versionsauswahl.
 
-Eine Karte, zwei Einsatz-Kits, zwei Schwierigkeiten, drei dauerhafte Upgrade-Kategorien. Solo gegen KI oder privater Koop für genau zwei Spieler. Lager und Markt bleiben pro Spieler lokal; es gibt keinen gemeinsamen öffentlichen Handelsmarkt oder öffentliches Matchmaking. Modelle und Texturen werden lokal erzeugt. Die Sounds verwenden mitgelieferte Aufnahmen: echte M45- und AK-47-Schüsse als Klangbasis der fiktiven Waffen, Airsoft-Nachlademechanik, Schritte auf hartem Boden und Wind. Gebäude bilden Außenkulisse und Deckung, keine vollständig begehbaren Innenräume.
+Eine Karte mit fünf begehbaren Gebäuden, zwei Einsatz-Kits, acht Waffen, zwei Schwierigkeiten und 24 permanente Skills. Solo gegen KI oder privater Koop für genau zwei Spieler. Lager und Markt bleiben pro Spieler lokal; es gibt keinen gemeinsamen öffentlichen Handelsmarkt oder öffentliches Matchmaking. Modelle und Texturen werden lokal erzeugt. Die Sounds verwenden mitgelieferte Aufnahmen: echte M45- und AK-47-Schüsse als bearbeitete Klangbasis der fiktiven Waffen, Airsoft-Nachlademechanik, Schritte auf hartem Boden und Wind.
 
 Version 1.1.0 ersetzt die synthetischen Schüsse und Schritte. Schussvarianten wiederholen sich nicht unmittelbar; die beiden Waffen haben unterschiedliche Klangquellen. Gegnerklänge folgen Entfernung, Blickrichtung und Hindernissen. Schritte hängen von tatsächlicher Bewegung ab, Ducken ist leiser, Sprinten kräftiger. Pause und Tod brechen geplante Nachladegeräusche ab. Der Mixer begrenzt gleichzeitig aktive Stimmen und Spitzenpegel. `node scripts/qa-audio.mjs` prüft die echte Stereo-Ausgabe gegen den laufenden Vite-Server.
 

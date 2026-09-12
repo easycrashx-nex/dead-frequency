@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRecoil } from '../src/recoil.js';
+import { WEAPONS } from '../src/weapons.js';
 
 test('sustained fire stays bounded in each stance and has negligible sideways motion', () => {
   for (const weapon of ['VX-9', 'AR-4']) for (const aim of [false, true]) for (const crouch of [false, true]) {
@@ -72,4 +73,18 @@ test('invalid time steps leave state finite and a rested burst restarts its patt
   for (const dt of [NaN, Infinity, -1, 0]) recoil.update(dt);
   assert.deepEqual(recoil.offset(), initial);
   recoil.update(1); recoil.shot(); assert.deepEqual(recoil.offset(), initial);
+});
+
+test('eight weapon recoil profiles remain stable and the trained recoil modifier reduces the actual aim offset', () => {
+  const kicks = [];
+  for (const weapon of WEAPONS) {
+    const normal=createRecoil(),trained=createRecoil();
+    normal.shot({weapon:weapon.id}); trained.shot({weapon:weapon.id,multiplier:.85});
+    assert.ok(normal.offset().pitch>0);assert.ok(trained.offset().pitch<normal.offset().pitch);
+    kicks.push(normal.offset().pitch);
+    for(let i=0;i<500;i++){normal.shot({weapon:weapon.id});normal.update(weapon.fireInterval);}
+    assert.ok(normal.offset().pitch<.1 && Math.abs(normal.offset().yaw)<.001,weapon.id);
+    normal.update(.6);assert.deepEqual(normal.offset(),{pitch:0,yaw:0});
+  }
+  assert.ok(new Set(kicks).size>=6,'Weapon families should have distinct recoil impulses');
 });

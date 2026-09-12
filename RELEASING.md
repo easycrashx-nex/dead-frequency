@@ -18,3 +18,5 @@ Bei Änderungen an Einstellungen prüft `node scripts/qa-settings-native.mjs` di
 `node scripts/qa-interiors-native.mjs` prüft die begehbaren Gebäude in der neuen Windows-Ausgabe. Nach Änderungen an gemeinsamer Weltgeometrie zusätzlich den Koop-Test ausführen, der auch den Gebäudezutritt beider Spieler und gemeinsame Innenraumbeute überprüft.
 
 `node scripts/qa-containers-native.mjs` prüft alle sieben Kistentypen, Öffnen und Suchen, Entnehmen und Abwerfen sowie die Weitergabe neuer Gegenstände an Lager, Markt und Postfach in der paketierten Windows-EXE. Der Koop-Test prüft gleichzeitig geöffnete Kisten und die Vergabe eines Gegenstands an genau einen Spieler.
+
+`node scripts/qa-progression-native.mjs` prüft in der Windows-EXE die Migration alter Upgrades, alle 24 Skillknoten, acht Waffenmodelle und ihre Auswahl, tatsächliche Feuerarten, modifizierte Nachladezeiten, Treffer, XP und dauerhafte Speicherung. Der Koop-Test verwendet verschiedene Arsenalwaffen auf beiden Clients. Der Launcher-Handoff prüft bei einem alten Spielstand zusätzlich die Übernahme gekaufter Upgrade-Ränge in den Skilltree.
