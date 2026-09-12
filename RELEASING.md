@@ -14,3 +14,5 @@ Der Name des Windows-Assets ist Teil des Updatevertrags. Das ZIP muss den komple
 Historische Releases bleiben erhalten. Keine Zugangsdaten, Testprofile, temporären Einladungslinks oder Laufzeitlogs committen. Cloudflared wird beim Build ausschließlich aus der fest versionierten offiziellen Quelle geladen und gegen den hinterlegten SHA-256 geprüft.
 
 Bei Änderungen an Einstellungen prüft `node scripts/qa-settings-native.mjs` die neue EXE einschließlich Migration, aller 55 Optionen, Tastenbelegung, Vollbild und Bedienung im Raid. Für den echten automatischen Versionswechsel nach der Veröffentlichung `DF_QA_BASELINE_EXE` auf die EXE einer früheren veröffentlichten Version setzen und `node scripts/qa-launcher-handoff.mjs` ausführen. Dieser Test verwendet ein isoliertes Profil, übernimmt Fortschritt und bestehende Einstellungen und prüft den Neustart ohne Benutzereingriff.
+
+`node scripts/qa-interiors-native.mjs` prüft die begehbaren Gebäude in der neuen Windows-Ausgabe. Nach Änderungen an gemeinsamer Weltgeometrie zusätzlich den Koop-Test ausführen, der auch den Gebäudezutritt beider Spieler und gemeinsame Innenraumbeute überprüft.

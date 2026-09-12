@@ -2,6 +2,11 @@
 
 A Windows 3D FPS extraction shooter: offline solo and private two-player cooperative raids. German interface. Industrial coastal exclusion zone at warm sunset, olive concrete, orange industrial accents, teal shadows. Twelve-minute repeatable raids on a 300×300 metre map. Extraction sends loot into a personal intake; manual stash, local real-time market and mailbox. GitHub Releases provide automatic verified updates. Internet co-op uses a temporary cloudflared tunnel; LAN mode connects directly. Current implementation and tests take precedence over historical notes below.
 
+## Version 1.5 interiors
+- Five existing building footprints contain accessible interiors: entry-booth, warehouse, rail-office, customs-office and south-workshop. `OBSTACLES` still describes outer map footprints; `INTERIORS` describes doors, shared solid parts and loot locations; `COLLIDERS` replaces those five monolithic boxes for physics and traces.
+- Interior solid y values are box centers. Navigation ignores overhead solids and uses only geometry intersecting standing characters. Rendering consumes the same wall, ceiling and fixture dimensions; decoration must leave door openings and walkways clear.
+- Doorways remain open in this release. Interior loot, shots, AI sight and movement use the existing authoritative solo/co-op simulation. Settings and player profiles retain their existing storage format.
+
 ## Version 1.4 settings
 - `settings.js` defines six categories, 43 fields and 12 key bindings, bounded migration, conflict checks and category resets. Existing `dead-frequency.settings.v1` values migrate in place; profile data uses separate keys.
 - `settings-ui.js` renders searchable controls with immediate persistence and a HUD preview. The utility dialog owns keyboard focus and blocks gameplay input while open.

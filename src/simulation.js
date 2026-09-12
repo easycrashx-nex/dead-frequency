@@ -1,5 +1,5 @@
 import RAPIER from '@dimforge/rapier3d-compat';
-import { layout, OBSTACLES, SPAWN, EXTRACTIONS, RELAY, WORLD_SIZE } from './layout.js';
+import { layout, COLLIDERS, INTERIORS, SPAWN, EXTRACTIONS, RELAY, WORLD_SIZE } from './layout.js';
 import { validateEconomy, createItem } from './economy.js';
 
 export const KIT_COSTS = { scout: 0, assault: 350 };
@@ -9,6 +9,7 @@ export const UPGRADE_COSTS = {
 export const RAID_SECONDS = 720;
 const PLAYER_RADIUS = 0.34;
 const PLAYER_CENTER = 0.86;
+const WALK_COLLIDERS = COLLIDERS.filter(o => o.y - o.h / 2 < PLAYER_CENTER * 2 && o.y + o.h / 2 > .02);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const integer = (value, fallback = 0, max = 1e9) => Number.isFinite(value) ? clamp(Math.floor(value), 0, max) : fallback;
@@ -52,10 +53,10 @@ function rayBox(origin, direction, min, max) {
 
 export function traceObstacle(origin, direction, maxDistance = 160) {
   let nearest = maxDistance;
-  for (const o of OBSTACLES) {
+  for (const o of COLLIDERS) {
     const t = rayBox(origin, direction,
-      { x: o.x - o.w / 2, y: 0, z: o.z - o.d / 2 },
-      { x: o.x + o.w / 2, y: o.h, z: o.z + o.d / 2 });
+      { x: o.x - o.w / 2, y: o.y - o.h / 2, z: o.z - o.d / 2 },
+      { x: o.x + o.w / 2, y: o.y + o.h / 2, z: o.z + o.d / 2 });
     nearest = Math.min(nearest, t);
   }
   if (direction.y < -1e-6) nearest = Math.min(nearest, -origin.y / direction.y);
@@ -70,21 +71,51 @@ export function hasLineOfSight(a, b) {
   return traceObstacle({ x: a.x, y: a.y ?? 1.35, z: a.z }, d, length) >= length - 0.02;
 }
 
-export function isWalkable(x, z, radius = 0.48) {
+export function isWalkable(x, z, radius = 0.48, y = 0) {
+  if (![x, z, radius, y].every(Number.isFinite) || radius < 0) return false;
   if (Math.abs(x) > WORLD_SIZE / 2 - 1 || Math.abs(z) > WORLD_SIZE / 2 - 1) return false;
-  return !OBSTACLES.some(o => Math.abs(x - o.x) < o.w / 2 + radius && Math.abs(z - o.z) < o.d / 2 + radius);
+  return !(y === 0 ? WALK_COLLIDERS : COLLIDERS).some(o => o.y - o.h / 2 < y + PLAYER_CENTER * 2 && o.y + o.h / 2 > y + .02
+    && Math.abs(x - o.x) < o.w / 2 + radius && Math.abs(z - o.z) < o.d / 2 + radius);
 }
 
-// A shared navigation grid keeps all patrols and flanks out of solid buildings.
+// Thin walls can lie between two free grid cells. Test the swept agent radius
+// as well as cell occupancy; cache both directions for later patrol routes.
+function walkSegmentClear(from, to, radius) {
+  const dx = to.x - from.x, dz = to.z - from.z;
+  for (const o of WALK_COLLIDERS) {
+    const minX = o.x - o.w / 2 - radius, maxX = o.x + o.w / 2 + radius;
+    const minZ = o.z - o.d / 2 - radius, maxZ = o.z + o.d / 2 + radius;
+    let near = 0, far = 1;
+    if (Math.abs(dx) < 1e-8) { if (from.x < minX || from.x > maxX) continue; }
+    else { const a = (minX - from.x) / dx, b = (maxX - from.x) / dx; near = Math.max(near, Math.min(a, b)); far = Math.min(far, Math.max(a, b)); }
+    if (Math.abs(dz) < 1e-8) { if (from.z < minZ || from.z > maxZ) continue; }
+    else { const a = (minZ - from.z) / dz, b = (maxZ - from.z) / dz; near = Math.max(near, Math.min(a, b)); far = Math.min(far, Math.max(a, b)); }
+    if (near <= far) return false;
+  }
+  return true;
+}
+
+// A shared navigation grid connects streets and the accessible ground floors.
 const CELL = 2, GRID_SIZE = Math.ceil(WORLD_SIZE / CELL), GRID_ORIGIN = -WORLD_SIZE / 2 + CELL / 2;
 const gridPoint = id => ({ x: (id % GRID_SIZE) * CELL + GRID_ORIGIN, z: Math.floor(id / GRID_SIZE) * CELL + GRID_ORIGIN });
 const grid = Array.from({ length: GRID_SIZE * GRID_SIZE }, (_, id) => {
   const p = gridPoint(id); return isWalkable(p.x, p.z, 0.58);
 });
+const checkedEdges = new Uint16Array(grid.length), clearEdges = new Uint16Array(grid.length);
+function clearGridEdge(id, next, dx, dz) {
+  const bit = 1 << ((dz + 1) * 3 + dx + 1);
+  if (!(checkedEdges[id] & bit)) {
+    const reverse = 1 << ((1 - dz) * 3 + 1 - dx);
+    checkedEdges[id] |= bit; checkedEdges[next] |= reverse;
+    if (walkSegmentClear(gridPoint(id), gridPoint(next), .58)) { clearEdges[id] |= bit; clearEdges[next] |= reverse; }
+  }
+  return !!(clearEdges[id] & bit);
+}
 function gridId(p) { return clamp(Math.round((p.x - GRID_ORIGIN) / CELL), 0, GRID_SIZE - 1) + clamp(Math.round((p.z - GRID_ORIGIN) / CELL), 0, GRID_SIZE - 1) * GRID_SIZE; }
-function closestFree(p) {
+function closestFree(p, connectionRadius = null) {
   const original = gridId(p);
-  if (grid[original]) return original;
+  const reachable = candidate => connectionRadius === null || walkSegmentClear(p, candidate, connectionRadius);
+  if (grid[original] && reachable(gridPoint(original))) return original;
   const cx = original % GRID_SIZE, cz = Math.floor(original / GRID_SIZE);
   let chosen = original, best = Infinity;
   for (let radius = 1; radius < 10; radius++) {
@@ -92,15 +123,20 @@ function closestFree(p) {
       const x = cx + dx, z = cz + dz, id = x + z * GRID_SIZE;
       if (x < 0 || x >= GRID_SIZE || z < 0 || z >= GRID_SIZE || !grid[id]) continue;
       const candidate = gridPoint(id), dist = distance(p, candidate);
-      if (dist < best) { best = dist; chosen = id; }
+      if (dist < best && reachable(candidate)) { best = dist; chosen = id; }
     }
     if (best < Infinity) return chosen;
   }
-  return chosen;
+  return connectionRadius === null ? chosen : -1;
 }
 
 export function findPath(from, to) {
-  const start = closestFree(from), end = closestFree(to);
+  // Agents can stand closer to a wall than the conservative 2 m grid allows.
+  // Attach such positions on their own side of the wall. Blocked POI centers
+  // retain the existing nearest-free destination semantics.
+  const start = closestFree(from, isWalkable(from.x, from.z, .38) ? .38 : null);
+  const end = closestFree(to, isWalkable(to.x, to.z, PLAYER_RADIUS) ? PLAYER_RADIUS : null);
+  if (start < 0 || end < 0) return [];
   if (start === end) return [gridPoint(end)];
   const costs = new Float32Array(grid.length).fill(Infinity);
   const previous = new Int32Array(grid.length).fill(-1);
@@ -148,6 +184,7 @@ export function findPath(from, to) {
       const next = current + dx + dz * GRID_SIZE;
       if (!grid[next] || closed[next]) continue;
       if (dx && dz && (!grid[current + dx] || !grid[current + dz * GRID_SIZE])) continue;
+      if (!clearGridEdge(current, next, dx, dz)) continue;
       const cost = costs[current] + (dx && dz ? 1.414214 : 1);
       if (cost >= costs[next]) continue;
       costs[next] = cost; previous[next] = current;
@@ -157,7 +194,10 @@ export function findPath(from, to) {
   if (!found) return [];
   const path = []; let cursor = end;
   while (cursor !== start && cursor !== -1) { path.push(gridPoint(cursor)); cursor = previous[cursor]; }
-  return path.reverse();
+  path.reverse();
+  const entry = gridPoint(start);
+  if (distance(from, entry) > .001 && !walkSegmentClear(from, path[0], .38)) path.unshift(entry);
+  return path;
 }
 
 const LOOT_SPOTS = [
@@ -174,6 +214,7 @@ const LOOT_SPOTS = [
   [-18, 119, 2], [-23, 104, 1], [-4, 110, 1], [-39, 122, 2],
   [-111, -4, 2], [-104, -23, 3], [-136, 0, 2], [-111, 20, 1],
   [-68, -51, 1], [-59, 17, 1], [41, -89, 1], [63, 52, 1], [16, 77, 1],
+  ...INTERIORS.flatMap(room => room.lootSpots.map(({ x, z, tier }) => [x, z, tier])),
 ];
 export const TREASURES = [
   [{ name: 'Kupferspulen', value: 120 }, { name: 'Werkzeugset', value: 160 }, { name: 'Industriefilter', value: 140 }],
@@ -209,7 +250,7 @@ export async function createGame(saved = null, options = {}) {
   const world = new RAPIER.World({ x: 0, y: -19, z: 0 });
   const halfWorld = WORLD_SIZE / 2;
   world.createCollider(RAPIER.ColliderDesc.cuboid(halfWorld, 0.25, halfWorld).setTranslation(0, -0.25, 0));
-  for (const o of OBSTACLES) world.createCollider(RAPIER.ColliderDesc.cuboid(o.w / 2, o.h / 2, o.d / 2).setTranslation(o.x, o.h / 2, o.z));
+  for (const o of COLLIDERS) world.createCollider(RAPIER.ColliderDesc.cuboid(o.w / 2, o.h / 2, o.d / 2).setTranslation(o.x, o.y, o.z));
   for (const [x, z, w, d] of [[-halfWorld, 0, 1, WORLD_SIZE], [halfWorld, 0, 1, WORLD_SIZE], [0, -halfWorld, WORLD_SIZE, 1], [0, halfWorld, WORLD_SIZE, 1]]) {
     world.createCollider(RAPIER.ColliderDesc.cuboid(w / 2, 10, d / 2).setTranslation(x, 5, z));
   }
@@ -441,7 +482,8 @@ export async function createGame(saved = null, options = {}) {
     const next = enemy.path[0];
     if (!next) return;
     const dx = next.x - enemy.x, dz = next.z - enemy.z, len = Math.hypot(dx, dz);
-    if (len < 0.25) { enemy.path.shift(); return; }
+    // Stay within the .20 m clearance margin between grid and agent radii.
+    if (len < 0.15) { enemy.path.shift(); return; }
     const step = Math.min(speed * dt, len), nx = enemy.x + dx / len * step, nz = enemy.z + dz / len * step;
     if (isWalkable(nx, nz, 0.38)) { enemy.x = nx; enemy.z = nz; }
     else { enemy.pathTimer = 0; enemy.path = []; }
@@ -578,7 +620,7 @@ export async function createGame(saved = null, options = {}) {
     endRaid(reason = 'Einsatz abgebrochen') { finish(false, reason); },
     // Reconcile physics and state for deterministic replay setup and QA tooling.
     teleport(x, z, y = 0.02) {
-      if (disposed || ![x, y, z].every(Number.isFinite) || !isWalkable(x, z, PLAYER_RADIUS) || y < 0 || y > 20) return false;
+      if (disposed || ![x, y, z].every(Number.isFinite) || !isWalkable(x, z, PLAYER_RADIUS, y) || y < 0 || y > 20) return false;
       body.setTranslation({ x, y: y + PLAYER_CENTER, z }, true);
       body.setNextKinematicTranslation({ x, y: y + PLAYER_CENTER, z });
       world.step();

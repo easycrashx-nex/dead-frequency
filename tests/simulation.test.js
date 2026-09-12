@@ -43,7 +43,7 @@ test('navigation connects spawn, both exits, relay and accessible POI approaches
     assert.ok(path.length > 0, `No route to ${target.name ?? 'relay'}`);
     for (const point of path) assert.equal(isWalkable(point.x, point.z), true);
   }
-  assert.equal(hasLineOfSight({ x: -25, z: 0 }, { x: -25, z: -35 }), false);
+  assert.equal(hasLineOfSight({ x: -40, z: 40 }, { x: -40, z: 0 }), false);
   assert.equal(hasLineOfSight({ x: -50, z: 40 }, { x: -50, z: -40 }), true);
 });
 
@@ -57,7 +57,7 @@ test('Rapier blocks solid barriers and permits lateral sliding, diagonal speed s
   assert.equal(game.teleport(-50, 0), true);
   const before = { ...game.state.player }; run(game, 1, { forward: 1, right: 1, yaw: 0 });
   assert.ok(Math.hypot(game.state.player.x - before.x, game.state.player.z - before.z) < 4.5);
-  assert.equal(game.teleport(-25, -15), false);
+  assert.equal(game.teleport(-40, 21), false);
   assert.equal(game.teleport(500, 0), false);
 });
 
@@ -87,8 +87,8 @@ test('hitscan respects cover, head damage and cooldown; reload conserves ammunit
   run(game, 0.12); assert.equal(game.fire(aimAt(game, enemy)), true);
   assert.equal(enemy.dead, true); assert.equal(game.state.raid.kills, 1);
   assert.ok(game.drainEvents().some(e => e.type === 'kill' && e.headshot));
-  game.teleport(-25, 1);
-  Object.assign(enemy, { x: -25, z: -32, hp: 95, dead: false, fireTimer: 100 });
+  game.teleport(-40, 34);
+  Object.assign(enemy, { x: -40, z: 9, hp: 95, dead: false, fireTimer: 100 });
   run(game, 0.12); game.fire(aimAt(game, enemy)); assert.equal(enemy.hp, 95);
   enemy.dead = true;
   game.state.player.ammo = 3; game.state.player.reserve = 9;

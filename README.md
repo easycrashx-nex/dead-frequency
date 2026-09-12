@@ -1,4 +1,4 @@
-# DEAD FREQUENCY 1.4.0
+# DEAD FREQUENCY 1.5.0
 
 Ein Extraction-Shooter aus der Ego-Perspektive für Windows x64: allein offline oder zu zweit im Koop. Durchsuche den 300 × 300 Meter großen Sektor 07, bekämpfe Patrouillen, sichere Beute und handle nach der Extraktion damit.
 
@@ -27,6 +27,18 @@ Die Internet-Einladung läuft über den mitgelieferten Cloudflare-Tunnel, benöt
 Bei jedem normalen Start prüft der Launcher das neueste stabile [GitHub-Release](https://github.com/easycrashx-nex/dead-frequency/releases/latest). Eine neuere Version wird ohne Bestätigung heruntergeladen, anhand von SHA-256 geprüft und in einem separaten Versionsordner vorbereitet. Anschließend startet automatisch die neue Version. Es muss kein ZIP von Hand heruntergeladen oder entpackt werden. Während eines Raids wird kein Update eingespielt.
 
 Bei fehlendem Internet oder einem fehlerhaften Download startet die vorhandene Version. Frühere vollständige Installationen bleiben erhalten; ältere Releases ersetzen keine neuere Version. Spielstände liegen getrennt von den Programmdateien im Windows-Benutzerprofil. Für Updates werden ausschließlich öffentliche GitHub-Release-Dateien dieses Projekts verwendet; Zugangstoken werden nicht mitgeliefert.
+
+## Begehbare Gebäude
+
+Fünf Gebäude haben offene Eingänge, eingerichtete Innenräume und zusätzliche Beute:
+
+- **Wachhaus** direkt östlich vom Startpunkt.
+- **Lager 04** im zentralen Lagerbezirk.
+- **Bahnbüro** am Güterbahnhof im Nordwesten.
+- **Zollbüro** an der Zollstation im Osten.
+- **Südwerkstatt** im Südlager.
+
+Die Karte hebt diese Gebäude und ihre Eingänge hervor. Laufe durch die offenen Türen hinein; ein Ladebildschirm oder eine Interaktion ist nicht nötig. Die Räume haben jeweils einen zweiten Ausgang. Wände und Einrichtung bieten Deckung; Schüsse, Sichtlinien, Beuteinteraktionen und Gegnerwege berücksichtigen die tatsächlichen Öffnungen. Dieselben Räume und dieselbe Beute stehen auch im Koop zur Verfügung.
 
 ## Einstellungen
 

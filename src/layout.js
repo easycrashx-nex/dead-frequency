@@ -144,7 +144,54 @@ export const OBSTACLES = [
   { id: 'route-south-2', kind: 'crate', x: -43, z: 76, w: 3, d: 3, h: 1.5 },
   { id: 'route-south-3', kind: 'container', x: 24, z: 101, w: 3.5, d: 12, h: 3, color: '#a75c31' },
 ];
+// Footprints remain stable for the district map and roof silhouettes. These
+// ground-floor rooms replace only their original solid collision blocks.
+function interior(id, name, type, ceilingHeight, fixtures, lootSpots) {
+  const footprint = OBSTACLES.find(obstacle => obstacle.id === id);
+  const { x, z, w, d, h } = footprint, thickness = .36;
+  const width = id === 'entry-booth' ? 3.2 : 4, height = 3;
+  const doors = ['north', 'south'].map(side => {
+    const sign = side === 'north' ? -1 : 1, doorZ = z + sign * d / 2;
+    return { side, x, z: doorZ, width, height, outside: { x, z: doorZ + sign * 2 }, inside: { x, z: doorZ - sign * 2 } };
+  });
+  const solids = [];
+  const box = (suffix, kind, sx, sy, sz, sw, sh, sd, style) => solids.push({ id: `${id}-${suffix}`, kind, x: sx, y: sy, z: sz, w: sw, h: sh, d: sd, ...(style ? { style } : {}) });
+  for (const sign of [-1, 1]) {
+    box(sign < 0 ? 'west-wall' : 'east-wall', 'wall', x + sign * (w - thickness) / 2, ceilingHeight / 2, z, thickness, ceilingHeight, d);
+    const wallZ = z + sign * (d - thickness) / 2, side = sign < 0 ? 'north' : 'south';
+    for (const segment of [-1, 1]) box(`${side}-${segment < 0 ? 'left' : 'right'}-wall`, 'wall', x + segment * (w + width) / 4, ceilingHeight / 2, wallZ, (w - width) / 2, ceilingHeight, thickness);
+    box(`${side}-lintel`, 'wall', x, (ceilingHeight + height) / 2, wallZ, width, ceilingHeight - height, thickness);
+  }
+  box('ceiling', 'ceiling', x, (h + ceilingHeight) / 2, z, w, h - ceilingHeight, d);
+  for (const [suffix, style, dx, dz, sw, sh, sd] of fixtures) box(suffix, 'fixture', x + dx, sh / 2, z + dz, sw, sh, sd, style);
+  return { id, name, type, x, z, w, d, h, ceilingHeight, doors, solids, lootSpots: lootSpots.map(([dx, dz, tier]) => ({ x: x + dx, z: z + dz, tier })) };
+}
+
+export const INTERIORS = [
+  interior('entry-booth', 'WACHHAUS', 'guardhouse', 3.4, [
+    ['desk', 'desk', -2, .2, .9, 1.1, 2.2], ['cabinet', 'cabinet', 2.15, -1.7, .8, 2.3, 1.2],
+  ], [[-1.3, -1.8, 0], [1.35, 1.4, 1]]),
+  interior('warehouse', 'LAGER 04', 'warehouse', 4, [
+    ['west-shelf', 'shelf', -8, -3, 2, 2.6, 5], ['east-shelf', 'shelf', 8, -4, 2, 2.6, 5],
+    ['packing-bench', 'workbench', 5, 6, 3, 1.1, 3],
+  ], [[-5, -4, 2], [5, -5, 2], [5, 3.5, 3]]),
+  interior('rail-office', 'BAHNBÜRO', 'rail-office', 3.4, [
+    ['dispatch-desk', 'desk', -9, -2, 3.2, 1.05, 1.6], ['archive-cabinet', 'cabinet', 9, -3, 1.2, 2.4, 3],
+    ['ticket-counter', 'counter', 5, 3, 4, 1.2, 1.4],
+  ], [[-7, 0, 2], [7, -1, 3], [-8, 3, 1]]),
+  interior('customs-office', 'ZOLLBÜRO', 'customs-office', 3.4, [
+    ['inspection-counter', 'counter', -6, -3, 5, 1.1, 1.3], ['records-cabinet', 'cabinet', 8, -4, 1.1, 2.4, 3],
+    ['customs-desk', 'desk', 6, 4, 3, 1.1, 1.8],
+  ], [[-6, -1, 2], [6, 0, 3], [-6, 5, 2]]),
+  interior('south-workshop', 'SÜDWERKSTATT', 'workshop', 4, [
+    ['repair-bench', 'workbench', -6, -3, 2, 1.1, 4], ['lathe', 'machine', 6, 0, 2.2, 2.3, 2.8],
+    ['parts-shelf', 'shelf', -5, 5, 4, 2.5, 1.5],
+  ], [[-4, -3, 1], [4, 2, 2], [-4, 3, 2]]),
+];
+const interiorById = new Map(INTERIORS.map(room => [room.id, room]));
+export const COLLIDERS = OBSTACLES.flatMap(obstacle => interiorById.get(obstacle.id)?.solids ?? [{ ...obstacle, y: obstacle.h / 2 }]);
+
 export const layout = {
   size: WORLD_SIZE, obstacles: OBSTACLES, pois: POIS,
-  extractions: EXTRACTIONS, relay: RELAY, spawn: SPAWN,
+  extractions: EXTRACTIONS, relay: RELAY, spawn: SPAWN, interiors: INTERIORS, colliders: COLLIDERS,
 };

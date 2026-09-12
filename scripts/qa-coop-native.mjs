@@ -49,10 +49,24 @@ try{
   assert.ok(await guest.page.evaluate(()=>__DF.state.player.ammo<24));assert.equal(await host.page.evaluate(()=>__DF.state.player.ammo),24);pass('Real mouse fire synchronizes enemy damage and death while ammunition stays per player');
   await guest.page.keyboard.press('Escape');await guest.page.waitForFunction(()=>__DF.state.phase==='paused');const raidTime=await guest.page.evaluate(()=>__DF.state.raid.timeLeft);await guest.page.waitForTimeout(700);assert.ok(await guest.page.evaluate(t=>__DF.state.raid.timeLeft<t-.4,raidTime));pass('The shared raid continues while one player opens the local menu');
   await host.app.evaluate(()=>{for(const member of global.__DF_HOST().players.values())member.game.state.enemies.splice(0);});
-  await host.app.evaluate(()=>{const session=global.__DF_HOST();const loot=[...session.players.values()][0].game.state.loot.find(item=>!item.kind&&!item.taken);for(const member of session.players.values())member.game.teleport(loot.x,loot.z);});
+  const interiorDoor=await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];const room=members[0].game.layout.interiors.find(room=>room.id==='warehouse'),door=room.doors.find(door=>door.side==='south');members.forEach((member,index)=>member.game.teleport(door.outside.x+(index? .45:-.45),door.outside.z));return door;});
+  await guest.page.waitForTimeout(500);
+  for(const client of [host,guest]){
+    await client.page.bringToFront();await client.page.evaluate(()=>{__DF.state.player.yaw=0;__DF.state.player.pitch=0;__DF.syncLook();__DF.resume();});
+    await client.page.locator('#game').click().catch(()=>{});await client.page.waitForFunction(()=>document.pointerLockElement);
+    await client.page.keyboard.down('KeyW');
+    try{await client.page.waitForFunction(z=>__DF.state.player.z<z-1.25,interiorDoor.z,{timeout:10000});}finally{await client.page.keyboard.up('KeyW');}
+  }
+  await guest.page.waitForTimeout(400);
+  const indoorPositions=await Promise.all([host.page.evaluate(()=>({self:__DF.state.player.z,partner:__DF.state.teammates[0].z})),guest.page.evaluate(()=>({self:__DF.state.player.z,partner:__DF.state.teammates[0].z}))]);
+  assert.ok(indoorPositions.every(positions=>positions.self<interiorDoor.z-1&&positions.partner<interiorDoor.z-1));
+  assert.ok(Math.abs(indoorPositions[0].partner-indoorPositions[1].self)<.7&&Math.abs(indoorPositions[1].partner-indoorPositions[0].self)<.7);
+  pass('Both actual Windows players enter the warehouse through its doorway and see matching indoor partner positions');
+  await guest.page.screenshot({path:path.join(out,'04-coop-interior.png')});
+  await host.app.evaluate(()=>{const session=global.__DF_HOST(),primary=[...session.players.values()][0].game,room=primary.layout.interiors.find(room=>room.id==='warehouse');const loot=primary.state.loot.find(item=>!item.kind&&!item.taken&&room.lootSpots.some(spot=>Math.hypot(item.x-spot.x,item.z-spot.z)<.05));if(!loot)throw new Error('No shared interior loot');for(const member of session.players.values())member.game.teleport(loot.x,loot.z);});
   await host.page.waitForTimeout(500);const lootId=await host.page.evaluate(()=>__DF.state.prompt?.id);assert.ok(lootId);
   await Promise.all([host.page.evaluate(()=>__DF.game.interact()),guest.page.evaluate(()=>__DF.game.interact())]);await host.page.waitForTimeout(400);
-  const bags=await Promise.all([host.page.evaluate(()=>__DF.state.raid.loot),guest.page.evaluate(()=>__DF.state.raid.loot)]);assert.equal(bags.flat().filter(x=>x.id===lootId).length,1);pass('Simultaneous looting gives a world item to exactly one player');
+  const bags=await Promise.all([host.page.evaluate(()=>__DF.state.raid.loot),guest.page.evaluate(()=>__DF.state.raid.loot)]);assert.equal(bags.flat().filter(x=>x.id===lootId).length,1);pass('Simultaneous indoor looting gives the shared warehouse item to exactly one player');
   const owner=bags[0].some(x=>x.id===lootId)?host:guest,receiver=owner===host?guest:host;
   await owner.page.evaluate(id=>__DF.game.dropItem(id),lootId);await receiver.page.waitForTimeout(400);await receiver.page.evaluate(()=>__DF.game.interact());await receiver.page.waitForTimeout(400);
   assert.ok(await receiver.page.evaluate(id=>__DF.state.raid.loot.some(x=>x.id===id),lootId));assert.equal(await owner.page.evaluate(id=>__DF.state.raid.loot.some(x=>x.id===id),lootId),false);pass('A dropped backpack item can be picked up by the teammate without duplication');

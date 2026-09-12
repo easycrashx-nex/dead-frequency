@@ -16,13 +16,21 @@ if(!baselineExe){
 }
 const env={...process.env,DEAD_FREQUENCY_QA_PROFILE:profile};
 const launchOptions=mode=>baselineExe?{executablePath:baselineExe,args:['--qa',mode],env,timeout:45000}:{args:[bootstrap,'--qa',mode],env,timeout:45000};
-const checks=[],phases=[],errors=[];let initial,updating,browser,baselineVersion;
+const checks=[],phases=[],errors=[];let initial,updating,browser,baselineVersion,expectedSettings;
 const pass=name=>{checks.push(name);console.log('PASS',name);};
 try{
   initial=await _electron.launch(launchOptions('--play'));let page=await initial.firstWindow();
   await page.waitForFunction(()=>window.__DF&&document.documentElement.dataset.ready==='true',null,{timeout:60000});
   baselineVersion=await initial.evaluate(({app})=>app.getVersion());
-  await page.evaluate(()=>{__DF.state.profile.credits=3456;__DF.persist();localStorage.setItem('dead-frequency.settings.v1',JSON.stringify({sensitivity:1.25,volume:.4,quality:'medium',fov:90}));});await initial.close();initial=null;
+  expectedSettings=await page.evaluate(()=>{
+    __DF.state.profile.credits=3456;__DF.persist();
+    const chosen={sensitivity:1.25,volume:.4,quality:'medium',fov:90};
+    if(__DF.settings.bindings)Object.assign(chosen,{headBob:.35,crosshairColor:'#75dce8',bindings:{...__DF.settings.bindings,forward:'KeyZ'}});
+    // Keep the old runtime consistent with the seed, including delayed native
+    // fullscreen events that legitimately persist current settings.
+    Object.assign(__DF.settings,chosen);
+    localStorage.setItem('dead-frequency.settings.v1',JSON.stringify(__DF.settings));return chosen;
+  });await initial.close();initial=null;
   pass(baselineExe?'The actual previously released EXE has an isolated player save and old settings':'An isolated older-version bootstrap has an existing player save');
   updating=await _electron.launch(launchOptions('--qa-launcher'));page=await updating.firstWindow();
   let rejectFallback;
@@ -51,8 +59,8 @@ try{
   await page.waitForFunction(()=>window.__DF&&document.documentElement.dataset.ready==='true',null,{timeout:60000});
   assert.equal(await page.evaluate(()=>__DF.state.profile.credits),3456);pass('The newly installed GitHub version starts automatically and preserves the player save');
   const settings=await page.evaluate(()=>__DF.settings);
-  for(const [key,value] of Object.entries({sensitivity:1.25,volume:.4,quality:'medium',fov:90}))assert.equal(settings[key],value);
-  pass('Existing sensitivity, volume, graphics profile and field of view survive the automatic update');
+  for(const [key,value] of Object.entries(expectedSettings))assert.deepEqual(settings[key],value,key);
+  pass('Existing settings, including customized motion, crosshair and bindings when supported, survive the automatic update');
   assert.equal(await page.evaluate(()=>__DF.state.phase),'hub');
   await page.screenshot({path:path.join(out,'02-updated-game.png')});
   for(const phase of ['downloading','verifying','extracting','starting'])assert.ok(phases.includes(phase),`Missing update phase ${phase}`);
@@ -61,7 +69,7 @@ try{
   assert.equal(offline.source,'installed');assert.equal(offline.version,version);assert.equal(offline.fallback,true);pass('With the network unavailable the fully reverified installed version is selected');
   const manifest=JSON.parse(await fs.readFile(path.join(path.dirname(offline.exe),'update-manifest.json'),'utf8'));assert.equal(manifest.version,version);
   assert.deepEqual(errors,[]);pass('Launcher reports no JavaScript errors');
-  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,liveGitHub:true,baselineVersion,actualReleasedBaseline:!!baselineExe,version,checks,phases,errors,automaticRelaunch:true,preservedCredits:3456,preservedSettings:true,offlineVersion:offline.version},null,2));
+  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,liveGitHub:true,baselineVersion,actualReleasedBaseline:!!baselineExe,version,checks,phases,errors,automaticRelaunch:true,preservedCredits:3456,preservedSettings:true,preservedSettingKeys:Object.keys(expectedSettings),offlineVersion:offline.version},null,2));
 }catch(error){await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,liveGitHub:true,version,checks,phases,errors,failure:error.stack,temporaryRoot:root},null,2));throw error;}
 finally{
   if(browser){for(const page of browser.contexts().flatMap(context=>context.pages()))await page.close().catch(()=>{});await browser.close().catch(()=>{});}
