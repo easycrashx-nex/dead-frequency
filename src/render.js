@@ -354,7 +354,7 @@ function makeInteriorBuilder(b, mats) {
       box(mats.darkMetal, 0, door.height + .47, .2, [door.width + .35, .1, .7]);
       box(light, 0, door.height + .411, .38, [1.45, .015, .2]);
       for (const side of [-1, 1]) box(mats.paint, side * (door.width / 2 - .28), .018, .72, [.075, .006, 1.35]);
-      box(nameMat, 0, Math.max(door.height + .96, ceilingHeight + .68), .027, [Math.min(w - .8, 4.3), .69, .018]);
+      box(nameMat, 0, Math.max(door.height + .96, ceilingHeight + .68), .12, [Math.min(w - .8, 4.3), .69, .018]);
     }
     // The inaccessible upper volume keeps the existing industrial skyline.
     b.box(mats.darkMetal, [x, h + .02, z], [w + .18, .16, d + .18]);
