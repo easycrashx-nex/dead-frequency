@@ -32,7 +32,7 @@ for filename, directory in [('DEAD-FREQUENCY-Windows.zip', app), ('DEAD-FREQUENC
             relative = source.relative_to(directory)
             if directory == project:
                 allowed_roots = {'src', 'public', 'scripts', 'tests', 'server', 'launcher', 'vendor', 'deploy', '.github'}
-                allowed_files = {'electron.cjs', 'preload.cjs', 'platform.cjs', 'online-platform.cjs', 'index.html', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'README.md', 'vite.config.js', '.gitignore', 'CONTRACT.md', 'CLOUDFLARED-LICENSE.txt', 'CLOUDFLARED-NOTICE.txt', 'RELEASING.md'}
+                allowed_files = {'electron.cjs', 'preload.cjs', 'platform.cjs', 'online-platform.cjs','admin-platform.cjs', 'index.html', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'README.md', 'vite.config.js', '.gitignore', 'CONTRACT.md', 'CLOUDFLARED-LICENSE.txt', 'CLOUDFLARED-NOTICE.txt', 'RELEASING.md'}
                 if (len(relative.parts) > 1 and relative.parts[0] not in allowed_roots) or (len(relative.parts) == 1 and relative.name not in allowed_files):
                     continue
                 if relative.suffix.lower() in {'.exe', '.partial', '.log'}:

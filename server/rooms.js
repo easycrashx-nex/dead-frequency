@@ -1,6 +1,8 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createCoopServer } from './coop-server.js';
 import { resolveLoadout } from '../src/loadouts.js';
+import { RAID_SPAWNS, getRaidSpawnPositions } from '../src/raid-spawns.js';
+import { isWalkable, hasLineOfSight } from '../src/simulation.js';
 
 const clone = value => structuredClone(value);
 const fail = (message, status = 409) => Object.assign(new Error(message), { status });
@@ -15,6 +17,7 @@ export function createRoomService({ store, publicOrigin, version, maxRooms = 2, 
   if (!Number.isInteger(maxRooms) || maxRooms < 1 || maxRooms > 32) throw new Error('Ungültiges Raumlimit.');
   const socketOrigin = origin.origin.replace(/^http/, 'ws');
   const rooms = new Map(), byToken = new Map(), byAccount = new Map(), tickets = new Map(), friendInvites = new Map();
+  const previousSpawns = new Map(), startedAt = clock();
   let closing = false;
 
   function userId(user) {
@@ -127,13 +130,18 @@ export function createRoomService({ store, publicOrigin, version, maxRooms = 2, 
     rooms.set(room.id, room); byToken.set(room.token, room);
     try {
       const member = claim(room, user, loadout);
-      room.server = await createRuntime({ listen: false, token: room.token, version, compatibleVersions: version === '1.13.0' ? ['1.12.0'] : [], startOptions: { difficulty },
+      room.server = await createRuntime({ listen: false, token: room.token, version, compatibleVersions: version === '1.14.0' ? ['1.13.0'] : version === '1.13.0' ? ['1.12.0'] : [], startOptions: { difficulty },
         sessionOptions: {
           minPlayers: mode === 'solo' ? 1 : 2, maxPlayers: mode === 'solo' ? 1 : 2,
-          onRaidStart(participants) {
+          previousSpawnId: () => [...room.members.keys()].map(id => previousSpawns.get(id)),
+          onRaidStart(participants, {spawn} = {}) {
             const profiles = participants.map(player => ({ accountId: playerMember(room, player.id)?.user.id, profile: player.profile }));
             if (profiles.some(player => !player.accountId) || !store.commitRaidStart(room.id, profiles)) throw fail('Einsatz konnte nicht sicher gespeichert werden.');
             room.started = true;
+            if(spawn)for(const id of room.members.keys()){
+              previousSpawns.delete(id);previousSpawns.set(id,spawn.id);
+              if(previousSpawns.size>10000)previousSpawns.delete(previousSpawns.keys().next().value);
+            }
             revokeRoomInvites(room.id);
           },
           onPlayerFinished(playerId, profile, outcome) {
@@ -253,8 +261,72 @@ export function createRoomService({ store, publicOrigin, version, maxRooms = 2, 
       for (const member of [...room.members.values()]) if (!member.playerId && !member.joining && member.expiresAt <= now) removeMember(room, member.user.id);
     }
   }
+  function adminOverview() {
+    return {uptime:Math.floor((clock()-startedAt)/1000),maxRooms,spawns:RAID_SPAWNS.map(spawn=>({...spawn})),
+      rooms:[...rooms.values()].map(room=>({...safeSummary(room),players:[...room.members.values()].map(member=>{
+        const state=room.server?.session.players.get(member.playerId)?.game?.state,p=state?.player;
+        return {userId:member.user.id,username:member.user.username,playerId:member.playerId,phase:state?.phase??'hub',
+          ...(p?{hp:p.hp,maxHp:p.maxHp,armor:p.armor,maxArmor:p.maxArmor,ammo:p.ammo,reserve:p.reserve,medkits:p.medkits,
+            x:p.x,y:p.y,z:p.z,downed:!!p.downed,godmode:!!p.adminGodmode,staminaUnlimited:!!p.adminStamina}:{})};
+      })}))};
+  }
+  function activePlayer(id) {
+    const room=rooms.get(byAccount.get(id)),member=room?.members.get(id),participant=room?.server?.session.players.get(member?.playerId);
+    if(!room||room.closing||room.failed||!participant?.connected||participant.game?.state.phase!=='raid')throw fail('Spieler ist in keinem aktiven Raid.');
+    return {room,member,participant,game:participant.game,p:participant.game.state.player};
+  }
+  async function adminAction(action,payload={}) {
+    if(closing)throw fail('Server wird neu gestartet.',503);
+    if(!payload||typeof payload!=='object'||Array.isArray(payload))throw fail('Ungültige Admin-Aktion.',400);
+    if(['room-close','enemies-clear'].includes(action)){
+      const room=rooms.get(payload.roomId);if(!room||room.closing||room.failed)throw fail('Lobby nicht verfügbar.',404);
+      if(action==='room-close'){await destroy(room);return {roomId:room.id,closed:true};}
+      const participant=[...room.server.session.players.values()].find(player=>player.game?.state.phase==='raid');
+      if(!participant)throw fail('Kein aktiver Raid.');
+      let count=0;for(const enemy of participant.game.state.enemies)if(!enemy.dead){enemy.dead=true;enemy.hp=0;count++;}
+      return {roomId:room.id,removed:count};
+    }
+    if(action==='kick'){
+      const room=rooms.get(byAccount.get(payload.userId)),member=room?.members.get(payload.userId);
+      if(!member)return {kicked:false};
+      if(member.playerId)room.server.disconnect(member.playerId,'Sitzung durch Administrator beendet.');else removeMember(room,payload.userId);
+      return {kicked:true};
+    }
+    if(!['heal','refill','revive','godmode','stamina','teleport-spawn','teleport-player'].includes(action))throw fail('Unbekannte Admin-Aktion.',400);
+    const {room,participant,game,p}=activePlayer(payload.userId);
+    if(['godmode','stamina'].includes(action)){
+      if(typeof payload.enabled!=='boolean')throw fail('Schalter muss ein Wahrheitswert sein.',400);
+      p[action==='godmode'?'adminGodmode':'adminStamina']=payload.enabled;
+      if(action==='stamina'&&payload.enabled)p.stamina=p.maxStamina;
+    }else if(action==='revive'){
+      if(!game.revive())throw fail('Nur ein genockter Spieler kann wiederbelebt werden.');
+    }else if(action==='heal'){
+      if(p.downed&&!game.revive())throw fail('Spieler kann nicht mehr wiederbelebt werden.');
+      p.hp=p.maxHp;p.armor=p.maxArmor;p.heal=0;
+    }else if(action==='refill'){
+      p.ammo=p.magSize;p.reserve=Math.max(p.reserve,p.weaponStats?.reserve??72);p.medkits=Math.max(p.medkits,4);p.reload=0;
+    }else{
+      let positions;
+      if(action==='teleport-spawn'){
+        const spawn=RAID_SPAWNS.find(value=>value.id===payload.spawnId);if(!spawn)throw fail('Unbekannter Einstiegspunkt.',400);
+        positions=getRaidSpawnPositions(spawn);
+      }else{
+        if(payload.targetUserId===payload.userId)throw fail('Bitte einen anderen Spieler wählen.',400);
+        const target=activePlayer(payload.targetUserId);if(target.room!==room)throw fail('Zielspieler muss im selben Raid sein.');
+        positions=Array.from({length:8},(_,index)=>{const angle=index*Math.PI/4,x=target.p.x+Math.cos(angle)*2.4,z=target.p.z+Math.sin(angle)*2.4;
+          return {x,z,y:target.game.layout.getSupportHeight(x,z,target.p.y)};}).filter(pos=>Math.abs(pos.y-target.p.y)<1&&hasLineOfSight({...target.p,y:target.p.y+1},{...pos,y:pos.y+1}));
+      }
+      const others=[...room.server.session.players.values()].filter(player=>player!==participant&&player.connected&&player.game?.state.phase==='raid').map(player=>player.game.state.player);
+      const target=positions.find(pos=>isWalkable(pos.x,pos.z,.48,pos.y+.02)&&others.every(other=>Math.hypot(other.x-pos.x,other.z-pos.z)>1));
+      if(!target||!game.teleport(target.x,target.z,target.y+.02))throw fail('Am Ziel ist kein freier, sicherer Platz.');
+      game.closeContainer();p.adminTeleportSequence=(p.adminTeleportSequence??0)+1;
+      participant.input={forward:0,right:0,yaw:p.yaw,pitch:p.pitch};
+      participant.jumpQueued=participant.jumpHeld=participant.fireQueued=participant.fireHeld=false;
+    }
+    return {userId:payload.userId,roomId:room.id,action};
+  }
   const timer = setInterval(() => { sweep().catch(onError); }, 5000); timer.unref?.();
-  return { create, join, leave, status, list, publicStatus, invite, invitations, respondInvitation, handleUpgrade, sweep,
+  return { create, join, leave, status, list, publicStatus, invite, invitations, respondInvitation, handleUpgrade, sweep, adminOverview, adminAction,
     metrics() { return { tickRate: 60, simulations: [...rooms.values()].filter(room => room.server).map(room => room.server.metrics()) }; },
     get size() { return rooms.size; },
     async close() { closing = true; clearInterval(timer); await Promise.all([...rooms.values()].map(destroy)); tickets.clear(); friendInvites.clear(); },

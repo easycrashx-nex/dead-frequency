@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const {fileURLToPath}=require('node:url');
 const {createPlatform}=require('./platform.cjs');
 const {createOnlinePlatform}=require('./online-platform.cjs');
+const {createAdminPlatform}=require('./admin-platform.cjs');
 const qa = process.argv.includes('--qa');
 if (qa && process.env.DEAD_FREQUENCY_QA_PROFILE) app.setPath('userData', path.resolve(process.env.DEAD_FREQUENCY_QA_PROFILE));
 app.setName('DEAD FREQUENCY');
@@ -52,6 +53,11 @@ app.whenReady().then(async()=>{
   win=createWindow({width:launcherMode?1040:1440,height:launcherMode?650:900});
   platform=createPlatform({app,request:net.fetch,refreshDns:()=>session.defaultSession.clearHostResolverCache(),onStatus:value=>{if(!win.isDestroyed())win.webContents.send('coop:status',value);}});
   const online=createOnlinePlatform({userData:app.getPath('userData'),safeStorage,request:net.fetch});
+  const admin=createAdminPlatform({request:net.fetch});
+  ipcMain.handle('admin:request',async(event,route,options)=>{
+    if(!trusted(event)||path.resolve(fileURLToPath(event.senderFrame.url))!==path.resolve(__dirname,'dist','index.html'))throw new Error('Unzulässiger Aufruf');
+    try{return await admin.adminRequest(route,options);}catch(error){return {adminError:{message:error.message,status:error.status}};}
+  });
   ipcMain.handle('online:request',(event,route,options)=>{
     if(!trusted(event)||path.resolve(fileURLToPath(event.senderFrame.url))!==path.resolve(__dirname,'dist','index.html'))throw new Error('Unzulässiger Aufruf');
     return online.onlineRequest(route,options);

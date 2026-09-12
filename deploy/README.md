@@ -72,3 +72,30 @@ node server/admin.js reset-password USERNAME
 
 The command requests the password twice without echo and revokes old HTTP
 sessions. Existing active raid sockets finish/disconnect separately.
+
+
+## Separate game administration (1.14)
+
+With the service database path configured, create or rotate a dedicated admin
+credential from a trusted server terminal:
+
+```sh
+cd /opt/dead-frequency/current
+sudo -u dead-frequency env DATA_PATH=/var/lib/dead-frequency/accounts.sqlite node server/admin.js set-admin ADMINNAME
+```
+
+The command prompts twice without echo. There is no default password; admin
+passwords require 14–128 characters. Never commit credentials or include them in
+release assets. Rotation invalidates existing admin sessions. Normal game
+accounts, even with the same name, cannot authorize `/api/admin/*` routes.
+
+Administration uses separate salted scrypt credentials and hashed 30-minute
+sessions in additive SQLite tables. The Windows native process retains its admin
+session only in memory, independently of the encrypted game login. The UI opens
+with F8 in any phase. Account mutations respect active profile locks, actions
+have strict bounded parameters and idempotency IDs, and the database retains a
+bounded audit history. This interface cannot execute shell commands or JavaScript.
+
+The 1.14 server accepts 1.13 clients during rollout: spawn positions are ordinary
+world coordinates and the added raid/player snapshot fields are additive. The
+new native admin interface requires 1.14. Both peers should update normally.

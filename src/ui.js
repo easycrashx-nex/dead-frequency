@@ -10,6 +10,7 @@ import { getWeapon } from './weapons.js';
 import { resolveLoadout, GEAR_SLOTS } from './loadouts.js';
 import {createOnlineUI} from './online-ui.js';
 import {createSocialUI} from './social-ui.js';
+import {createAdminUI} from './admin-ui.js';
 import { getProgression, getSkillEffects } from './progression.js';
 import { BINDING_ACTIONS, defaultSettings, keyLabel } from './settings.js';
 import { RAID_SECONDS } from './simulation.js';
@@ -311,7 +312,9 @@ export function createUI(root, actions) {
     else if(event.target.id==='market-price'||event.target.id==='market-duration')updateMarketForm();
   };
   const onKey = event => {
+    if(event.code==='F8')return;
     if (controllerUI.handleKey(event)) return;
+    if (adminUI.key(event)) return;
     if (socialUI.key(event)) return;
     if (onlineUI.key(event)) return;
     if (utility === 'settings' && settingsUI.handleKey(event)) return;
@@ -504,7 +507,7 @@ export function createUI(root, actions) {
       currentPhase = phase;
       root.dataset.phase = phase;
       show('hub-screen', phase === 'hub'); show('raid-hud', phase === 'raid'); show('pause-screen', phase === 'paused'); show('result-screen', phase === 'dead' || phase === 'extracted');
-      closePanels();
+      closePanels({keepAdmin:adminUI.isOpen()});
       abandonArmed = false; resultExitArmed = false;
       setText('abandon-raid', 'EINSATZ ABBRECHEN ↗');
       setText('abandon-note', 'Mitgeführte Beute geht beim Abbruch verloren.');
@@ -607,7 +610,7 @@ export function createUI(root, actions) {
       if (hostPartnerActive()) setText('result-storage-note', resultExitArmed ? 'Mitspieler noch im Einsatz – Team wirklich beenden? Erneut klicken beendet auch seinen Raid.' : 'Dein Mitspieler ist noch im Einsatz. Wenn du als Host das Team verlässt, endet auch sein Raid.');
       nodes['result-screen'].classList.toggle('failure', !result.success);
     }
-    onlineUI.update(onlineInfo,{phase});socialUI.update(state,info);
+    onlineUI.update(onlineInfo,{phase});socialUI.update(state,info);adminUI.update(state,info.admin||{});
     if(onlineInfo.authenticated)setText('connection-label',coopInfo.status==='error'?'ONLINE / VERBINDUNG GETRENNT':coopInfo.mode==='solo'&&state.multiplayer?'ONLINE-SOLOEINSATZ':state.multiplayer?'ONLINE-TEAM':'ONLINE-OPERATOR');
     controllerUI.update(info, settings);
   }
@@ -637,13 +640,15 @@ export function createUI(root, actions) {
     if (panel === 'map') drawMap();
     if (panel === 'inventory') renderInventory();
   }
-  function closeHubOverlays(except){controllerUI.closeKeyboard();if(except!=='friends')socialUI.close({restoreFocus:false});if(except!=='coop')coopUI.close({restoreFocus:false});if(except!=='account')onlineUI.close();if(except!=='utility'&&utility)showUtility(null);}
-  function closePanels() { closeHubOverlays();panel = null; show('map-panel', false); show('inventory-panel', false); showUtility(null); }
+  function closeHubOverlays(except){controllerUI.closeKeyboard();if(except!=='admin')adminUI.close({restoreFocus:false});if(except!=='friends')socialUI.close({restoreFocus:false});if(except!=='coop')coopUI.close({restoreFocus:false});if(except!=='account')onlineUI.close();if(except!=='utility'&&utility)showUtility(null);}
+  function closePanels({keepAdmin=false}={}) { closeHubOverlays(keepAdmin?'admin':undefined);panel = null; show('map-panel', false); show('inventory-panel', false); showUtility(null); }
   const getLoadout=()=>({loadout:state?.profile?.loadout,difficulty:selectedDifficulty});
   const coopUI = createCoopUI(root, actions, { getLoadout, notice,beforeOpen:()=>closeHubOverlays('coop'),openFriends:()=>socialUI.open() });
   const onlineUI = createOnlineUI(root,actions,{notice});
   const socialUI=createSocialUI(root,actions,{getLoadout,notice,beforeOpen:()=>closeHubOverlays('friends'),openAccount:()=>{const button=root.querySelector('#account-open');button?.focus({preventScroll:true});button?.click();}});
+  const adminUI=createAdminUI(root,actions,{notice,beforeOpen:()=>{closeHubOverlays('admin');panel=null;show('map-panel',false);show('inventory-panel',false);}});
   const controllerUI = createControllerUI(root, actions, { onBack() {
+    if(adminUI.isOpen())return adminUI.back();
     if(socialUI.isOpen())return socialUI.close();
     if (onlineUI.isOpen()) return onlineUI.close();
     if (settingsUI.isCapturingBinding()) { settingsUI.cancelCapture(); return true; }
@@ -653,5 +658,5 @@ export function createUI(root, actions) {
   } });
   const beforeModalOpen=event=>{if(event.target.closest('#account-open'))closeHubOverlays('account');};root.addEventListener('click',beforeModalOpen,true);
   selectDifficulty('normal'); selectHubTab('deploy');
-  return { update, events, togglePanel, closePanels,openFriends:()=>socialUI.open(),openLobbies:()=>coopUI.open(), controllerNavigate: (input, dt) => controllerUI.navigate(input, dt), isUtilityOpen: () => !!utility || controllerUI.isKeyboardOpen() || onlineUI.isOpen() || socialUI.isOpen() || coopUI.isOpen(), isCapturingBinding: () => settingsUI.isCapturingBinding(), closeUtility: () => controllerUI.closeKeyboard() || socialUI.close() || onlineUI.close() || coopUI.close() || showUtility(null), dispose() { controllerUI.dispose(); socialUI.dispose();onlineUI.dispose(); armoryUI.dispose(); progressionUI.dispose(); settingsUI.dispose(); coopUI.dispose();root.removeEventListener('click',beforeModalOpen,true); root.removeEventListener('click',onClick); root.removeEventListener('input',onInput); document.removeEventListener('keydown',onKey,true); clearTimeout(noticeTimer); clearTimeout(hitTimer); clearTimeout(damageTimer); for (const timer of timeoutIds) clearTimeout(timer); root.innerHTML = ''; } };
+  return { update, events, togglePanel, closePanels,openFriends:()=>socialUI.open(),openLobbies:()=>coopUI.open(),openAdmin:()=>adminUI.open(),closeAdmin:()=>{controllerUI.closeKeyboard();return adminUI.close();},isAdminOpen:()=>adminUI.isOpen(), controllerNavigate: (input, dt) => controllerUI.navigate(input, dt), isUtilityOpen: () => !!utility || controllerUI.isKeyboardOpen() || adminUI.isOpen() || onlineUI.isOpen() || socialUI.isOpen() || coopUI.isOpen(), isCapturingBinding: () => settingsUI.isCapturingBinding(), closeUtility: () => controllerUI.closeKeyboard() || adminUI.back() || socialUI.close() || onlineUI.close() || coopUI.close() || showUtility(null), dispose() { controllerUI.dispose(); adminUI.dispose();socialUI.dispose();onlineUI.dispose(); armoryUI.dispose(); progressionUI.dispose(); settingsUI.dispose(); coopUI.dispose();root.removeEventListener('click',beforeModalOpen,true); root.removeEventListener('click',onClick); root.removeEventListener('input',onInput); document.removeEventListener('keydown',onKey,true); clearTimeout(noticeTimer); clearTimeout(hitTimer); clearTimeout(damageTimer); for (const timer of timeoutIds) clearTimeout(timer); root.innerHTML = ''; } };
 }

@@ -1,8 +1,9 @@
 // Run locally over SSH as an administrator. No password is accepted in argv.
 import { createAccountStore } from './account-store.js';
+import { createAdminStore } from './admin-store.js';
 const [operation, username] = process.argv.slice(2);
-if (operation !== 'reset-password' || !username || !process.stdin.isTTY) {
-  console.error('Auf dem Server ausführen: node server/admin.js reset-password BENUTZERNAME');
+if (!['reset-password', 'set-admin'].includes(operation) || !username || process.argv.length !== 4 || !process.stdin.isTTY) {
+  console.error('Auf dem Server ausführen: node server/admin.js reset-password BENUTZERNAME oder set-admin ADMINNAME');
   process.exit(1);
 }
 async function hiddenPassword(label) {
@@ -28,8 +29,14 @@ let store;
 try {
   const password = await hiddenPassword('Neues Passwort (Eingabe unsichtbar): ');
   if (password !== await hiddenPassword('Passwort wiederholen: ')) throw new Error('Passwörter stimmen nicht überein.');
-  store = createAccountStore({ path: process.env.DATA_PATH ?? '/var/lib/dead-frequency/accounts.sqlite' });
-  const result = await store.resetPassword(username, password);
-  console.log(`Passwort für ${result.username} geändert; ${result.revokedSessions} Anmeldungen widerrufen.`);
+  const path = process.env.DATA_PATH ?? '/var/lib/dead-frequency/accounts.sqlite';
+  store = operation === 'set-admin' ? createAdminStore({ path }) : createAccountStore({ path });
+  if (operation === 'set-admin') {
+    const result = await store.setupAdmin(username, password);
+    console.log(`Adminzugang für ${result.username} eingerichtet; frühere Admin-Anmeldungen widerrufen.`);
+  } else {
+    const result = await store.resetPassword(username, password);
+    console.log(`Passwort für ${result.username} geändert; ${result.revokedSessions} Anmeldungen widerrufen.`);
+  }
 } catch (error) { console.error(error.message); process.exitCode = 1; }
 finally { store?.close(); }

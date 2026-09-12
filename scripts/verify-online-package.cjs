@@ -11,7 +11,7 @@ const archive=path.join(packaged,'resources/app.asar');
 let checked=0;
 for(const name of asar.listPackage(archive)){
   const relative=name.replace(/^[/\\]/,'').replaceAll('\\','/');
-  if(!relative.startsWith('node_modules/')&&/^(server\/.*\.js|src\/.*\.js|dist\/.*|(?:electron|preload|platform|online-platform)\.cjs)$/.test(relative)){
+  if(!relative.startsWith('node_modules/')&&/^(server\/.*\.js|src\/.*\.js|dist\/.*|(?:electron|preload|platform|online-platform|admin-platform)\.cjs)$/.test(relative)){
     const source=path.join(project,relative);
     if(!fs.statSync(source).isFile())continue;
     assert.deepEqual(asar.extractFile(archive,relative.split('/').join(path.sep)),fs.readFileSync(source),`Stale packaged file: ${relative}`);checked++;

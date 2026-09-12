@@ -12,7 +12,7 @@ const run = (game, seconds, input = {}) => { for (let i = 0; i < Math.ceil(secon
 async function setup(t, saved = {}, weapon = 'VX-9') {
   const profile = weapon === 'VX-9' ? {credits:10000,...saved} : ownedProfile({credits:10000,...saved,weapon,gear:['pack-sling','carrier-web','plate-fiber','helmet-bump']});
   const game = await createGame(profile, { externalAI: true }); t.after(() => game.dispose());
-  assert.equal(game.startRaid({ seed: 1701 }), true); game.state.enemies = []; return game;
+  assert.equal(game.startRaid({ seed: 1701, spawnId: 'arrival' }), true); game.state.enemies = []; return game;
 }
 const aim = (game, x, z, y = 1.1) => ({ x: x - game.state.player.x, y: y - game.state.player.y - 1.65, z: z - game.state.player.z });
 const enemy = (id, x, z, hp = 95, kind = 'guard') => ({ id, x, z, hp, kind, dead: false, fireTimer: 100, alert: 0, pathTimer: 0 });

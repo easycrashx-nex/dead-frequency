@@ -30,7 +30,7 @@ export function createControllerUI(root, actions, {onBack=()=>false}={}) {
     return arrows[action] ? `LS ${arrows[action]}` : labels[family]?.[action] || action;
   }
   function scope() {
-    return [overlay,...['friends-overlay','account-overlay','utility-overlay','coop-overlay','container-panel','inventory-panel','map-panel','pause-screen','result-screen','hub-screen'].map(id=>root.querySelector(`#${id}`))].find(visible) || null;
+    return [overlay,...['admin-overlay','friends-overlay','account-overlay','utility-overlay','coop-overlay','container-panel','inventory-panel','map-panel','pause-screen','result-screen','hub-screen'].map(id=>root.querySelector(`#${id}`))].find(visible) || null;
   }
   function focus(node) {
     if(!enabled(node))return;
@@ -138,6 +138,11 @@ export function createControllerUI(root, actions, {onBack=()=>false}={}) {
       dialog.scrollTop+=y*64;
       if(dialog.scrollTop!==before)return;
     }
+    if(y && area.id==='admin-overlay' && visible(area.querySelector('[data-admin-panel="audit"]'))) {
+      const content=area.querySelector('.admin-content'),before=content.scrollTop;
+      content.scrollTop+=y*64;
+      if(content.scrollTop!==before)return;
+    }
     const r=focused.getBoundingClientRect(),cx=r.x+r.width/2,cy=r.y+r.height/2;
     const options=candidates(area).filter(node=>node!==focused).map(node=>{const q=node.getBoundingClientRect(),dx=q.x+q.width/2-cx,dy=q.y+q.height/2-cy,along=x?dx*x:dy*y,across=x?Math.abs(dy):Math.abs(dx);return{node,along,score:along+across*2+across*across/Math.max(20,along)};}).filter(item=>item.along>3).sort((a,b)=>a.score-b.score);
     if(options[0])focus(options[0].node);
@@ -145,6 +150,7 @@ export function createControllerUI(root, actions, {onBack=()=>false}={}) {
   function switchTab(amount) {
     const area=scope(); if(!area || area===overlay)return;
     let list=[...area.querySelectorAll('[data-settings-category]')].filter(enabled);
+    if(!list.length)list=[...area.querySelectorAll('[data-admin-tab]')].filter(enabled);
     if(!list.length)list=[...area.querySelectorAll('[data-social-tab]')].filter(enabled);
     if(!list.length && focused?.closest('#hub-arsenal'))list=[...area.querySelectorAll('.armory-tabs [data-armory-tab]')].filter(enabled);
     if(!list.length && focused?.closest('.skill-branch-tabs'))list=[...area.querySelectorAll('[data-skill-branch]')].filter(enabled);

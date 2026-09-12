@@ -8,7 +8,7 @@ import { resolveLoadout } from '../src/loadouts.js';
 
 const step = (session, seconds) => { for (let i = 0; i < Math.ceil(seconds * 60); i++) session.update(1 / 60); };
 async function setup(t, started = true) {
-  const session = createCoopSession({ seed: 414 }); t.after(() => session.close());
+  const session = createCoopSession({ seed: 414, spawnId: 'arrival' }); t.after(() => session.close());
   const a = await session.join({ name: 'Alpha', profile: { credits: 750, raids: 2 }, kit: 'scout' });
   const b = await session.join({ name: 'Bravo', profile: { credits: 1500, raids: 8 }, kit: 'assault' });
   if (started) { session.ready(a, true); session.ready(b, true); session.start(a); }

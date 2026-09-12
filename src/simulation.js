@@ -10,6 +10,7 @@ import { PRESET_KITS, GEAR_SLOTS, LOADOUT_SLOTS, resolveLoadout, validateLoadout
 import { validateProgression, getSkillEffects, canUnlockSkill } from './progression.js';
 import { createEnemyAI } from './enemy-ai.js';
 import { ENEMY_TYPES, ENEMY_SPAWNING, rollCorpseItems } from './enemies.js';
+import { getRaidSpawn, selectRaidSpawn } from './raid-spawns.js';
 export { ITEM_CATALOG } from './loot-catalog.js';
 
 export const KIT_COSTS = Object.fromEntries(PRESET_KITS.map(kit => [kit.id,kit.cost]));
@@ -313,6 +314,7 @@ function emptyRaid() {
 }
 function emptyPlayer() {
   return { ...SPAWN, y: 0.02, pitch: 0, hp: 100, armor: 30, stamina: 100, ammo: 24, reserve: 72,
+    adminGodmode: false, adminStamina: false,
     magSize: 24, weapon: 'VX-9', medkits: 2, reload: 0, heal: 0, maxHp: 100, maxStamina: 100,
     reloadDuration: 1.7, healDuration: 2.2, recoilMultiplier: 1, shotTimer: 0, cycleDuration: .095,
     maxArmor:30,bonusArmor:0,weaponInstance:null,attachments:{},weaponStats:deriveWeapon('VX-9'),equipment:{},gearSpeedMultiplier:1,damageReduction:0,adsSeconds:.19,adsZoom:1.35,
@@ -339,6 +341,7 @@ export async function createGame(saved = null, options = {}) {
   const state = { phase: 'hub', profile: validateProfile(saved), player: emptyPlayer(), raid: emptyRaid(), enemies: [], loot: [], containers: [], activeContainerId: null, containerSearchRemaining: 0, prompt: null, result: null };
   let events = [], random = seededRandom(1), cooldown = 0, velocityY = 0, jumpHeld = false;
   let extraction = null, raidSerial = 0, disposed = false, lowTimeWarned = false, sprintNeedsRelease = false;
+  let previousSpawnId = options.previousSpawnId;
   let spawnSerial = 0,respawnTimer = ENEMY_SPAWNING.interval,reinforcements = 0;
   let skillEffects = getSkillEffects(state.profile);
   const ownerNamespace = String(options.playerId ?? 'solo').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,30);
@@ -375,9 +378,9 @@ export async function createGame(saved = null, options = {}) {
     if (!resolved.valid) { notice(resolved.reason); return false; }
     const {weapon,cost,gearStats} = resolved;
     if (state.profile.credits < cost) { notice('Nicht genug Credits für dieses Loadout. Das Notfallkit ist kostenlos.'); return false; }
-    state.profile.credits -= cost; state.profile.raids++;
-    // Explicit seeds support reproducible QA/replays; regular raids get fresh seeds.
     const seed = Number.isFinite(options.seed) ? options.seed >>> 0 : ((Date.now() ^ ++raidSerial * 2654435761) >>> 0);
+    const spawn = options.spawnId === undefined ? selectRaidSpawn(seed, previousSpawnId) : getRaidSpawn(options.spawnId);
+    state.profile.credits -= cost; state.profile.raids++;
     state.profile.loadout = structuredClone(resolved.selection);
     const transfer = item => {
       if (!item) return null;
@@ -396,7 +399,7 @@ export async function createGame(saved = null, options = {}) {
     random = seededRandom(seed);
     enemyAI.reset();
     skillEffects = getSkillEffects(state.profile);
-    state.player = { ...emptyPlayer(), armor: gearStats.armor + skillEffects.armorBonus,
+    state.player = { ...emptyPlayer(), x: spawn.x, y: spawn.y + .02, z: spawn.z, yaw: spawn.yaw, armor: gearStats.armor + skillEffects.armorBonus,
       weapon: weapon.id, ammo: weapon.magSize, magSize: weapon.magSize, reserve: Math.round(weapon.reserve * skillEffects.reserveMultiplier),
       weaponInstance,weaponStats:weapon,attachments:weapon.attachments,equipment,maxArmor:gearStats.maxArmor + skillEffects.armorBonus,bonusArmor:skillEffects.armorBonus,
       gearSpeedMultiplier:gearStats.speedMultiplier,damageReduction:gearStats.damageReduction,adsSeconds:weapon.adsSeconds,adsZoom:weapon.adsZoom,
@@ -404,10 +407,10 @@ export async function createGame(saved = null, options = {}) {
       stamina: 100 + skillEffects.staminaBonus, maxStamina: 100 + skillEffects.staminaBonus, medkits: resolved.medkits + skillEffects.extraMedkits,
       recoilMultiplier: skillEffects.recoilMultiplier, reloadDuration: weapon.reloadSeconds * skillEffects.reloadMultiplier,
       healDuration: 2.2 * skillEffects.healDurationMultiplier, cycleDuration: weapon.fireInterval };
-    state.raid = { ...emptyRaid(), capacity: gearStats.capacity + skillEffects.capacityBonus, extractionDuration: 8 * skillEffects.extractionMultiplier, difficulty, seed,loadoutMode:resolved.selection.mode,equipmentSpilled:false };
+    state.raid = { ...emptyRaid(), spawn: { ...spawn }, capacity: gearStats.capacity + skillEffects.capacityBonus, extractionDuration: 8 * skillEffects.extractionMultiplier, difficulty, seed,loadoutMode:resolved.selection.mode,equipmentSpilled:false };
     state.result = null; state.prompt = null; cooldown = 0; velocityY = 0; jumpHeld = false; extraction = null; lowTimeWarned = false; sprintNeedsRelease = false;
-    body.setTranslation({ x: SPAWN.x, y: PLAYER_CENTER + 0.02, z: SPAWN.z }, true);
-    body.setNextKinematicTranslation({ x: SPAWN.x, y: PLAYER_CENTER + 0.02, z: SPAWN.z });
+    body.setTranslation({ x: spawn.x, y: spawn.y + PLAYER_CENTER + .02, z: spawn.z }, true);
+    body.setNextKinematicTranslation({ x: spawn.x, y: spawn.y + PLAYER_CENTER + .02, z: spawn.z });
     world.step();
     state.enemies = PATROLS.map(([x, z], i) => spawnEnemy(x, z, i, (difficulty === 'hard' && i % 3 === 0) || i === 9 ? 'elite' : 'guard'));
     spawnSerial = state.enemies.length;respawnTimer=ENEMY_SPAWNING.interval;reinforcements=0;
@@ -420,6 +423,7 @@ export async function createGame(saved = null, options = {}) {
     state.containers = CONTAINER_SPOTS.map(spot => ({ ...spot, opened: false, searched: false, items: rollContainerItems(spot, random, state.profile.raids, difficulty) }));
     closeContainer();
     events = []; state.phase = 'raid';
+    previousSpawnId = spawn.id;
     notice('Beute sichern. Lebend extrahieren. Das Relais ist optional.');
     updatePrompt();
     return true;
@@ -454,6 +458,7 @@ export async function createGame(saved = null, options = {}) {
   function applyDamage(amount, enemy) {
     if (!alive() || !Number.isFinite(amount) || amount <= 0) return;
     const p = state.player;
+    if (p.adminGodmode) return;
     if(p.reviveProtection>0)return;
     p.damageSequence++;p.reviveProgress=0;
     if(p.downed){p.bleedoutRemaining=Math.max(0,p.bleedoutRemaining-amount*.6);if(p.bleedoutRemaining<=0)finish(false,'Verblutet');return;}
@@ -820,6 +825,7 @@ export async function createGame(saved = null, options = {}) {
     const forward = Number.isFinite(input.forward) ? clamp(input.forward, -1, 1) : 0;
     const right = Number.isFinite(input.right) ? clamp(input.right, -1, 1) : 0;
     const magnitude = Math.max(1, Math.hypot(forward, right));
+    if (p.adminStamina) { p.stamina = p.maxStamina; p.sprintExhausted = false; sprintNeedsRelease = false; }
     p.moving = Math.abs(forward) + Math.abs(right) > 0.05;
     p.crouching = !!input.crouch;
     // Empty stamina must not alternate sprint/drain and walk/regenerate every
@@ -828,10 +834,10 @@ export async function createGame(saved = null, options = {}) {
     if (!input.sprint) sprintNeedsRelease = false;
     if (p.sprintExhausted && p.stamina >= 20 && !sprintNeedsRelease) p.sprintExhausted = false;
     p.sprinting = !!input.sprint && p.moving && forward > 0 && !p.crouching && !input.aim && !p.sprintExhausted && p.stamina > 0 && p.heal <= 0 && p.reload <= 0;
-    p.stamina = clamp(p.stamina + (p.sprinting ? -23 * skillEffects.sprintDrainMultiplier : 15 * skillEffects.staminaRegenMultiplier) * dt, 0, p.maxStamina);
+    p.stamina = p.adminStamina ? p.maxStamina : clamp(p.stamina + (p.sprinting ? -23 * skillEffects.sprintDrainMultiplier : 15 * skillEffects.staminaRegenMultiplier) * dt, 0, p.maxStamina);
     if (p.sprinting && p.stamina === 0) { p.sprinting = false; p.sprintExhausted = true; sprintNeedsRelease = true; }
     const speed = (p.crouching ? 2.1 : p.sprinting ? 7.2 : input.aim ? 3 : 4.4) * skillEffects.moveSpeedMultiplier * p.gearSpeedMultiplier * (p.weaponStats?.moveMultiplier ?? 1) * (p.heal > 0 ? 0.62 : 1);
-    if (input.jump && !jumpHeld && p.grounded && !p.crouching && p.stamina > 10) { velocityY = 6.7; p.stamina -= 10; p.grounded = false; }
+    if (input.jump && !jumpHeld && p.grounded && !p.crouching && p.stamina > 10) { velocityY = 6.7; if (!p.adminStamina) p.stamina -= 10; p.grounded = false; }
     jumpHeld = !!input.jump;
     velocityY -= 19 * dt;
     const wanted = { x: (-Math.sin(p.yaw) * forward + Math.cos(p.yaw) * right) / magnitude * speed * dt,

@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import WebSocket from 'ws';
-import { createCoopServer } from '../server/coop-server.js';
+import { createCoopServer as createServer } from '../server/coop-server.js';
 import { EXTRACTIONS } from '../src/layout.js';
 import { ownedProfile } from './loadout-helpers.js';
 import { resolveLoadout } from '../src/loadouts.js';
+// These historical combat and crate fixtures use surveyed coordinates in arrival.
+const createCoopServer = options => createServer({ ...options, sessionOptions: { spawnId: 'arrival', ...options?.sessionOptions } });
 
 async function connect(t, url) {
   const ws = new WebSocket(url), queue = [], waiters = [];

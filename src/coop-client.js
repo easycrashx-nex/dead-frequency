@@ -38,7 +38,10 @@ export function createCoopClient({localGame,onChange=()=>{},onRaid=()=>{},onProf
         else closingContainerId=null;
       }
       target={x:incoming.player.x,y:incoming.player.y,z:incoming.player.z};
-      if(['raid','paused'].includes(oldPhase)&&incoming.phase==='raid')Object.assign(incoming.player,{x:oldPlayer.x,y:oldPlayer.y,z:oldPlayer.z,yaw:oldPlayer.yaw,pitch:oldPlayer.pitch});
+      if(['raid','paused'].includes(oldPhase)&&incoming.phase==='raid'){
+        if(incoming.player.adminTeleportSequence===oldPlayer.adminTeleportSequence)Object.assign(incoming.player,{x:oldPlayer.x,y:oldPlayer.y,z:oldPlayer.z});
+        Object.assign(incoming.player,{yaw:oldPlayer.yaw,pitch:oldPlayer.pitch});
+      }
       state=incoming;state.multiplayer=true;state.online=!!info.online;
       if(paused&&state.phase==='raid')state.phase='paused';
       if(!['raid','paused'].includes(oldPhase)&&state.phase==='raid'){paused=false;change({status:'raid',message:''});onRaid(state);}

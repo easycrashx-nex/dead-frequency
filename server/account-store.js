@@ -84,6 +84,10 @@ export function createAccountStore({ path, now = Date.now } = {}) {
       PRIMARY KEY(account_a, account_b)
     );
     CREATE INDEX IF NOT EXISTS social_links_b ON social_links(account_b);`);
+  db.exec(`CREATE TABLE IF NOT EXISTS account_bans (
+    account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL, banned_at INTEGER NOT NULL, admin_username TEXT NOT NULL
+  );`);
   const pending = new Set();
   const dummySalt = randomBytes(16).toString('hex');
   let hashes = 0, hubPromise, hubGame;
@@ -140,6 +144,7 @@ export function createAccountStore({ path, now = Date.now } = {}) {
     const derived = await derive(input, row?.password_salt ?? dummySalt);
     const expected = row ? Buffer.from(row.password_hash, 'hex') : Buffer.alloc(64);
     if (!timingSafeEqual(derived, expected) || !row || input.length < 10 || account(row.id).password_hash !== row.password_hash) fail(401, 'login_failed', 'Benutzername oder Passwort ist falsch.');
+    if (query('SELECT 1 FROM account_bans WHERE account_id=?').get(row.id)) fail(403, 'account_banned', 'Dieser Spielaccount wurde gesperrt.');
     return issueSession(row);
   }
   async function resetPassword(username, password) {
@@ -156,7 +161,7 @@ export function createAccountStore({ path, now = Date.now } = {}) {
   function revokeSessions(id) { account(id); return query('DELETE FROM sessions WHERE account_id=?').run(id).changes; }
   function authenticate(token) {
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return null;
-    const row = query('SELECT a.id,a.username FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash=? AND s.expires_at>?').get(tokenHash(token), now());
+    const row = query('SELECT a.id,a.username FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash=? AND s.expires_at>? AND NOT EXISTS(SELECT 1 FROM account_bans b WHERE b.account_id=a.id)').get(tokenHash(token), now());
     return row ? { id: row.id, username: row.username } : null;
   }
   function logout(token) {
@@ -340,5 +345,8 @@ export function createAccountStore({ path, now = Date.now } = {}) {
   }
   return { register, login, authenticate, logout, resetPassword, revokeSessions, social, areFriends, requestFriend, respondFriend, removeFriend,
     getProfile, action, acquireRoom, releaseRoom, commitRaidStart, settleRaid, recoverRooms, abortRoom,
+    // Trusted administration must also see a hub action waiting on WASM; a SQL
+    // room-lock check alone could otherwise overwrite that pending transaction.
+    isBusy(id) { return pending.has(id) || !!lockOf(id); },
     close() { hubGame?.dispose(); db.close(); } };
 }

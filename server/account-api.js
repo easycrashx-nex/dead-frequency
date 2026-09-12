@@ -2,18 +2,18 @@ import { isIP } from 'node:net';
 import { AccountError } from './account-store.js';
 
 const BODY_LIMIT = 32 * 1024;
-const send = (res, status, value) => {
+export const send = (res, status, value) => {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(value));
 };
 const deny = (status, code, message) => { throw new AccountError(status, code, message); };
-function allowedOrigin(origin) {
+export function allowedOrigin(origin) {
   if (origin === undefined || origin === 'null') return true;
   try { const url = new URL(origin); return ['http:', 'https:'].includes(url.protocol) && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) && url.origin === origin; }
   catch { return false; }
 }
-function clientIP(req) {
+export function clientIP(req) {
   const peer = req.socket.remoteAddress ?? 'unknown';
   // The service binds to loopback behind the TLS proxy. A direct remote client cannot
   // choose a forwarded address; use the last hop appended by the trusted proxy.
@@ -23,7 +23,7 @@ function clientIP(req) {
   }
   return peer;
 }
-function readJSON(req) {
+export function readJSON(req) {
   if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) deny(415, 'content_type', 'JSON-Anfrage erforderlich.');
   if (Number(req.headers['content-length']) > BODY_LIMIT) { req.resume(); deny(413, 'body_too_large', 'Anfrage ist zu groß.'); }
   return new Promise((resolve, reject) => {
@@ -137,6 +137,9 @@ export function createAccountApi({ store, rooms, version = '1.13.0', now = Date.
       }
       if (req.method !== 'POST') deny(405, 'method_not_allowed', 'POST erforderlich.');
       const body = await readJSON(req);
+      // Moderation or logout can invalidate a session while its request body
+      // is still arriving; do not issue fresh admission tickets afterward.
+      if (!store.authenticate(token)) deny(401, 'unauthorized', 'Bitte anmelden.');
       if (path === '/api/auth/logout') {
         if (!shape(body, [])) deny(400, 'invalid_fields', 'Ungültige Anfrage.');
         store.logout(token); presence.delete(user.id); send(res, 200, { ok: true });

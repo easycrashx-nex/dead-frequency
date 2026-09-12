@@ -30,3 +30,11 @@ Bei Änderungen an Einstellungen prüft `node scripts/qa-settings-native.mjs` di
 
 
 `node scripts/qa-stability-native.mjs` prüft echte Auflösungswechsel mit hoher Windows-Pixeldichte, drei Minuten Menüruhe, erzwungenen WebGL-Kontextverlust mit Erhalt des laufenden Raids sowie die eigenständige Wiederherstellungsseite nach einem nativen Rendererabsturz. Der Koop-Test enthält zusätzlich konkurrierende Leichenbeute und echtes Halten/Unterbrechen der sechssekündigen Wiederbelebung über den Internet-Host.
+
+
+For 1.14 spawn/admin changes, run `node scripts/qa-admin-native.mjs` against the
+updated server and current packaged EXE. It uses two private QA game accounts and
+an independently provisioned private admin credential; override their paths with
+`DF_QA_ACCOUNTS` and `DF_QA_ADMIN`. The native run verifies separate login, profile
+changes, two-player spawn, live tools, audit and restart isolation. Never package
+these credential files. Supply its successful report to `scripts/release.py`.

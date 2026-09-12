@@ -1,5 +1,5 @@
 import { createGame, validateProfile, isWalkable, hasLineOfSight,REVIVE_SECONDS } from './simulation.js';
-import { SPAWN } from './layout.js';
+import { getRaidSpawn, getRaidSpawnPositions, selectRaidSpawn } from './raid-spawns.js';
 import { resolveLoadout } from './loadouts.js';
 
 export const COOP_PROTOCOL = 1;
@@ -28,7 +28,7 @@ export function sanitizeCoopInput(raw, player) {
 
 // Two server-owned controllers share enemies, containers and dynamic ground drops.
 // Only this coordinator advances AI. Clients never provide position or damage.
-export function createCoopSession({ seed, minPlayers = 2, maxPlayers = 2, onRaidStart = () => {}, onPlayerFinished = () => {} } = {}) {
+export function createCoopSession({ seed, spawnId, previousSpawnId, minPlayers = 2, maxPlayers = 2, onRaidStart = () => {}, onPlayerFinished = () => {} } = {}) {
   if (![1, 2].includes(maxPlayers) || !Number.isInteger(minPlayers) || minPlayers < 1 || minPlayers > maxPlayers) throw new Error('Ungültige Spielerzahl.');
   const players = new Map();
   let hostId = null, phase = 'lobby', nextId = 1, tick = 0, time = 0, disposed = false;
@@ -40,7 +40,15 @@ export function createCoopSession({ seed, minPlayers = 2, maxPlayers = 2, onRaid
   };
   function queue(id, event) {
     const target = players.get(id);
-    if (target && target.events.length < 512) target.events.push(event);
+    if (target) {
+      if(target.events.length>=512){
+        const disposable=target.events.findIndex(value=>!['death','extract'].includes(value.type));
+        if(disposable>=0)target.events.splice(disposable,1);
+        else if(['death','extract'].includes(event.type))target.events.shift();
+        else return;
+      }
+      target.events.push(event);
+    }
   }
   function spillLoot(player) {
     player.game.spillEquipment();
@@ -128,7 +136,7 @@ export function createCoopSession({ seed, minPlayers = 2, maxPlayers = 2, onRaid
     player.loadout = copy(resolved.selection); player.kit = resolved.selection.presetId; player.weapon = resolved.weapon.id;
     player.ready = value; return true;
   }
-  function start(id, { difficulty = 'normal', seed: requestedSeed = seed } = {}) {
+  function start(id, { difficulty = 'normal', seed: requestedSeed = seed, spawnId: requestedSpawnId = spawnId } = {}) {
     if (disposed || phase !== 'lobby') throw new Error('Der Raid wurde bereits gestartet.');
     if (id !== hostId) throw new Error('Nur der Host kann den Raid starten.');
     if (players.size < minPlayers || [...players.values()].some(p => !p.connected || !p.game || !p.ready)) throw new Error(minPlayers === 2 ? 'Beide Spieler müssen bereit sein.' : 'Alle Spieler müssen bereit sein.');
@@ -139,17 +147,22 @@ export function createCoopSession({ seed, minPlayers = 2, maxPlayers = 2, onRaid
       if (p.game.state.profile.intake.length || !loadout.valid || !loadout.affordable) throw new Error('Ausrüstung oder Beute eines Spielers ist noch nicht bereit.');
     }
     const raidSeed = Number.isFinite(requestedSeed) ? requestedSeed >>> 0 : (Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0;
+    const previous = typeof previousSpawnId === 'function' ? previousSpawnId() : previousSpawnId;
+    const spawn = requestedSpawnId === undefined ? selectRaidSpawn(raidSeed, previous) : getRaidSpawn(requestedSpawnId);
+    const positions = getRaidSpawnPositions(spawn);
     let index = 0;
     for (const p of players.values()) {
-      if (!p.game.startRaid({ difficulty, loadout: p.loadout, seed: raidSeed })) throw new Error('Raid konnte nicht gestartet werden.');
+      if (!p.game.startRaid({ difficulty, loadout: p.loadout, seed: raidSeed, spawnId: spawn.id })) throw new Error('Raid konnte nicht gestartet werden.');
       if (!primary) primary = p.game;
       else { p.game.state.enemies = primary.state.enemies; p.game.state.loot = primary.state.loot; p.game.state.containers = primary.state.containers; }
-      p.game.teleport(SPAWN.x + index * 2.2, SPAWN.z + index * .8);
+      const position = positions[index];
+      if (!p.game.teleport(position.x, position.z, position.y + .02)) throw new Error('Einstiegspunkt ist blockiert.');
+      p.game.state.player.yaw = spawn.yaw;
       p.input = neutral(p.game.state.player); p.jumpQueued = p.jumpHeld = p.fireQueued = p.fireHeld = false; p.lastInputAt = time;
       index++;
     }
     try {
-      onRaidStart([...players.values()].map(p => ({ id: p.id, profile: copy(p.game.state.profile) })));
+      onRaidStart([...players.values()].map(p => ({ id: p.id, profile: copy(p.game.state.profile) })), { spawn: { ...spawn } });
     } catch (error) {
       // A failed durable commit cannot leave a playable, unpaid raid behind.
       phase = 'finished';

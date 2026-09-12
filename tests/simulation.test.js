@@ -50,7 +50,7 @@ test('navigation connects spawn, both exits, relay and accessible POI approaches
 });
 
 test('Rapier blocks solid barriers and permits lateral sliding, diagonal speed stays normalized', async t => {
-  const game = await gameFor(t); game.startRaid({ seed: 1 }); quiet(game);
+  const game = await gameFor(t); game.startRaid({ seed: 1, spawnId: 'arrival' }); quiet(game);
   run(game, 3, { forward: 1, yaw: 0 });
   assert.ok(game.state.player.z > 37.85, `Passed through barrier: z=${game.state.player.z}`);
   const oldX = game.state.player.x;
@@ -64,7 +64,7 @@ test('Rapier blocks solid barriers and permits lateral sliding, diagonal speed s
 });
 
 test('jumping rises and lands, sprint consumes stamina, pause freezes all raid timers', async t => {
-  const game = await gameFor(t); game.startRaid({ seed: 2 }); quiet(game);
+  const game = await gameFor(t); game.startRaid({ seed: 2, spawnId: 'arrival' }); quiet(game);
   game.update(1 / 60, { jump: true }); run(game, 0.15);
   assert.ok(game.state.player.y > 0.5);
   run(game, 1); assert.ok(game.state.player.y < 0.05); assert.equal(game.state.player.grounded, true);
@@ -78,7 +78,7 @@ test('jumping rises and lands, sprint consumes stamina, pause freezes all raid t
 });
 
 test('hitscan respects cover, head damage and cooldown; reload conserves ammunition', async t => {
-  const game = await gameFor(t); game.startRaid({ seed: 3 }); quiet(game);
+  const game = await gameFor(t); game.startRaid({ seed: 3, spawnId: 'arrival' }); quiet(game);
   const enemy = game.state.enemies[0];
   Object.assign(enemy, { x: -7, z: 42, hp: 95, dead: false, fireTimer: 100 });
   const before = game.state.player.ammo;

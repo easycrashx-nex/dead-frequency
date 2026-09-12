@@ -11,6 +11,7 @@ import {createGamepadInput} from './gamepad.js';
 import {resolveLoadout} from './loadouts.js';
 import {createRuntimeRecovery} from './runtime-recovery.js';
 import {createOnlineClient,createOnlineHub,onlineError} from './online-client.js';
+import {createAdminClient} from './admin-client.js';
 
 const SAVE_KEY='dead-frequency.profile.v2', LEGACY_SAVE_KEY='dead-frequency.profile.v1', SETTINGS_KEY='dead-frequency.settings.v1';
 const canvas=document.querySelector('#game'),root=document.querySelector('#ui');
@@ -42,6 +43,9 @@ const online=createOnlineClient({request:window.platform?.onlineRequest?.bind(wi
   },
 });
 const coopStatus={status:'offline',players:[],name:read('dead-frequency.operator')||'Operator',invite:'',message:''};
+const admin=createAdminClient({request:window.platform?.adminRequest?.bind(window.platform),
+  async onAction(_action,payload){if(payload?.userId===online.info.user?.id&&!coop)await online.refresh();}});
+function openAdmin(){pause();closePanels();clearInputs();unlock();ui.openAdmin();void admin.refresh();}
 function persist() {
   // Never serialize an online snapshot into the separate offline save.
   if(!localGame||online.info.authenticated||online.info.restoring||onlineHub)return;
@@ -122,6 +126,7 @@ function actionDown(action){for(const code of keys)if(bindingAction(settings.bin
 function onKeyDown(e){
   if(contextLost||frameFailed)return;
   if(e.defaultPrevented)return;
+  if(e.code==='F8'){e.preventDefault();if(!e.repeat){if(ui?.isAdminOpen?.())ui.closeAdmin();else openAdmin();}return;}
   if(ui?.isUtilityOpen?.()){if(e.code==='Escape'){e.preventDefault();ui.closeUtility();}return;}
   if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;
   const code=e.code;
@@ -277,13 +282,14 @@ function frame(now){
     audio.update(state,dt);lookDX=lookDY=0;
     fpsTime+=elapsed;if(fpsTime>=.5){fps=Math.round(frames/fpsTime);frames=0;fpsTime=0;}
     uiTime+=dt;
-    if(uiTime>=1/20){ui.update(state,{locked:document.pointerLockElement===canvas||controllerActive(),fps,settings,mapOpen,inventoryOpen,aim,coop:coop?.info||coopStatus,online:online.info,social:{...online.social,pending:online.info.busy||socialWorkflow},controller:{...controllerState,active:controllerPresent()},inputDevice});uiTime=0;}
+    if(uiTime>=1/20){ui.update(state,{locked:document.pointerLockElement===canvas||controllerActive(),fps,settings,mapOpen,inventoryOpen,aim,coop:coop?.info||coopStatus,online:online.info,admin:admin.info,social:{...online.social,pending:online.info.busy||socialWorkflow},controller:{...controllerState,active:controllerPresent()},inputDevice});uiTime=0;}
   }
   }catch(error){frameFailed=true;console.error(error);clearInputs();pause();persist();recovery.show({raid:['raid','paused'].includes(game.state.phase)});}
   raf=requestAnimationFrame(frame);
 }
 let accumulator=0;
 function marketTick(){
+  admin.poll(ui?.isAdminOpen?.());
   if(online.info.authenticated){
     if(game?.state.phase==='hub'&&!coopBusy){
       if(Date.now()-lastSocialPoll>=(hidden?15000:5000)){lastSocialPoll=Date.now();online.refreshSocial();}
@@ -417,6 +423,7 @@ async function boot(){
   game=localGame=await createGame(read(SAVE_KEY)??read(LEGACY_SAVE_KEY));view=createRenderer(canvas,game.layout);audio=createAudio();
   await audio.ready;
   ui=createUI(root,{start,resume,hub(){if(coop||online.info.room)return leaveCoop();game.returnToHub();closePanels();clearInputs();unlock();persist();},upgrade:kind=>hubGameAction('buyUpgrade',kind),
+    adminOpen:openAdmin,adminLogin:admin.login,adminLogout:admin.logout,adminRefresh:admin.refresh,adminFindPlayer:admin.findPlayer,adminAction:admin.action,
     accountAuthenticate:async(kind,name,password)=>{if(coop||coopBusy||game.state.phase!=='hub')return false;const result=await online.authenticate(kind,name,password);await online.refreshSocial();return result;},
     accountLogout:()=>{if(coop||coopBusy||game.state.phase!=='hub'||online.info.room)return false;return online.logout();},
     coopHost:options=>joinCoop(options,true),coopJoin:options=>joinCoop(options,false),coopReady:ready=>coop?.ready(ready),coopStart:()=>coop?.start(),coopLeave:leaveCoop,
@@ -437,7 +444,7 @@ async function boot(){
     storeItem:id=>homeAction('storeItem',id),storeAll:()=>homeAction('storeAll'),listItem:(id,price,duration)=>homeAction('listItem',id,price,duration),
     cancelListing:id=>homeAction('cancelListing',id),claimMail:id=>homeAction('claimMail',id),claimAll:()=>homeAction('claimAll'),
     settings:settingsChanged,resetSettings:category=>settingsChanged(resetSettingsCategory(settings,category)),rebind,quit(){window.close();}});
-  settingsChanged(settings);ui.update(game.state,{locked:false,fps,settings,mapOpen:false,inventoryOpen:false,aim:false,coop:coopStatus,online:online.info,social:{...online.social,pending:false}});
+  settingsChanged(settings);ui.update(game.state,{locked:false,fps,settings,mapOpen:false,inventoryOpen:false,aim:false,coop:coopStatus,online:online.info,admin:admin.info,social:{...online.social,pending:false}});
   // Resolve a saved online session before advancing the separate offline market.
   online.restore().then(()=>{if(!online.info.authenticated)marketTick();else online.refreshSocial();});
   marketTimer=setInterval(marketTick,1000);

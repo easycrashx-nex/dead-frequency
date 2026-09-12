@@ -186,6 +186,7 @@ Seit Version 1.7.1 wächst das Guthaben langsamer: Neue Beutefunde sind 35 % wen
 | Karte | M |
 | Rucksack | Tab |
 | Pause / Maus freigeben | Escape |
+| Admin-Verwaltung öffnen / schließen | F8 |
 | Vollbild umschalten (Windows-App) | F11 |
 
 Im Offline-Solo-Modus pausiert ein Fensterwechsel den Raid. Online und im Koop öffnet sich ein lokales Menü, während die gemeinsame Welt weiterläuft. Im Menü stehen Grafikqualität, Lautstärke und Mausempfindlichkeit zur Verfügung.
@@ -246,3 +247,18 @@ Version 1.2.2 behebt das schnelle Umschalten zwischen Sprint und Gehen bei leere
 Three.js (MIT), Rapier (Apache-2.0), Vite (MIT), Electron (MIT), Playwright (Apache-2.0), ws (MIT), yauzl (MIT), cloudflared (Apache-2.0). Die Lizenzdateien der Desktop-Laufzeit und der Tunnelkomponente liegen dem Windows-Paket bei. `vendor/cloudflared.json` fixiert Download, Version und SHA-256; das Buildskript prüft diese vor dem Verpacken. Technische Referenzen: [Three.js Renderer](https://threejs.org/docs/pages/WebGLRenderer.html), [Rapier Character Controller](https://rapier.rs/docs/user_guides/javascript/character_controller/), [GitHub Releases API](https://docs.github.com/en/rest/releases/releases) und [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/).
 
 Debug-Zugriff ist nur im Entwicklungsserver oder beim expliziten Start mit `--qa` aktiv. Die normale Windows-Ausgabe veröffentlicht diese Teststeuerung nicht.
+
+
+## Version 1.14: Einstiege und Admin-Verwaltung
+
+Raids starten an einem von **16 verteilten Einstiegspunkten**. Ein Zweierteam landet zusammen mit etwas Abstand zueinander. Der Server berücksichtigt die letzten Einstiege beider Spieler, solange er läuft, und vermeidet direkte Wiederholungen. Die Auswahl verändert die Beutetabellen nicht.
+
+**F8** oder **ADMIN** im Hauptmenü öffnet die Verwaltung. Dafür ist ein eigener Adminname mit eigenem Passwort erforderlich; das angemeldete Spielkonto ist unabhängig davon. Ein normaler Spielaccount reicht nicht aus. Die Admin-Anmeldung gilt 30 Minuten und endet spätestens beim vollständigen Beenden der App. Das Admin-Passwort und die Sitzung werden nicht in Spielständen gespeichert.
+
+Die Bereiche **Übersicht**, **Spieler**, **Raid** und **Protokoll** bieten 20 Werkzeuge: Credits hinzufügen/abziehen oder setzen, Gegenstände vergeben/entfernen, Ausrüstung reparieren, XP vergeben, Skills zurücksetzen, Accounts sperren/entsperren, Anmeldungen beenden, heilen, Versorgung auffüllen, genockte Spieler wiederbeleben, Unverwundbarkeit und unbegrenzte Ausdauer umschalten, zu Einstiegen oder Mitspielern versetzen, Spieler entfernen, aktuelle Gegner entfernen und Lobbys schließen. Der Katalog enthält alle Waffen, Aufsätze, Ausrüstung und Handelsgegenstände.
+
+Lager- und Fortschrittsänderungen sind nur möglich, wenn das Zielprofil keine offene Lobby oder laufenden Raid hat. Live-Werkzeuge wirken auf aktive Online-Raids; sie erzeugen keine dauerhaften Schutzfähigkeiten. Gegner entfernen betrifft aktuelle Gegner, spätere Verstärkungen können weiter eintreffen. Entfernen eines Spielers oder Schließen eines Raids behandelt mitgeführte Ausrüstung wie einen abgebrochenen Einsatz. Kritische Aktionen benötigen eine Bestätigung im Menü und werden serverseitig protokolliert. Online läuft der Einsatz bei geöffneter Admin-Verwaltung weiter.
+
+Es gibt kein mitgeliefertes Standardpasswort. Betreiber richten den Zugang auf ihrem eigenen Server über `node server/admin.js set-admin ADMINNAME` ein; Details stehen in `deploy/README.md`.
+
+Die Koop-Verbindung komprimiert Zustandsdaten. Bei einem Rückstau werden überholte Weltzustände übersprungen; Todes- und Extraktionsereignisse bleiben in der begrenzten Ereigniswarteschlange erhalten. Nach kurzer Netzüberlastung wird der aktuelle Zustand weiter übertragen.

@@ -28,7 +28,9 @@ export async function createCoopServer({ host = '127.0.0.1', port = 0, token = r
     response.writeHead(request.url === '/health' ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     response.end(JSON.stringify(request.url === '/health' ? { game: 'DEAD FREQUENCY', protocol: COOP_PROTOCOL, version, phase: session.phase } : { message: 'Koop-Verbindung im Spiel öffnen.' }));
   });
-  const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024, perMessageDeflate: false });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024,
+    perMessageDeflate: { serverNoContextTakeover: true, clientNoContextTakeover: true,
+      threshold: 1024, concurrencyLimit: 2, zlibDeflateOptions: { level: 1 } } });
   function send(ws, message) {
     if (ws.readyState !== WebSocket.OPEN || !message) return false;
     if (ws.bufferedAmount > 2 * 1024 * 1024) { ws.close(1008, 'Connection too slow'); return false; }
@@ -47,6 +49,15 @@ export async function createCoopServer({ host = '127.0.0.1', port = 0, token = r
     snapshotSeq++;
     for (const [ws, info] of connections) {
       if (!info.id || (only && ws !== only)) continue;
+      if(ws.readyState!==WebSocket.OPEN)continue;
+      // Coalesce world updates before draining events; never enqueue seconds of
+      // obsolete snapshots behind a slow network or a temporarily busy client.
+      if(ws.bufferedAmount>256*1024){
+        info.pendingSnapshot=true;info.blockedSince??=performance.now();
+        if(performance.now()-info.blockedSince>15000)ws.close(1008,'Connection stalled');
+        continue;
+      }
+      info.pendingSnapshot=false;info.blockedSince=null;
       const snapshot = session.snapshot(info.id);
       if (snapshot) send(ws, { ...snapshot, tick: snapshot.seq, seq: snapshotSeq });
     }
@@ -140,8 +151,13 @@ export async function createCoopServer({ host = '127.0.0.1', port = 0, token = r
     if (closing) return;
     const now = performance.now(), elapsed = Math.min(.25, Math.max(0, (now - previous) / 1000)); previous = now;
     if (session.phase !== 'raid') {
-      if (idlePhase !== session.phase) { snapshots(); idlePhase = session.phase; }
-      accumulated = 0; snapshotTime = 0; return;
+      snapshotTime+=elapsed;
+      if (idlePhase !== session.phase) { snapshots(); idlePhase = session.phase; snapshotTime=0; }
+      else if(snapshotTime>=1/COOP_SNAPSHOT_RATE){
+        snapshotTime=0;
+        for(const [ws,info] of connections)if(info.pendingSnapshot)snapshots(ws);
+      }
+      accumulated = 0; return;
     }
     idlePhase = null;
     accumulated = Math.min(.25, accumulated + elapsed); snapshotTime += elapsed;

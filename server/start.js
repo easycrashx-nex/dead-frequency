@@ -6,6 +6,8 @@ import packageInfo from '../package.json' with { type: 'json' };
 import { COOP_PROTOCOL } from '../src/coop-session.js';
 import { createAccountStore } from './account-store.js';
 import { createAccountApi } from './account-api.js';
+import { createAdminStore } from './admin-store.js';
+import { createAdminApi } from './admin-api.js';
 import { createRoomService } from './rooms.js';
 
 export async function startDedicatedServer({ host = '127.0.0.1', port = 8080,
@@ -17,11 +19,13 @@ export async function startDedicatedServer({ host = '127.0.0.1', port = 8080,
   if (!publicOrigin) throw new Error('PUBLIC_ORIGIN muss die öffentliche HTTPS-Adresse enthalten.');
   const path = resolve(dataPath); mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const store = createAccountStore({ path });
-  let rooms, http, closed;
+  let rooms, http, closed, admins;
   try {
     store.recoverRooms();
     rooms = createRoomService({ store, publicOrigin, version, maxRooms, onError });
     const api = createAccountApi({ store, rooms, version });
+    admins = createAdminStore({ path, accounts: store });
+    const adminApi = createAdminApi({ store: admins, rooms, version, onError });
     http = createServer((request, response) => {
       response.setHeader('Cache-Control', 'no-store');
       response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -30,7 +34,7 @@ export async function startDedicatedServer({ host = '127.0.0.1', port = 8080,
         response.end(JSON.stringify({ game: 'DEAD FREQUENCY', service: 'dedicated', status: 'ok', version, protocol: COOP_PROTOCOL, rooms: rooms.size, simulation: rooms.metrics() }));
         return;
       }
-      Promise.resolve(api(request, response)).then(handled => {
+      Promise.resolve(adminApi(request, response)).then(handled => handled || api(request, response)).then(handled => {
         if (!handled && !response.writableEnded) { response.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' }); response.end(JSON.stringify({ message: 'Endpunkt nicht gefunden.' })); }
       }).catch(error => {
         onError(error);
@@ -49,12 +53,12 @@ export async function startDedicatedServer({ host = '127.0.0.1', port = 8080,
         closed ??= Promise.resolve().then(async () => {
           await rooms.close();
           await new Promise(accept => { http.close(accept); http.closeIdleConnections(); });
-          store.close();
+          admins.close(); store.close();
         });
         return closed;
       },
     };
-  } catch (error) { await rooms?.close(); store.close(); throw error; }
+  } catch (error) { await rooms?.close(); admins?.close(); store.close(); throw error; }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

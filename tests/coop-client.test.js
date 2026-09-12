@@ -11,6 +11,29 @@ import { ownedProfile } from './loadout-helpers.js';
 
 const token = 'a1'.repeat(32);
 
+test('paused clients receive admin effects and snap deliberate teleports without interpolating across the map',async()=>{
+  const original=globalThis.WebSocket,localGame=await createGame();let client,wire;
+  try{
+    globalThis.WebSocket=class extends EventTarget{
+      static OPEN=1;readyState=1;
+      constructor(){super();wire=this;queueMicrotask(()=>this.dispatchEvent(new Event('open')));}
+      send(raw){if(JSON.parse(raw).type==='join')queueMicrotask(()=>this.receive({type:'welcome',id:'a',hostId:'a'}));}
+      receive(value){this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify(value)}));}
+      close(){this.readyState=3;}
+    };
+    client=createCoopClient({localGame});await client.connect(`ws://127.0.0.1:1/coop?token=${token}`);
+    const incoming=structuredClone(localGame.state);incoming.phase='raid';
+    wire.receive({type:'snapshot',seq:1,state:incoming});client.pause();
+    const oldX=client.state.player.x;
+    Object.assign(incoming.player,{adminGodmode:true,adminStamina:true,adminTeleportSequence:1,x:500,y:10,z:400});
+    wire.receive({type:'snapshot',seq:2,state:incoming});
+    assert.equal(client.state.phase,'paused');assert.equal(client.state.player.adminGodmode,true);assert.equal(client.state.player.adminStamina,true);
+    assert.notEqual(oldX,500);assert.equal(client.state.player.x,500);assert.equal(client.state.player.z,400);
+    incoming.player.x=501;wire.receive({type:'snapshot',seq:3,state:incoming});assert.equal(client.state.player.x,500,'Ordinary movement retains interpolation');
+    client.update(1/60,{});assert.ok(client.state.player.x>500&&client.state.player.x<501);
+  }finally{client?.dispose();localGame.dispose();globalThis.WebSocket=original;}
+});
+
 test('short semi-automatic clicks survive the network send interval and cleared input never fires later', async () => {
   const originalWebSocket=globalThis.WebSocket,session=createCoopSession({seed:1717}),localGame=await createGame();
   let client,wire,seq=0;

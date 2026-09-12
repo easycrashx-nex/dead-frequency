@@ -109,7 +109,7 @@ export function sanitizeSettings(input={},base=DEFAULT_SETTINGS){
 }
 export function rebindSetting(settings,action,code){
   if(!BINDING_ACTIONS.some(item=>item.key===action))return {ok:false,error:'Unbekannte Aktion.'};
-  if(!validCode(code))return {ok:false,error:'Nutze Buchstaben, Ziffern, Pfeile, Tab, Leertaste, Umschalt oder Strg. Escape und F11 bleiben reserviert.'};
+  if(!validCode(code))return {ok:false,error:'Nutze Buchstaben, Ziffern, Pfeile, Tab, Leertaste, Umschalt oder Strg. Escape, F8 und F11 bleiben reserviert.'};
   const occupied=bindingAction(settings.bindings,code);
   if(occupied&&occupied!==action)return {ok:false,error:`${keyLabel(code)} ist bereits für „${BINDING_ACTIONS.find(item=>item.key===occupied).label}“ belegt.`};
   return {ok:true,bindings:{...settings.bindings,[action]:code}};
