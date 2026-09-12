@@ -4,7 +4,8 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 const version=JSON.parse(await fs.readFile('package.json','utf8')).version;
 const exe=process.env.DF_EXE||path.resolve(`../../outputs/v${version}/DEAD FREQUENCY-win32-x64/DEAD FREQUENCY.exe`);
-const out=path.resolve(`../qa-coop-native-${version}`);await fs.mkdir(out,{recursive:true});
+const internet=process.env.DF_QA_LAN!=='1';
+const out=path.resolve(`../qa-coop-native-${version}${internet?'':'-lan'}`);await fs.mkdir(out,{recursive:true});
 const apps=[],pages=[],checks=[],errors=[];const pass=name=>{checks.push(name);console.log('PASS',name);};
 async function boot(label){
   const profile=await fs.mkdtemp(path.join(out,label+'-profile-'));
@@ -16,15 +17,16 @@ async function boot(label){
 try{
   const host=await boot('host'),guest=await boot('guest');pass('Two packaged Windows clients boot with isolated persistent profiles');
   await host.page.locator('#coop-open').click();await host.page.locator('#coop-name').fill('Alpha');
+  if(!internet){await host.page.locator('.coop-options summary').click();await host.page.locator('#coop-internet').uncheck();}
   await host.page.locator('#coop-connect').click();
   await host.page.waitForFunction(()=>__DF.coop?.info.status==='lobby'||document.querySelector('#coop-status-label')?.textContent==='VERBINDUNG UNTERBROCHEN',null,{timeout:100000});
   const hostStatus=await host.page.locator('#coop-status-message').innerText();
   assert.equal(await host.page.evaluate(()=>__DF.coop?.info.status),'lobby',hostStatus);
-  const invite=await host.page.locator('#coop-share-invite').inputValue();assert.match(invite,/^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/coop\?token=[a-f0-9]{64}$/);pass('Host creates a reachable encrypted Internet invitation automatically');
+  const invite=await host.page.locator('#coop-share-invite').inputValue();assert.match(invite,internet?/^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/coop\?token=[a-f0-9]{64}$/:/^ws:\/\/[\d.]+:\d+\/coop\?token=[a-f0-9]{64}$/);pass(internet?'Host creates a reachable encrypted Internet invitation automatically':'Host creates a local network invitation');
   await host.page.locator('#coop-copy').click();assert.equal(await host.app.evaluate(({clipboard})=>clipboard.readText()),invite);pass('The real Copy button copies the complete invitation');
   await guest.page.locator('#coop-open').click();await guest.page.locator('#coop-mode-join').click();await guest.page.locator('#coop-name').fill('Bravo');await guest.page.locator('#coop-invite').fill(invite);await guest.page.locator('#coop-connect').click();
   await guest.page.waitForFunction(()=>__DF.coop?.info.players.length===2,null,{timeout:30000});await host.page.waitForFunction(()=>__DF.coop?.info.players.length===2);
-  pass('The colleague joins the shared lobby through the public Internet endpoint');
+  pass(internet?'The colleague joins the shared lobby through the public Internet endpoint':'The colleague joins the shared lobby through the local network endpoint');
   assert.equal(await host.page.locator('#coop-start').isEnabled(),false);await host.page.locator('#coop-ready').click();await guest.page.locator('#coop-ready').click();await host.page.waitForFunction(()=>__DF.coop?.info.players.every(p=>p.ready));
   await host.page.locator('#coop-start').click();
   for(const {page} of [host,guest])await page.waitForFunction(()=>['raid','paused'].includes(__DF.state.phase)&&__DF.state.teammates?.length===1,null,{timeout:20000});
@@ -62,6 +64,6 @@ try{
   await host.page.screenshot({path:path.join(out,'03-coop-extraction.png')});
   await Promise.all([host.page.evaluate(()=>__DF.persist()),guest.page.evaluate(()=>__DF.persist())]);
   assert.deepEqual(errors,[]);pass('No JavaScript or renderer errors in the tested multiplayer flow');
-  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,internet:true,exe,version,checks,errors,endpoint:new URL(invite).origin},null,2));
-}catch(error){for(let i=0;i<pages.length;i++)await pages[i].screenshot({path:path.join(out,`failure-${i}.png`)}).catch(()=>{});await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,internet:true,exe,version,checks,errors,failure:error.stack},null,2));throw error;}
+  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,internet,exe,version,checks,errors,endpoint:new URL(invite).origin},null,2));
+}catch(error){for(let i=0;i<pages.length;i++)await pages[i].screenshot({path:path.join(out,`failure-${i}.png`)}).catch(()=>{});await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,internet,exe,version,checks,errors,failure:error.stack},null,2));throw error;}
 finally{for(const app of apps.reverse())await app.close().catch(()=>{});}

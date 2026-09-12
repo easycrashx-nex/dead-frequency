@@ -115,7 +115,8 @@ test('A verified release installs atomically and records every file hash', async
   const progress = [], { result, options, fixture } = await install(t, { onProgress: value => progress.push(value) });
   assert.equal(result.source, 'downloaded', JSON.stringify(result)); assert.equal(result.version, '1.3.0'); assert.equal(result.updated, true);
   const target = path.join(options.installRoot, 'versions', result.version);
-  assert.equal(result.exe, path.join(target, ...EXECUTABLE.split('/')));
+  // Windows runners may expose TEMP through an 8.3 alias; compare real files.
+  assert.equal(await fs.realpath(result.exe), await fs.realpath(path.join(target, ...EXECUTABLE.split('/'))));
   const receipt = JSON.parse(await fs.readFile(path.join(target, RECEIPT), 'utf8'));
   assert.equal(receipt.files.length, REQUIRED_FILES.length);
   for (const file of receipt.files) assert.equal(sha256(await fs.readFile(path.join(target, ...file.path.split('/')))), file.sha256);
