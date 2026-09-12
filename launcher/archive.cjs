@@ -1,6 +1,8 @@
 'use strict';
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
+// An update contains app.asar as a physical file. Electron's patched fs treats
+// that name as a virtual archive, including while it is still being written.
+const fs = process.versions.electron ? require('original-fs') : require('node:fs');
+const fsp = fs.promises;
 const path = require('node:path');
 const crypto = require('node:crypto');
 const zlib = require('node:zlib');

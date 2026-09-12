@@ -1,4 +1,4 @@
-# DEAD FREQUENCY 1.3.0
+# DEAD FREQUENCY 1.3.1
 
 Ein Extraction-Shooter aus der Ego-Perspektive für Windows x64: allein offline oder zu zweit im Koop. Durchsuche den 300 × 300 Meter großen Sektor 07, bekämpfe Patrouillen, sichere Beute und handle nach der Extraktion damit.
 

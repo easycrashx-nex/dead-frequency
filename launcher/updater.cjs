@@ -1,5 +1,6 @@
 'use strict';
-const fsp = require('node:fs/promises');
+// Inspect physical installation files, never Electron's virtual ASAR contents.
+const fsp = (process.versions.electron ? require('original-fs') : require('node:fs')).promises;
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { APP_DIRECTORY, LIMITS, safeRelative, inside, hashFile, checkAbort, extractArchive, walkFiles } = require('./archive.cjs');

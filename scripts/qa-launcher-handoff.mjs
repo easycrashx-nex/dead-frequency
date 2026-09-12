@@ -19,11 +19,16 @@ try{
   await page.evaluate(()=>{__DF.state.profile.credits=3456;__DF.persist();});await initial.close();initial=null;
   pass('An isolated older-version bootstrap has an existing player save');
   updating=await _electron.launch({args:[bootstrap,'--qa','--qa-launcher'],env,timeout:45000});page=await updating.firstWindow();
-  await page.exposeFunction('recordUpdatePhase',phase=>{if(phases.at(-1)!==phase){phases.push(phase);console.log('UPDATE',phase);}});
+  let rejectFallback;
+  const fallback=new Promise((_,reject)=>{rejectFallback=reject;});fallback.catch(()=>{});
+  await page.exposeFunction('recordUpdatePhase',phase=>{
+    if(phases.at(-1)!==phase){phases.push(phase);console.log('UPDATE',phase);}
+    if(phase==='fallback')rejectFallback(new Error('Live update fell back instead of installing the published version'));
+  });
   await page.evaluate(()=>window.launcher.onProgress(event=>window.recordUpdatePhase(event.phase)));
   page.on('pageerror',error=>errors.push(error.message));
   await page.screenshot({path:path.join(out,'01-launcher-checking.png')});
-  await updating.waitForEvent('close',{timeout:180000});updating=null;
+  await Promise.race([updating.waitForEvent('close',{timeout:180000}),fallback]);updating=null;
   pass('The launcher downloads and exits for automatic handoff without any button click');
   const deadline=Date.now()+45000;
   while(Date.now()<deadline){
