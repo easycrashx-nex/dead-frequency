@@ -8,6 +8,12 @@ const exe=process.env.DF_EXE||path.resolve(`../../outputs/v${version}/DEAD FREQU
 const internet=process.env.DF_QA_LAN!=='1';
 const out=path.resolve(`../qa-coop-native-${version}${internet?'':'-lan'}`);await fs.mkdir(out,{recursive:true});
 const apps=[],pages=[],checks=[],errors=[];const pass=name=>{checks.push(name);console.log('PASS',name);};
+async function padButton(page,index,duration=120){
+  await page.evaluate(index=>{window.__coopPad.buttons[index]={pressed:true,value:1};},index);
+  await page.waitForTimeout(duration);
+  await page.evaluate(index=>{window.__coopPad.buttons[index]={pressed:false,value:0};},index);
+  await page.waitForTimeout(200);
+}
 async function boot(label){
   const profile=await fs.mkdtemp(path.join(out,label+'-profile-'));
   const app=await _electron.launch({executablePath:exe,args:['--qa'],env:{...process.env,DEAD_FREQUENCY_QA_PROFILE:profile},timeout:45000});apps.push(app);
@@ -56,20 +62,27 @@ try{
   pass('A real shot by the second Windows player reaches the host AI through cover; both clients see its investigation without invented visual contact or exposed private memory');
   await host.app.evaluate(()=>{for(const member of global.__DF_HOST().players.values()){member.game.state.enemies.splice(0);member.game.teleport(-142,130);}});
   await guest.page.bringToFront();await guest.page.evaluate(()=>__DF.resume());await guest.page.locator('#game').click().catch(()=>{});
+  await guest.page.evaluate(()=>{
+    window.__coopPad={id:'Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)',index:0,connected:true,mapping:'standard',axes:[0,0,0,0],buttons:Array.from({length:17},()=>({pressed:false,value:0}))};
+    Object.defineProperty(navigator,'getGamepads',{configurable:true,value:()=>[window.__coopPad]});
+  });
   await guest.page.waitForTimeout(350);const before=await guest.page.evaluate(()=>__DF.state.player.z);
-  await guest.page.keyboard.down('KeyW');await guest.page.keyboard.down('ShiftLeft');await guest.page.waitForTimeout(800);await guest.page.keyboard.up('KeyW');await guest.page.keyboard.up('ShiftLeft');
+  await guest.page.evaluate(()=>{window.__coopPad.axes[1]=-1;});await padButton(guest.page,10,800);
+  await guest.page.evaluate(()=>{window.__coopPad.axes[1]=0;});
   await guest.page.waitForTimeout(300);const after=await guest.page.evaluate(()=>__DF.state.player.z);assert.ok(Math.abs(after-before)>1,`Movement ${before} -> ${after}`);
-  const replicated=await host.page.evaluate(()=>__DF.state.teammates[0].z);assert.ok(Math.abs(replicated-after)<.7);pass('Real keyboard movement replicates between the two Windows clients');
+  const replicated=await host.page.evaluate(()=>__DF.state.teammates[0].z);assert.ok(Math.abs(replicated-after)<.7);
+  assert.equal(await guest.page.evaluate(()=>__DF.inputDevice),'controller');assert.equal(await guest.page.evaluate(()=>__DF.controllerState.family),'xbox');
+  pass('A simulated Xbox gamepad drives real analog movement through the second Windows client and the authoritative Internet host');
   assert.equal(await host.page.evaluate(()=>__DF.stats().teammates),1);assert.equal(await guest.page.evaluate(()=>__DF.stats().teammates),1);pass('Both clients render the remote operator');
   await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];members[0].game.teleport(-142,122);members[1].game.teleport(-142,130);});
   await guest.page.waitForTimeout(500);await guest.page.evaluate(()=>{__DF.state.player.yaw=0;__DF.state.player.pitch=0;__DF.syncLook();});await guest.page.waitForTimeout(200);
   await host.page.screenshot({path:path.join(out,'01-host-coop.png')});await guest.page.screenshot({path:path.join(out,'02-guest-coop.png')});
   const beforeTriggerAmmo=await guest.page.evaluate(()=>__DF.state.player.ammo);
-  await guest.page.mouse.down();await guest.page.waitForTimeout(100);await guest.page.mouse.up();await guest.page.waitForTimeout(350);assert.equal(await host.page.evaluate(()=>__DF.state.player.hp),100);pass('Shooting directly at the teammate causes no friendly fire');
+  await padButton(guest.page,7,350);await guest.page.waitForTimeout(350);assert.equal(await host.page.evaluate(()=>__DF.state.player.hp),100);pass('Controller-triggered shots directly at the teammate cause no friendly fire');
   await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];members[0].game.teleport(-145,130);const enemy={...global.__DF_QAEnemy,id:'qa-guard',x:-142,z:118,y:0,yaw:Math.PI,home:{x:-142,z:118},hp:45,dead:false,fireTimer:9999,alert:10,lastSeen:{x:-142,z:130},lastHeard:null,mode:'attack',path:[],patrol:null,pathTimer:0,flank:false};delete enemy.ai;delete enemy.targetPlayerId;members[0].game.state.enemies.push(enemy);});
-  await guest.page.waitForTimeout(350);await guest.page.mouse.down();await guest.page.waitForTimeout(250);await guest.page.mouse.up();
+  await guest.page.waitForTimeout(350);await padButton(guest.page,7,500);
   for(const {page} of [host,guest])await page.waitForFunction(()=>__DF.state.enemies.find(e=>e.id==='qa-guard')?.dead,null,{timeout:5000});
-  assert.equal(await guest.page.evaluate(()=>__DF.state.player.ammo),beforeTriggerAmmo-2);assert.equal(await host.page.evaluate(()=>__DF.state.player.ammo===__DF.state.player.magSize),true);pass('Two real semi-automatic trigger presses synchronize enemy damage and death while ammunition stays per player');
+  assert.equal(await guest.page.evaluate(()=>__DF.state.player.ammo),beforeTriggerAmmo-2);assert.equal(await host.page.evaluate(()=>__DF.state.player.ammo===__DF.state.player.magSize),true);pass('Two separate controller trigger holds fire exactly two semi-automatic shots, synchronize enemy death and preserve per-player ammunition');
   await guest.page.keyboard.press('Escape');await guest.page.waitForFunction(()=>__DF.state.phase==='paused');const raidTime=await guest.page.evaluate(()=>__DF.state.raid.timeLeft);await guest.page.waitForTimeout(700);assert.ok(await guest.page.evaluate(t=>__DF.state.raid.timeLeft<t-.4,raidTime));pass('The shared raid continues while one player opens the local menu');
   await host.app.evaluate(()=>{for(const member of global.__DF_HOST().players.values())member.game.state.enemies.splice(0);});
   const interiorDoor=await host.app.evaluate(()=>{const members=[...global.__DF_HOST().players.values()];const room=members[0].game.layout.interiors.find(room=>room.id==='warehouse'),door=room.doors.find(door=>door.side==='south');members.forEach((member,index)=>member.game.teleport(door.outside.x+(index? .45:-.45),door.outside.z));return door;});

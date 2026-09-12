@@ -5,6 +5,7 @@ export const SETTINGS_CATEGORIES = [
   {id:'tasten',label:'Tastenbelegung',description:'Deine Tasten für Bewegung und Aktionen.'},
   {id:'audio',label:'Audio',description:'Stimme den Mix auf deine Kopfhörer oder Lautsprecher ab.'},
   {id:'hud',label:'HUD & Fadenkreuz',description:'Informationen, Lesbarkeit und Zielhilfe auf dem Bildschirm.'},
+  {id:'controller',label:'Controller',description:'Sticks, Tastenhinweise und Spielweise für deinen Controller.'},
 ];
 const range=(key,category,label,description,value,min,max,step,format='percent')=>({key,category,label,description,type:'range',default:value,min,max,step,format});
 const toggle=(key,category,label,description,value=true)=>({key,category,label,description,type:'toggle',default:value});
@@ -53,6 +54,18 @@ export const SETTINGS_FIELDS = [
   toggle('teammateHud','hud','Teamanzeige','Rufname, Entfernung und Gesundheit des Koop-Partners.'),
   toggle('prompts','hud','Interaktionshinweise','Hinweise zu Beute, Relais und Extraktion in der Spielwelt.'),
   toggle('fps','hud','FPS anzeigen','Aktuelle gezeichnete Bilder pro Sekunde.',false),
+  toggle('controllerEnabled','controller','Controller im Raid','Aktiviert die Spielsteuerung. Menüs bleiben mit dem Controller bedienbar.'),
+  range('controllerSensitivity','controller','Blick-Empfindlichkeit','Geschwindigkeit des rechten Sticks beim freien Umsehen.',1,.2,3,.05,'factor'),
+  range('controllerAdsSensitivity','controller','Empfindlichkeit im Visier','Faktor der normalen Stick-Empfindlichkeit beim Zielen.',.55,.1,1.5,.05,'factor'),
+  range('controllerDeadzone','controller','Bewegungs-Totzone','Ignoriert kleine Ausschläge des linken Sticks gegen unbeabsichtigte Bewegung.',.16,0,.4,.01),
+  range('controllerLookDeadzone','controller','Blick-Totzone','Ignoriert kleine Ausschläge des rechten Sticks gegen driftenden Blick.',.14,0,.4,.01),
+  range('controllerResponse','controller','Stick-Kurve','Höhere Werte erlauben feinere Korrekturen nahe der Stickmitte.',1.5,1,3,.05,'factor'),
+  toggle('controllerInvertY','controller','Vertikalen Blick invertieren','Rechten Stick nach oben bewegen, um nach unten zu sehen.',false),
+  select('controllerPrompts','controller','Tastensymbole','Automatisch erkennt unterstützte Xbox- und PlayStation-Controller.','auto',[['auto','Automatisch'],['xbox','Xbox'],['playstation','PlayStation'],['generic','Neutral']]),
+  toggle('controllerVibration','controller','Vibration','Rückmeldung bei Schüssen und Treffern, sofern das Gerät sie unterstützt.'),
+  select('controllerSprintMode','controller','Sprinten mit Controller','Linken Stick drücken: halten oder umschalten.','toggle',[['toggle','Umschalten'],['hold','Halten']]),
+  select('controllerCrouchMode','controller','Ducken mit Controller','Ducktaste halten oder zum Umschalten drücken.','toggle',[['toggle','Umschalten'],['hold','Halten']]),
+  select('controllerAimMode','controller','Zielen mit Controller','Linken Abzug halten oder zum Umschalten drücken.','hold',[['hold','Halten'],['toggle','Umschalten']]),
 ];
 export const BINDING_ACTIONS = [
   {key:'forward',label:'Vorwärts',default:'KeyW'}, {key:'backward',label:'Rückwärts',default:'KeyS'},

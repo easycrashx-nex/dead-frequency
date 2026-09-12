@@ -1,4 +1,4 @@
-# DEAD FREQUENCY 1.8.0
+# DEAD FREQUENCY 1.9.0
 
 Ein Extraction-Shooter aus der Ego-Perspektive für Windows x64: allein offline oder zu zweit im Koop. Durchsuche den 300 × 300 Meter großen Sektor 07, bekämpfe Patrouillen, sichere Beute und handle nach der Extraktion damit.
 
@@ -6,7 +6,7 @@ Ein Extraction-Shooter aus der Ego-Perspektive für Windows x64: allein offline 
 
 ## Spielen
 
-Das Windows-ZIP einmal vollständig entpacken und `DEAD FREQUENCY.exe` starten. Den gesamten Programmordner zusammenlassen. Zuerst prüft der Launcher automatisch GitHub auf Updates, danach öffnet sich das Spiel. Kein Konto und keine manuelle Installation erforderlich. Tastatur und Maus, Hardwarebeschleunigung und WebGL2 werden benötigt.
+Das Windows-ZIP einmal vollständig entpacken und `DEAD FREQUENCY.exe` starten. Den gesamten Programmordner zusammenlassen. Zuerst prüft der Launcher automatisch GitHub auf Updates, danach öffnet sich das Spiel. Kein Konto und keine manuelle Installation erforderlich. Du kannst mit Maus und Tastatur oder einem unterstützten Controller spielen; Hardwarebeschleunigung und WebGL2 werden benötigt.
 
 ## Mit einem Freund spielen
 
@@ -27,6 +27,31 @@ Die Internet-Einladung läuft über den mitgelieferten Cloudflare-Tunnel, benöt
 Bei jedem normalen Start prüft der Launcher das neueste stabile [GitHub-Release](https://github.com/easycrashx-nex/dead-frequency/releases/latest). Eine neuere Version wird ohne Bestätigung heruntergeladen, anhand von SHA-256 geprüft und in einem separaten Versionsordner vorbereitet. Anschließend startet automatisch die neue Version. Es muss kein ZIP von Hand heruntergeladen oder entpackt werden. Während eines Raids wird kein Update eingespielt.
 
 Bei fehlendem Internet oder einem fehlerhaften Download startet die vorhandene Version. Frühere vollständige Installationen bleiben erhalten; ältere Releases ersetzen keine neuere Version. Spielstände liegen getrennt von den Programmdateien im Windows-Benutzerprofil. Für Updates werden ausschließlich öffentliche GitHub-Release-Dateien dieses Projekts verwendet; Zugangstoken werden nicht mitgeliefert.
+
+## Controller
+
+Verbinde deinen Xbox- oder PlayStation-Controller über USB oder Bluetooth mit Windows und drücke nach dem Verbinden eine Taste. Das Spiel erkennt die vom System gemeldete Gerätefamilie und zeigt passende Xbox- oder PlayStation-Symbole. Menüs, Einstellungen, Arsenal, Skilltree, Kisten, Rucksack, Lager und Markt sind mit dem Controller bedienbar. Text- und Preisfelder bieten eine Bildschirmtastatur; Einladungen lassen sich dort ausdrücklich aus der Zwischenablage einfügen.
+
+| Aktion | Xbox | PlayStation |
+| --- | --- | --- |
+| Bewegen / Umsehen | Linker / rechter Stick | Linker / rechter Stick |
+| Feuern / Zielen | RT / LT | R2 / L2 |
+| Springen / Bestätigen | A | × |
+| Ducken / Zurück | B | ○ |
+| Nachladen | X | □ |
+| Interagieren, Kisten öffnen | Y | △ |
+| Heilen | LB | L1 |
+| Rucksack | RB | R1 |
+| Karte | View / Zurück | Share / Create |
+| Pause / Fortsetzen | Menü | Options |
+| Sprinten | Linken Stick drücken | L3 |
+| Ducken, alternativ | Rechten Stick drücken | R3 |
+| Menüauswahl | Steuerkreuz oder linker Stick | Steuerkreuz oder linker Stick |
+| Menüregister wechseln | LB / RB | L1 / R1 |
+
+Unter **Einstellungen → Controller** findest du zwölf Optionen: Raidsteuerung, Blick- und Visier-Empfindlichkeit, getrennte Stick-Totzonen, Reaktionskurve, invertierten Blick, Tastensymbole, Vibration sowie Halten/Umschalten für Zielen, Sprinten und Ducken. Die Menübedienung bleibt auch bei abgeschalteter Raidsteuerung verfügbar. Nach einem Abziehen oder Fensterwechsel werden gehaltene Eingaben verworfen; lasse Tasten und Sticks kurz los, bevor du fortsetzt. Ein Mausklick ins Spielfeld übernimmt wieder die Maussteuerung.
+
+Unterstützt werden Controller, deren Treiber der Gamepad-API eine Standardbelegung liefert. Meldet etwa DS4Windows oder Steam Input einen PlayStation-Controller als Xbox-Gerät, kann das Spiel die verdeckte Hardwareidentität nicht auslesen. Wähle dann bei **Tastensymbole** manuell PlayStation. Vibration hängt von Controller, Verbindung und Treiber ab; DualSense-Spezialeffekte und adaptive Trigger sind nicht enthalten.
 
 ## Gegnerverhalten
 
@@ -84,11 +109,12 @@ Die Karte hebt diese Gebäude und ihre Eingänge hervor. Laufe durch die offenen
 
 ## Einstellungen
 
-**EINSTELLUNGEN** in der Basis oder im Pausenmenü öffnet 55 Optionen in sechs Kategorien:
+**EINSTELLUNGEN** in der Basis oder im Pausenmenü öffnet 67 Optionen in sieben Kategorien:
 
 - **Grafik & Anzeige:** Qualitätsprofil, Renderauflösung, Schatten, Partikel, Helligkeit, Kontrast, Sättigung, Sichtfeld, FPS-Limit und Vollbild.
 - **Kamera & Bewegung:** Kopfbewegung, Waffenschwanken, Treffererschütterungen, Visier-Zoom, Sprint-Sichtfeld und Waffenanzeige.
 - **Maus & Spielweise:** normale und Visier-Empfindlichkeit, invertierte Y-Achse, Halten/Umschalten für Zielen, Sprint und Ducken sowie Nachladen ohne erneuten Schussversuch.
+- **Controller:** Empfindlichkeit, Stick-Totzonen, Reaktionskurve, Geräte-Symbole, Vibration und Halten/Umschalten.
 - **Tastenbelegung:** zwölf Bewegungs- und Aktionstasten. Eine Aktion anklicken und die gewünschte Taste drücken; belegte Tasten werden erklärt, Escape bricht die Eingabe ab. Escape für das Menü und F11 für Vollbild bleiben fest.
 - **Audio:** Gesamtlautstärke, Waffen, Effekte, Schritte, Umgebung und Hinweise separat; Stummschaltung bei Fensterwechsel und Nachtmodus.
 - **HUD & Fadenkreuz:** Größe und Deckkraft, Fadenkreuz mit Farb-/Größenvorschau, Treffer- und Schadensanzeigen, Kompass, Teamanzeige, Interaktionshinweise und FPS-Anzeige.

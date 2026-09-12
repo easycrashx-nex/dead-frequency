@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('platform',Object.freeze({
   prepareInvite:invite=>ipcRenderer.invoke('coop:prepare-invite',invite),
   stopHost:()=>ipcRenderer.invoke('coop:stop'),
   copyInvite:text=>ipcRenderer.invoke('coop:copy',text),
+  readClipboard:()=>ipcRenderer.invoke('input:paste'),
   onStatus:callback=>subscribe('coop:status',callback),
   setFullscreen:value=>ipcRenderer.invoke('display:fullscreen',value),
   onFullscreen:callback=>subscribe('display:fullscreen',callback),

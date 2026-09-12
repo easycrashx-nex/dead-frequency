@@ -34,12 +34,12 @@ try{
   await page.reload();await ready();
   for(const [key,value] of Object.entries({sensitivity:1.25,volume:.4,quality:'medium',fov:90}))assert.equal(await page.evaluate(key=>__DF.settings[key],key),value);
   pass('The packaged EXE migrates all four existing settings and adds safe defaults');
-  await openSettings();assert.equal(await page.locator('[data-settings-category]').count(),6);
-  assert.equal(await page.locator('[data-settings-row]').count(),55);
+  await openSettings();assert.equal(await page.locator('[data-settings-category]').count(),SETTINGS_CATEGORIES.length);
+  assert.equal(await page.locator('[data-settings-row]').count(),SETTINGS_FIELDS.length+BINDING_ACTIONS.length);
   await page.locator('#settings-search').fill('fadenkreuz');
   assert.ok(await page.locator('[data-settings-row]:visible').count()>=4);
   await page.locator('#settings-search').fill('keineoptionxyz');assert.equal(await page.locator('#settings-empty').isVisible(),true);
-  await page.locator('[data-clear-settings-search]').click();pass('Six categories, all 55 controls, cross-category search and empty results work');
+  await page.locator('[data-clear-settings-search]').click();pass(`${SETTINGS_CATEGORIES.length} categories, all ${SETTINGS_FIELDS.length+BINDING_ACTIONS.length} controls, cross-category search and empty results work`);
   const chosen={};
   for(const field of SETTINGS_FIELDS){
     if(field.key==='fullscreen')continue;
@@ -49,7 +49,7 @@ try{
   }
   const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('dead-frequency.settings.v1')));
   for(const [key,value] of Object.entries(chosen))assert.equal(saved[key],value,key);
-  pass('Every one of the 42 non-window options changes the real runtime value and persists');
+  pass(`Every one of the ${SETTINGS_FIELDS.length-1} non-window options changes the real runtime value and persists`);
   await setting('fullscreen',true);await page.waitForTimeout(450);assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isFullScreen()),true);
   // Electron's before-input-event handles F11 before the renderer; CDP keyboard
   // injection bypasses that native hook, so exercise its native input path.
