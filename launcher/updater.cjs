@@ -4,7 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { APP_DIRECTORY, LIMITS, safeRelative, inside, hashFile, checkAbort, extractArchive, walkFiles } = require('./archive.cjs');
 
-const WINDOWS_ASSET = 'DEAD FREQUENCY - Windows.zip';
+const WINDOWS_ASSET = 'DEAD-FREQUENCY-Windows.zip';
 const CHECKSUM_ASSET = 'SHA256SUMS.txt';
 const RECEIPT = '.verified-install.json';
 const EXECUTABLE = `${APP_DIRECTORY}/DEAD FREQUENCY.exe`;

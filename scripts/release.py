@@ -13,16 +13,18 @@ app = release / 'DEAD FREQUENCY-win32-x64'
 work = project.parent
 assert (app / 'DEAD FREQUENCY.exe').is_file(), 'Run pnpm build and pnpm package first'
 parser = argparse.ArgumentParser()
-parser.add_argument('--qa-report', type=Path, default=work / 'qa-expansion-native' / 'result.json')
+parser.add_argument('--qa-report', type=Path, default=work / f'qa-coop-native-{version}' / 'result.json')
 args = parser.parse_args()
 report = json.loads(args.qa_report.read_text(encoding='utf-8'))
 assert not report.get('errors') and not report.get('failure') and report.get('native'), 'Native QA must pass before release'
 assert Path(report['exe']).resolve() == (app / 'DEAD FREQUENCY.exe').resolve(), 'QA must use the current release'
+with (app / 'resources/app.asar').open('rb') as stream:
+    assert report.get('appAsarSha256') == hashlib.file_digest(stream, 'sha256').hexdigest(), 'Application changed after native QA'
 for destination in [release, app]:
     shutil.copy2(project / 'README.md', destination / 'ANLEITUNG.md')
     shutil.copy2(project / 'public/audio/CREDITS.md', destination / 'AUDIO-QUELLEN.md')
 
-for filename, directory in [('DEAD FREQUENCY - Windows.zip', app), ('DEAD FREQUENCY - Quellcode.zip', project)]:
+for filename, directory in [('DEAD-FREQUENCY-Windows.zip', app), ('DEAD-FREQUENCY-Quellcode.zip', project)]:
     with zipfile.ZipFile(release / filename, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for source in sorted(directory.rglob('*')):
             if not source.is_file():
@@ -40,14 +42,14 @@ for filename, directory in [('DEAD FREQUENCY - Windows.zip', app), ('DEAD FREQUE
                 archive.write(source, (Path(directory.name) / relative).as_posix())
 
 proof = {}
-for filename in ['DEAD FREQUENCY - Windows.zip', 'DEAD FREQUENCY - Quellcode.zip']:
+for filename in ['DEAD-FREQUENCY-Windows.zip', 'DEAD-FREQUENCY-Quellcode.zip']:
     with zipfile.ZipFile(release / filename) as archive:
         error = archive.testzip()
         assert error is None, error
         proof[filename] = {'entries': len(archive.infolist()), 'crcVerified': True}
 
 hashes = []
-for relative in ['DEAD FREQUENCY-win32-x64/DEAD FREQUENCY.exe', 'DEAD FREQUENCY-win32-x64/resources/app.asar', 'DEAD FREQUENCY - Windows.zip', 'DEAD FREQUENCY - Quellcode.zip']:
+for relative in ['DEAD FREQUENCY-win32-x64/DEAD FREQUENCY.exe', 'DEAD FREQUENCY-win32-x64/resources/app.asar', 'DEAD-FREQUENCY-Windows.zip', 'DEAD-FREQUENCY-Quellcode.zip']:
     source = release / relative
     with source.open('rb') as stream:
         digest = hashlib.file_digest(stream, 'sha256').hexdigest()

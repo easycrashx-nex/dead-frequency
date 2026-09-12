@@ -6,7 +6,7 @@ Der Launcher bezieht ausschließlich stabile Releases aus `easycrashx-nex/dead-f
 2. `pnpm install --frozen-lockfile`, `pnpm prepare:tunnel`, `pnpm test`, `pnpm build`, `pnpm package` ausführen.
 3. Die neue Windows-Ausgabe mit `node scripts/qa-coop-native.mjs` prüfen. Der Test verwendet zwei isolierte Windows-Instanzen und benötigt Internet. Die übrigen gezielten Prüfungen passend zur Änderung ausführen.
 4. `python scripts/release.py --qa-report ../qa-coop-native-<VERSION>/result.json` erzeugt das vollständige Windows-ZIP, den Quellcode und `SHA256SUMS.txt`.
-5. Geprüfte Quelldateien committen und pushen. Auf genau diesen Commit ein stabiles Release `v<VERSION>` erstellen; dabei `DEAD FREQUENCY - Windows.zip`, `DEAD FREQUENCY - Quellcode.zip`, `SHA256SUMS.txt` und `ANLEITUNG.md` hochladen. Die Releasebeschreibung über `gh release create --notes-file <Datei>` übergeben.
+5. Geprüfte Quelldateien committen und pushen. Auf genau diesen Commit ein stabiles Release `v<VERSION>` erstellen; dabei `DEAD-FREQUENCY-Windows.zip`, `DEAD-FREQUENCY-Quellcode.zip`, `SHA256SUMS.txt` und `ANLEITUNG.md` hochladen. Die Releasebeschreibung über `gh release create --notes-file <Datei>` übergeben.
 6. Release erst veröffentlichen, wenn alle Assets vollständig hochgeladen sind. Das öffentliche Downloadpaket mit dem Updater erneut prüfen.
 
 Der Name des Windows-Assets ist Teil des Updatevertrags. Das ZIP muss den kompletten Ordner `DEAD FREQUENCY-win32-x64` enthalten. Sein `update-manifest.json` bindet Versionsnummer und EXE-Namen. Der Launcher verifiziert den GitHub-Assetdigest bzw. die SHA-256-Datei und alle Dateien der gecachten Installation.

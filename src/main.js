@@ -5,7 +5,7 @@ import { createUI } from './ui.js';
 import { createAudio } from './audio.js';
 import { createRecoil } from './recoil.js';
 import * as economy from './economy.js';
-import {createCoopClient} from './coop-client.js';
+import {createCoopClient,parseInvite} from './coop-client.js';
 
 const SAVE_KEY='dead-frequency.profile.v2', LEGACY_SAVE_KEY='dead-frequency.profile.v1', SETTINGS_KEY='dead-frequency.settings.v1';
 const canvas=document.querySelector('#game'),root=document.querySelector('#ui');
@@ -146,6 +146,7 @@ function homeAction(action,...args){
 }
 async function leaveCoop(){
   coopGeneration++;
+  coopBusy=false;
   const active=coop;coop=null;active?.leave();
   game=localGame;game.returnToHub();closePanels();clearInputs();unlock();recoil.reset();
   Object.assign(coopStatus,{status:'offline',players:[],invite:'',message:''});
@@ -162,13 +163,24 @@ async function joinCoop(options,hosting){
     marketTick();persist();
     try{localStorage.setItem('dead-frequency.operator',JSON.stringify(String(options.name||'Operator').slice(0,20)));}catch{}
     const host=hosting?await window.platform.host({internet:options.internet!==false}):null;
+    if(!hosting){
+      try{parseInvite(options.invite);}catch{throw new Error('Bitte füge die vollständige Koop-Einladung deines Mitspielers ein.');}
+      coopStatus.message='Einladung wird geprüft …';
+      await window.platform.prepareInvite(options.invite);
+    }
     if(generation!==coopGeneration)return;
     const client=createCoopClient({localGame,onProfile:persist,onRaid(state){closePanels();clearInputs();recoil.reset();lookYaw=state.player.yaw;lookPitch=state.player.pitch;audio.unlock();lock();},onDisconnect(){clearInputs();closePanels();unlock();persist();}});
     coop=client;
     await client.connect(host?.localUrl||options.invite,{...options,profile:localGame.getSave(),invitation:host?.invite||options.invite});
+    if(generation!==coopGeneration){client.leave();return;}
     game=client;
-  }catch(error){coop?.leave();coop=null;game=localGame;await window.platform.stopHost();if(generation===coopGeneration)Object.assign(coopStatus,{status:'error',message:error.message||'Verbindung fehlgeschlagen.'});}
-  finally{coopBusy=false;}
+  }catch(error){
+    if(generation!==coopGeneration)return;
+    coop?.leave();coop=null;game=localGame;await window.platform.stopHost();
+    const message=String(error?.message||'Verbindung fehlgeschlagen.').replace(/^Error invoking remote method '[^']+': (?:Error: )?/,'');
+    if(generation===coopGeneration)Object.assign(coopStatus,{status:'error',message});
+  }
+  finally{if(generation===coopGeneration)coopBusy=false;}
 }
 async function boot(){
   game=localGame=await createGame(read(SAVE_KEY)??read(LEGACY_SAVE_KEY));view=createRenderer(canvas,game.layout);audio=createAudio();

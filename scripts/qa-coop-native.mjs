@@ -2,6 +2,7 @@ import {_electron} from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 const version=JSON.parse(await fs.readFile('package.json','utf8')).version;
 const exe=process.env.DF_EXE||path.resolve(`../../outputs/v${version}/DEAD FREQUENCY-win32-x64/DEAD FREQUENCY.exe`);
 const internet=process.env.DF_QA_LAN!=='1';
@@ -25,7 +26,7 @@ try{
   const invite=await host.page.locator('#coop-share-invite').inputValue();assert.match(invite,internet?/^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/coop\?token=[a-f0-9]{64}$/:/^ws:\/\/[\d.]+:\d+\/coop\?token=[a-f0-9]{64}$/);pass(internet?'Host creates a reachable encrypted Internet invitation automatically':'Host creates a local network invitation');
   await host.page.locator('#coop-copy').click();assert.equal(await host.app.evaluate(({clipboard})=>clipboard.readText()),invite);pass('The real Copy button copies the complete invitation');
   await guest.page.locator('#coop-open').click();await guest.page.locator('#coop-mode-join').click();await guest.page.locator('#coop-name').fill('Bravo');await guest.page.locator('#coop-invite').fill(invite);await guest.page.locator('#coop-connect').click();
-  await guest.page.waitForFunction(()=>__DF.coop?.info.players.length===2,null,{timeout:30000});await host.page.waitForFunction(()=>__DF.coop?.info.players.length===2);
+  await guest.page.waitForFunction(()=>__DF.coop?.info.players.length===2,null,{timeout:75000});await host.page.waitForFunction(()=>__DF.coop?.info.players.length===2);
   pass(internet?'The colleague joins the shared lobby through the public Internet endpoint':'The colleague joins the shared lobby through the local network endpoint');
   assert.equal(await host.page.locator('#coop-start').isEnabled(),false);await host.page.locator('#coop-ready').click();await guest.page.locator('#coop-ready').click();await host.page.waitForFunction(()=>__DF.coop?.info.players.every(p=>p.ready));
   await host.page.locator('#coop-start').click();
@@ -64,6 +65,7 @@ try{
   await host.page.screenshot({path:path.join(out,'03-coop-extraction.png')});
   await Promise.all([host.page.evaluate(()=>__DF.persist()),guest.page.evaluate(()=>__DF.persist())]);
   assert.deepEqual(errors,[]);pass('No JavaScript or renderer errors in the tested multiplayer flow');
-  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,internet,exe,version,checks,errors,endpoint:new URL(invite).origin},null,2));
+  const appAsarSha256=createHash('sha256').update(await fs.readFile(path.join(path.dirname(exe),'resources/app.asar'))).digest('hex');
+  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,internet,exe,version,appAsarSha256,checks,errors},null,2));
 }catch(error){for(let i=0;i<pages.length;i++)await pages[i].screenshot({path:path.join(out,`failure-${i}.png`)}).catch(()=>{});await fs.writeFile(path.join(out,'result.json'),JSON.stringify({native:true,internet,exe,version,checks,errors,failure:error.stack},null,2));throw error;}
 finally{for(const app of apps.reverse())await app.close().catch(()=>{});}

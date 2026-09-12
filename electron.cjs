@@ -12,16 +12,17 @@ function trusted(event){
 }
 app.on('second-instance',()=>{if(win){if(win.isMinimized())win.restore();win.focus();}});
 app.whenReady().then(async()=>{
-  app.configureHostResolver({secureDnsMode:'secure',secureDnsServers:['https://cloudflare-dns.com/dns-query']});
+  app.configureHostResolver({secureDnsMode:'secure',secureDnsServers:['https://dns.google/dns-query']});
   Menu.setApplicationMenu(null);
   session.defaultSession.setPermissionRequestHandler((_wc,permission,callback)=>callback(permission==='pointerLock'||permission==='fullscreen'));
   session.defaultSession.setPermissionCheckHandler((_wc,permission)=>permission==='pointerLock'||permission==='fullscreen');
   const launcherMode=!process.argv.includes('--play')&&(!qa||process.argv.includes('--qa-launcher'));
   win=new BrowserWindow({width:launcherMode?1040:1440,height:launcherMode?650:900,minWidth:960,minHeight:600,backgroundColor:'#10191b',title:'DEAD FREQUENCY',show:false,autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,devTools:qa}});
-  platform=createPlatform({app,request:net.fetch,onStatus:value=>{if(!win.isDestroyed())win.webContents.send('coop:status',value);}});
+  platform=createPlatform({app,request:net.fetch,refreshDns:()=>session.defaultSession.clearHostResolverCache(),onStatus:value=>{if(!win.isDestroyed())win.webContents.send('coop:status',value);}});
   if(qa)global.__DF_HOST=()=>platform.session;
   ipcMain.handle('coop:host',(event,options)=>{if(!trusted(event))throw new Error('Unzulässiger Aufruf');return platform.host({internet:options?.internet!==false});});
   ipcMain.handle('coop:stop',event=>{if(!trusted(event))throw new Error('Unzulässiger Aufruf');return platform.stopHost();});
+  ipcMain.handle('coop:prepare-invite',(event,invite)=>{if(!trusted(event)||typeof invite!=='string'||invite.length>2048)throw new Error('Ungültige Einladung');return platform.prepareInvite(invite);});
   ipcMain.handle('coop:copy',(event,text)=>{if(!trusted(event)||typeof text!=='string'||text.length>2048)throw new Error('Ungültige Einladung');clipboard.writeText(text);return true;});
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',e=>e.preventDefault());
