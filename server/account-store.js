@@ -9,6 +9,7 @@ import { MAX_LOADOUT_MEDKITS } from '../src/loadouts.js';
 
 const scrypt = promisify(scryptCallback);
 const SESSION_MS = 30 * 24 * 60 * 60 * 1000;
+const SOCIAL_LIMIT = 100;
 const SCRYPT_OPTIONS = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 const tokenHash = token => createHash('sha256').update(token).digest('hex');
 const text = value => typeof value === 'string' && value.length > 0 && value.length <= 100;
@@ -72,7 +73,17 @@ export function createAccountStore({ path, now = Date.now } = {}) {
       room_id TEXT NOT NULL, account_id TEXT NOT NULL REFERENCES accounts(id),
       status TEXT NOT NULL CHECK(status IN ('started','settled')), outcome TEXT,
       started_at INTEGER NOT NULL, settled_at INTEGER, PRIMARY KEY(room_id, account_id)
-    );`);
+    );
+    CREATE TABLE IF NOT EXISTS social_links (
+      account_a TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      account_b TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      requested_by TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      status TEXT NOT NULL CHECK(status IN ('pending','accepted')),
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      CHECK(account_a < account_b), CHECK(requested_by IN (account_a,account_b)),
+      PRIMARY KEY(account_a, account_b)
+    );
+    CREATE INDEX IF NOT EXISTS social_links_b ON social_links(account_b);`);
   const pending = new Set();
   const dummySalt = randomBytes(16).toString('hex');
   let hashes = 0, hubPromise, hubGame;
@@ -151,6 +162,82 @@ export function createAccountStore({ path, now = Date.now } = {}) {
   function logout(token) {
     if (typeof token === 'string' && /^[a-f0-9]{64}$/.test(token)) query('DELETE FROM sessions WHERE token_hash=?').run(tokenHash(token));
     return true;
+  }
+  const accountId = value => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
+  function socialPair(actorId, otherId) {
+    account(actorId);
+    if (!accountId(otherId) || actorId === otherId) fail(400, 'invalid_friend', 'Ungültiger Spieler.');
+    return [actorId, otherId].sort();
+  }
+  function socialCount(id, status) {
+    return query('SELECT COUNT(*) AS count FROM social_links WHERE (account_a=? OR account_b=?) AND status=?').get(id, id, status).count;
+  }
+  function socialCapacity(first, second, status) {
+    if (socialCount(first, status) >= SOCIAL_LIMIT || socialCount(second, status) >= SOCIAL_LIMIT) {
+      fail(409, 'social_limit', status === 'accepted' ? 'Die Freundesliste eines Spielers ist voll (100 Freunde).' : 'Zu viele offene Freundesanfragen. Bitte zuerst Anfragen bearbeiten.');
+    }
+  }
+  function social(id) {
+    account(id);
+    const result = { friends: [], incoming: [], outgoing: [] };
+    const rows = query(`SELECT a.id,a.username,s.status,s.requested_by FROM social_links s
+      JOIN accounts a ON a.id=CASE WHEN s.account_a=? THEN s.account_b ELSE s.account_a END
+      WHERE s.account_a=? OR s.account_b=? ORDER BY a.name_key,a.id`).all(id, id, id);
+    for (const row of rows) {
+      const bucket = row.status === 'accepted' ? 'friends' : row.requested_by === id ? 'outgoing' : 'incoming';
+      result[bucket].push({ id: row.id, username: row.username });
+    }
+    return result;
+  }
+  function areFriends(first, second) {
+    if (!accountId(first) || !accountId(second) || first === second) return false;
+    return !!query("SELECT 1 FROM social_links WHERE account_a=? AND account_b=? AND status='accepted'").get(...[first, second].sort());
+  }
+  function requestFriend(actorId, username) {
+    account(actorId);
+    const name = typeof username === 'string' ? username.trim() : '';
+    if (!/^[A-Za-z0-9_-]{3,24}$/.test(name)) fail(400, 'invalid_friend_name', 'Rufname: 3–24 Buchstaben, Zahlen, _ oder -.');
+    const other = query('SELECT id FROM accounts WHERE name_key=?').get(name.toLowerCase());
+    if (!other) fail(404, 'friend_not_found', 'Kein Spieler mit diesem genauen Rufnamen gefunden.');
+    const pair = socialPair(actorId, other.id);
+    return transaction(() => {
+      const existing = query('SELECT status,requested_by FROM social_links WHERE account_a=? AND account_b=?').get(...pair);
+      if (existing?.status === 'accepted' || existing?.requested_by === actorId) return false;
+      if (existing) {
+        // Two explicit requests express mutual consent; crossed requests become
+        // one friendship instead of creating duplicate directional records.
+        socialCapacity(actorId, other.id, 'accepted');
+        query("UPDATE social_links SET status='accepted',updated_at=? WHERE account_a=? AND account_b=?").run(now(), ...pair);
+      } else {
+        socialCapacity(actorId, other.id, 'pending');
+        query("INSERT INTO social_links(account_a,account_b,requested_by,status,created_at,updated_at) VALUES(?,?,?,'pending',?,?)").run(...pair, actorId, now(), now());
+      }
+      return true;
+    });
+  }
+  function respondFriend(actorId, otherId, accept) {
+    if (typeof accept !== 'boolean') fail(400, 'invalid_response', 'Annehmen oder Ablehnen muss angegeben werden.');
+    const pair = socialPair(actorId, otherId);
+    return transaction(() => {
+      const existing = query('SELECT status,requested_by FROM social_links WHERE account_a=? AND account_b=?').get(...pair);
+      if (existing?.status === 'accepted' && accept) return false;
+      if (!existing || existing.status !== 'pending' || existing.requested_by === actorId) fail(404, 'friend_request_missing', 'Diese eingehende Freundesanfrage ist nicht mehr verfügbar.');
+      if (accept) {
+        socialCapacity(actorId, otherId, 'accepted');
+        query("UPDATE social_links SET status='accepted',updated_at=? WHERE account_a=? AND account_b=?").run(now(), ...pair);
+      } else query('DELETE FROM social_links WHERE account_a=? AND account_b=?').run(...pair);
+      return true;
+    });
+  }
+  function removeFriend(actorId, otherId) {
+    const pair = socialPair(actorId, otherId);
+    return transaction(() => {
+      const existing = query('SELECT status,requested_by FROM social_links WHERE account_a=? AND account_b=?').get(...pair);
+      if (!existing) return false;
+      if (existing.status === 'pending' && existing.requested_by !== actorId) fail(409, 'incoming_request', 'Eine eingehende Anfrage bitte annehmen oder ablehnen.');
+      query('DELETE FROM social_links WHERE account_a=? AND account_b=?').run(...pair);
+      return true;
+    });
   }
   function getProfile(id) {
     return transaction(() => {
@@ -251,6 +338,7 @@ export function createAccountStore({ path, now = Date.now } = {}) {
       return query('DELETE FROM room_locks WHERE room_id=?').run(roomId).changes;
     });
   }
-  return { register, login, authenticate, logout, resetPassword, revokeSessions, getProfile, action, acquireRoom, releaseRoom, commitRaidStart, settleRaid, recoverRooms, abortRoom,
+  return { register, login, authenticate, logout, resetPassword, revokeSessions, social, areFriends, requestFriend, respondFriend, removeFriend,
+    getProfile, action, acquireRoom, releaseRoom, commitRaidStart, settleRaid, recoverRooms, abortRoom,
     close() { hubGame?.dispose(); db.close(); } };
 }

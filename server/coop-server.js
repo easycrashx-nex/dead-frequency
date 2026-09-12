@@ -6,9 +6,11 @@ import { createCoopSession, COOP_PROTOCOL, COOP_TICK_RATE, COOP_SNAPSHOT_RATE } 
 
 export async function createCoopServer({ host = '127.0.0.1', port = 0, token = randomBytes(32).toString('hex'), version = '1.3.0',
   listen = true, sessionOptions = {}, authorizeJoin, onJoined = () => {}, onDeparture = () => {}, onJoinFailed = () => {},
-  onFatal = () => {}, startOptions } = {}) {
+  onFatal = () => {}, startOptions, compatibleVersions = [] } = {}) {
   if (typeof token !== 'string' || !/^[a-f0-9]{64}$/i.test(token)) throw new Error('Einladungstoken muss 32 Bytes als Hex enthalten.');
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Ungültiger Serverport.');
+  if (!Array.isArray(compatibleVersions) || compatibleVersions.some(value => typeof value !== 'string' || !value || value.length > 32)) throw new Error('Ungültige kompatible Spielversionen.');
+  const acceptedVersions = new Set([String(version), ...compatibleVersions]);
   const secret = Buffer.from(token, 'hex');
   const session = createCoopSession(sessionOptions);
   const connections = new Map();
@@ -75,7 +77,7 @@ export async function createCoopServer({ host = '127.0.0.1', port = 0, token = r
       if (info.id) { depart(info); broadcastLobby(); snapshots(); }
     });
     ws.on('message', async (data, binary) => {
-      if (closing) return;
+      if (closing || ws.readyState !== WebSocket.OPEN) return;
       const now = performance.now();
       if (now - info.windowAt > 1000) { info.windowAt = now; info.count = 0; }
       if (++info.count > 180) { failure(ws, 'Zu viele Nachrichten.'); ws.close(1008, 'Rate limit'); return; }
@@ -88,7 +90,7 @@ export async function createCoopServer({ host = '127.0.0.1', port = 0, token = r
         if (message.type === 'join') {
           if (info.id || info.joining) throw new Error('Du bist bereits in dieser Lobby.');
           if (message.protocol !== COOP_PROTOCOL) { failure(ws, 'Die Koop-Protokollversion stimmt nicht überein.'); ws.close(1008, 'Protocol mismatch'); return; }
-          if (message.version !== undefined && String(message.version) !== String(version)) { failure(ws, 'Beide Spieler benötigen dieselbe Spielversion.'); ws.close(1008, 'Version mismatch'); return; }
+          if (message.version !== undefined && !acceptedVersions.has(String(message.version))) { failure(ws, 'Diese Spielversion wird vom Server nicht unterstützt. Bitte aktualisieren.'); ws.close(1008, 'Version mismatch'); return; }
           info.joining = true;
           try {
             const admission = authorizeJoin ? authorizeJoin(message) : { name: message.name, profile: message.profile, kit: message.kit, weapon: message.weapon, loadout: message.loadout };
@@ -96,6 +98,7 @@ export async function createCoopServer({ host = '127.0.0.1', port = 0, token = r
             info.id = await session.join(admission);
             onJoined(info.id, info.identity);
           } catch (error) {
+            if (info.id) { depart(info); info.id = null; }
             if (info.identity) onJoinFailed(info.identity);
             if (authorizeJoin) ws.close(1008, 'Invalid admission');
             throw error;

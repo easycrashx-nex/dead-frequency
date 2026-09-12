@@ -15,7 +15,7 @@ function allowedOrigin(origin) {
 }
 function clientIP(req) {
   const peer = req.socket.remoteAddress ?? 'unknown';
-  // The service binds to loopback behind Caddy. A direct remote client cannot
+  // The service binds to loopback behind the TLS proxy. A direct remote client cannot
   // choose a forwarded address; use the last hop appended by the trusted proxy.
   if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(peer)) {
     const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',').at(-1).trim();
@@ -54,8 +54,39 @@ function readJSON(req) {
 }
 const shape = (body, fields) => Object.keys(body).every(key => fields.includes(key));
 
-export function createAccountApi({ store, rooms, version = '1.12.0', now = Date.now } = {}) {
-  const limits = new Map();
+export function createAccountApi({ store, rooms, version = '1.13.0', now = Date.now } = {}) {
+  const limits = new Map(), presence = new Map();
+  const validId = value => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
+  const shortText = value => typeof value === 'string' && value.length > 0 && value.length <= 100;
+  function seen(id) {
+    const time = now();
+    for (const [key, at] of presence) {
+      if (time - at < 45000) break;
+      presence.delete(key);
+    }
+    presence.delete(id); presence.set(id, time);
+    while (presence.size > 10000) presence.delete(presence.keys().next().value);
+  }
+  function publicRoom(id) {
+    // Never use status(): the owner's private room state contains its invite URL.
+    const value = rooms?.publicStatus?.(id);
+    if (!value) return null;
+    const result = {};
+    for (const key of ['roomId', 'mode', 'phase', 'visibility', 'playerCount', 'maxPlayers', 'difficulty', 'version', 'createdAt', 'joinable']) {
+      if (['string', 'number', 'boolean'].includes(typeof value[key])) result[key] = value[key];
+    }
+    if (value.host) result.host = { id: value.host.id, username: value.host.username };
+    if (Array.isArray(value.players)) result.players = value.players.map(player => ({ id: player.id, username: player.username }));
+    return result;
+  }
+  function socialFor(user) {
+    const social = store.social(user.id);
+    return { ...social, friends: social.friends.map(friend => {
+      const room = publicRoom(friend.id);
+      const status = room?.phase === 'raid' ? 'raid' : room?.phase === 'lobby' ? 'lobby' : room || now() - (presence.get(friend.id) ?? -Infinity) < 45000 ? 'online' : 'offline';
+      return { ...friend, status, room };
+    }), invitations: rooms?.invitations?.(user) ?? [] };
+  }
   function throttle(key, maximum, windowMs) {
     const time = now();
     if (limits.size > 10000) {
@@ -89,31 +120,53 @@ export function createAccountApi({ store, rooms, version = '1.12.0', now = Date.
         const body = await readJSON(req);
         if (!shape(body, ['username', 'password'])) deny(400, 'invalid_fields', 'Ungültige Anmeldedaten.');
         const result = await store[register ? 'register' : 'login'](body.username, body.password);
+        seen(result.user.id);
         send(res, register ? 201 : 200, result); return true;
       }
       const token = /^Bearer ([a-f0-9]{64})$/.exec(req.headers.authorization ?? '')?.[1];
       const user = token ? store.authenticate(token) : null;
       if (!user) deny(401, 'unauthorized', 'Bitte anmelden.');
       throttle(`account:${user.id}`, 180, 60_000);
-      if (path === '/api/me' || path === '/api/rooms') {
+      seen(user.id);
+      if (['/api/me', '/api/rooms', '/api/social'].includes(path)) {
         if (req.method !== 'GET') deny(405, 'method_not_allowed', 'GET erforderlich.');
-        const room = rooms?.status(user.id) ?? null;
-        send(res, 200, path === '/api/me' ? { user, profile: store.getProfile(user.id), room, version } : { room });
+        if (path === '/api/social') send(res, 200, socialFor(user));
+        else if (path === '/api/rooms') send(res, 200, rooms?.list ? await rooms.list(user) : { room: rooms?.status(user.id) ?? null });
+        else send(res, 200, { user, profile: store.getProfile(user.id), room: rooms?.status(user.id) ?? null, version });
         return true;
       }
       if (req.method !== 'POST') deny(405, 'method_not_allowed', 'POST erforderlich.');
       const body = await readJSON(req);
       if (path === '/api/auth/logout') {
         if (!shape(body, [])) deny(400, 'invalid_fields', 'Ungültige Anfrage.');
-        store.logout(token); send(res, 200, { ok: true });
+        store.logout(token); presence.delete(user.id); send(res, 200, { ok: true });
       } else if (path === '/api/action') {
         send(res, 200, await store.action(user.id, body));
-      } else if (['/api/rooms/create', '/api/rooms/join', '/api/rooms/leave'].includes(path)) {
+      } else if (['/api/friends/request', '/api/friends/respond', '/api/friends/remove'].includes(path)) {
+        throttle(`friends:${user.id}`, 20, 60_000);
+        let result;
+        if (path.endsWith('/request')) {
+          if (!shape(body, ['username']) || typeof body.username !== 'string') deny(400, 'invalid_fields', 'Genauen Rufnamen angeben.');
+          result = store.requestFriend(user.id, body.username);
+        } else {
+          const respond = path.endsWith('/respond');
+          if (!shape(body, respond ? ['userId', 'accept'] : ['userId']) || !validId(body.userId) || respond && typeof body.accept !== 'boolean') deny(400, 'invalid_fields', 'Ungültige Freundesanfrage.');
+          result = respond ? store.respondFriend(user.id, body.userId, body.accept) : store.removeFriend(user.id, body.userId);
+        }
+        send(res, 200, { ok: true, result, social: socialFor(user) });
+      } else if (['/api/rooms/create', '/api/rooms/join', '/api/rooms/leave', '/api/rooms/invite', '/api/rooms/invitation'].includes(path)) {
         if (!rooms) deny(503, 'rooms_unavailable', 'Raid-Server ist noch nicht bereit.');
-        const kind = path.split('/').at(-1), fields = kind === 'create' ? ['mode', 'loadout', 'difficulty'] : kind === 'join' ? ['invite', 'loadout'] : [];
+        const kind = path.split('/').at(-1), fields = {
+          create: ['mode', 'loadout', 'difficulty', 'visibility'], join: ['invite', 'roomId', 'loadout'], leave: [],
+          invite: ['userId'], invitation: ['invitationId', 'accept', 'loadout'],
+        }[kind];
         if (!shape(body, fields)) deny(400, 'invalid_fields', 'Ungültige Lobby-Anfrage.');
+        if (body.loadout !== undefined && (!body.loadout || typeof body.loadout !== 'object' || Array.isArray(body.loadout))) deny(400, 'invalid_fields', 'Ungültiges Loadout.');
+        if (kind === 'create' && (body.visibility !== undefined && !['public', 'friends'].includes(body.visibility) || body.mode !== undefined && !['solo', 'coop'].includes(body.mode) || body.difficulty !== undefined && !['normal', 'hard'].includes(body.difficulty))) deny(400, 'invalid_fields', 'Ungültige Lobby-Einstellungen.');
+        if (kind === 'join' && ((body.roomId === undefined) === (body.invite === undefined) || body.roomId !== undefined && !shortText(body.roomId) || body.invite !== undefined && (typeof body.invite !== 'string' || !body.invite || body.invite.length > 2048))) deny(400, 'invalid_fields', 'Genau eine gültige Lobby oder Einladung angeben.');
+        if (kind === 'invite' && !validId(body.userId) || kind === 'invitation' && (!shortText(body.invitationId) || typeof body.accept !== 'boolean')) deny(400, 'invalid_fields', 'Ungültige Teameinladung.');
         throttle(`rooms:${user.id}`, 20, 60_000);
-        send(res, 200, await rooms[kind](user, body) ?? { ok: true });
+        send(res, 200, await rooms[kind === 'invitation' ? 'respondInvitation' : kind](user, body) ?? { ok: true });
       } else deny(404, 'not_found', 'Unbekannter Endpunkt.');
     } catch (error) {
       if (!res.headersSent && !res.destroyed) {

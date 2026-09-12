@@ -1,4 +1,4 @@
-# DEAD FREQUENCY 1.12.0
+# DEAD FREQUENCY 1.13.0
 
 Ein Hardcore-Extraction-Shooter aus der Ego-Perspektive für Windows x64: mit Online-Account allein oder zu zweit auf dem dedizierten Server, außerdem mit separatem lokalen Offline-Spielstand. Durchsuche den **1.500 × 1.500 Meter** großen Sektor 07 mit Bergen, Fluss, Brücken und begehbaren Ortschaften. Sichere Beute und bringe deine eigene Ausrüstung lebend zurück.
 
@@ -20,13 +20,15 @@ Neue Online-Accounts beginnen mit einem eigenen Profil. Dein bisheriges lokales 
 
 Es gibt noch keine Wiederherstellung per E-Mail. Falls du dein Passwort vergisst, kann der Serveradministrator es nach Zuordnung deines Accounts zurücksetzen. Hinweise für den Betrieb stehen unter [deploy/README.md](deploy/README.md).
 
-## Mit einem Freund spielen
+## Freunde und offene Lobbys
 
 1. Beide starten dieselbe aktuelle Windows-Version, melden sich für Online-Koop mit einem eigenen Account an und wählen ihr Kit in der Basis. Vorherige Extraktionsbeute zuerst einlagern.
-2. Der Host öffnet **ONLINE-KOOP** und klickt **TEAM ERSTELLEN**. Der eigene Account bestimmt den Rufnamen; der Server betreibt das Team.
-3. Sobald die Verbindung bereit ist, **KOPIEREN** drücken und die Einladung dem Freund schicken.
-4. Der Freund öffnet **ONLINE-KOOP → TEAM BEITRETEN**, fügt die Einladung ein und verbindet sich.
+2. Unter **FREUNDE** den vollständigen Rufnamen eingeben und **ANFRAGEN** drücken. Der andere nimmt die Anfrage unter **ANFRAGEN** an. Die Freundschaft bleibt auf dem Server gespeichert.
+3. Beim Freund **EINLADEN** wählen. Ohne bestehende Lobby entsteht automatisch eine Freundeslobby. Der Freund öffnet **FREUNDE → EINLADUNGEN** und drückt **BEITRETEN**. Eine freie Freundeslobby lässt sich auch direkt über den Freundeseintrag betreten.
+4. Für ein offenes Team unter **LOBBYS** eine öffentliche Lobby erstellen. Andere angemeldete Spieler sehen sie in der Lobbyliste und treten direkt per Knopf bei. Es muss kein Link kopiert werden.
 5. Beide klicken **BEREIT MELDEN**; der Host klickt **KOOP-RAID STARTEN**. Falls das Spiel die Maus noch nicht übernommen hat, **FORTSETZEN** drücken.
+
+Die Lobbyliste aktualisiert sich regelmäßig und zeigt öffentliche Teams mit einem freien Platz. Volle, gestartete und geschlossene Teams verschwinden. Freundeslobbys erscheinen nicht öffentlich; nur bestätigte Freunde des Teamleiters können beitreten. Einladungen gelten zwei Minuten und reservieren keinen Platz. Vor dem Beitritt in ein anderes Team die eigene Lobby verlassen. Im Freundesmenü kannst du Anfragen ablehnen oder zurückziehen und Freundschaften entfernen. Der Status zeigt, ob jemand erreichbar, in einer Lobby oder im Einsatz ist.
 
 Beide sehen dieselben Gegner und dieselbe Beute. Jeder Gegenstand einer Kiste kann nur einmal entnommen werden. Abgeworfene Rucksackgegenstände kann der Partner aufnehmen. Gesundheit, Munition, Ausdauer, Waffen, Skills und Extraktionsrucksäcke bleiben getrennt. Es gibt kein Friendly Fire. Jeder fordert seine eigene Extraktion an und bleibt acht Sekunden in der Zone (mit Logistik-Meisterschaft sieben). Der blaue Operator mit seiner gewählten Waffe und die Teamanzeige zeigen deinen Mitspieler. Waffen und Skills vor dem Verbinden auswählen; in der Lobby ist die Ausrüstung gesperrt.
 
@@ -229,7 +231,7 @@ pnpm package
 - `platform.cjs` / `preload.cjs`: schmale Desktop-Schnittstelle, Host-Lebensdauer und Internet-Tunnel.
 - `launcher/`: automatische GitHub-Prüfung, verifizierter Download, sichere Archivextraktion und Versionsauswahl.
 
-Eine 1.500 × 1.500 Meter große Karte mit vollständig begehbaren Gebäuden, sechs festen Einsatzkits, eigenem Loadout, 32 Waffen, 36 Aufsätzen, 24 Ausrüstungsteilen, zwei Schwierigkeiten und 24 permanenten Skills. Solo gegen KI oder privater Koop für genau zwei Spieler. Online liegen Lager und Markt auf dem Server; das separate Offline-Profil bleibt lokal. Es gibt keinen gemeinsamen öffentlichen Handelsmarkt oder öffentliches Matchmaking. Modelle und Texturen werden lokal erzeugt. Die Sounds verwenden mitgelieferte Aufnahmen: echte M45- und AK-47-Schüsse als bearbeitete Klangbasis der Waffen, Airsoft-Nachlademechanik, Schritte auf hartem Boden und Wind.
+Eine 1.500 × 1.500 Meter große Karte mit vollständig begehbaren Gebäuden, sechs festen Einsatzkits, eigenem Loadout, 32 Waffen, 36 Aufsätzen, 24 Ausrüstungsteilen, zwei Schwierigkeiten und 24 permanenten Skills. Solo gegen KI oder Koop für genau zwei Spieler über öffentliche Lobbys oder Freundesteams. Online liegen Lager und Markt auf dem Server; das separate Offline-Profil bleibt lokal. Es gibt keinen gemeinsamen öffentlichen Handelsmarkt und keine automatische Spielersuche nach Rang. Modelle und Texturen werden lokal erzeugt. Die Sounds verwenden mitgelieferte Aufnahmen: echte M45- und AK-47-Schüsse als bearbeitete Klangbasis der Waffen, Airsoft-Nachlademechanik, Schritte auf hartem Boden und Wind.
 
 Version 1.1.0 ersetzt die synthetischen Schüsse und Schritte. Schussvarianten wiederholen sich nicht unmittelbar; die beiden Waffen haben unterschiedliche Klangquellen. Gegnerklänge folgen Entfernung, Blickrichtung und Hindernissen. Schritte hängen von tatsächlicher Bewegung ab, Ducken ist leiser, Sprinten kräftiger. Pause und Tod brechen geplante Nachladegeräusche ab. Der Mixer begrenzt gleichzeitig aktive Stimmen und Spitzenpegel. `node scripts/qa-audio.mjs` prüft die echte Stereo-Ausgabe gegen den laufenden Vite-Server.
 

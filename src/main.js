@@ -31,14 +31,14 @@ let marketTimer;
 let contextLost=false,frameFailed=false;
 const recovery=createRuntimeRecovery({restart(){persist();settingsChanged({renderScale:.75});location.reload();}});
 let localGame,coop=null,coopBusy=false,coopGeneration=0;
-let onlineHub=null,lastOnlinePoll=0;
+let onlineHub=null,lastOnlinePoll=0,lastSocialPoll=0,socialWorkflow=false;
 const online=createOnlineClient({request:window.platform?.onlineRequest?.bind(window.platform),
   onProfile(profile){if(onlineHub)onlineHub.state.profile=structuredClone(profile);},
   onSession(active){
     closePanels();clearInputs();unlock();recoil.reset();
     if(active){onlineHub=createOnlineHub(localGame,online.profile);game=onlineHub;}
     else{onlineHub=null;game=localGame;game.returnToHub();}
-    lastPhase='';
+    lastPhase='';lastSocialPoll=0;
   },
 });
 const coopStatus={status:'offline',players:[],name:read('dead-frequency.operator')||'Operator',invite:'',message:''};
@@ -277,14 +277,20 @@ function frame(now){
     audio.update(state,dt);lookDX=lookDY=0;
     fpsTime+=elapsed;if(fpsTime>=.5){fps=Math.round(frames/fpsTime);frames=0;fpsTime=0;}
     uiTime+=dt;
-    if(uiTime>=1/20){ui.update(state,{locked:document.pointerLockElement===canvas||controllerActive(),fps,settings,mapOpen,inventoryOpen,aim,coop:coop?.info||coopStatus,online:online.info,controller:{...controllerState,active:controllerPresent()},inputDevice});uiTime=0;}
+    if(uiTime>=1/20){ui.update(state,{locked:document.pointerLockElement===canvas||controllerActive(),fps,settings,mapOpen,inventoryOpen,aim,coop:coop?.info||coopStatus,online:online.info,social:{...online.social,pending:online.info.busy||socialWorkflow},controller:{...controllerState,active:controllerPresent()},inputDevice});uiTime=0;}
   }
   }catch(error){frameFailed=true;console.error(error);clearInputs();pause();persist();recovery.show({raid:['raid','paused'].includes(game.state.phase)});}
   raf=requestAnimationFrame(frame);
 }
 let accumulator=0;
 function marketTick(){
-  if(online.info.authenticated){if(game?.state.phase==='hub'&&!coop&&!coopBusy&&!hidden&&Date.now()-lastOnlinePoll>=10000){lastOnlinePoll=Date.now();online.refresh();}return;}
+  if(online.info.authenticated){
+    if(game?.state.phase==='hub'&&!coopBusy){
+      if(Date.now()-lastSocialPoll>=(hidden?15000:5000)){lastSocialPoll=Date.now();online.refreshSocial();}
+      if(!coop&&!hidden&&Date.now()-lastOnlinePoll>=10000){lastOnlinePoll=Date.now();online.refresh();}
+    }
+    return;
+  }
   if(game&&!coop&&!coopBusy&&!online.info.busy&&economy.advanceMarket(localGame.state.profile))persist();
 }
 async function remoteAction(kind,action,args){
@@ -315,7 +321,7 @@ async function leaveCoop(){
   game=online.info.authenticated?onlineHub:localGame;game.returnToHub();closePanels();clearInputs();unlock();recoil.reset();
   Object.assign(coopStatus,{status:'offline',players:[],invite:'',message:'',online:false,mode:'coop',minPlayers:2,maxPlayers:2});
   if(online.info.authenticated){
-    try{await online.leaveRoom();return true;}catch(error){ui.events([{type:'notice',text:onlineError(error)}]);return false;}
+    try{await online.leaveRoom();await online.refreshSocial();return true;}catch(error){ui.events([{type:'notice',text:onlineError(error)}]);return false;}
   }
   await window.platform?.stopHost();marketTick();persist();return true;
 }
@@ -361,7 +367,7 @@ async function joinOnline(options,mode){
   const prepared=resolveLoadout(game.state.profile,options);
   if(!prepared.valid||!prepared.affordable){ui.events([{type:'notice',text:prepared.reason||'Nicht genug Credits für dieses Loadout.'}]);return false;}
   coopBusy=true;const generation=++coopGeneration;
-  Object.assign(coopStatus,{status:'connecting',message:mode==='solo'?'Online-Soloeinsatz wird vorbereitet …':'Online-Team wird verbunden …',name:online.info.user.username,online:true,mode:mode==='join'?'coop':mode});
+  Object.assign(coopStatus,{status:'connecting',message:mode==='solo'?'Online-Soloeinsatz wird vorbereitet …':'Online-Team wird verbunden …',name:online.info.user.username,online:true,mode:mode==='solo'?'solo':'coop'});
   try{
     const room=await online.room(mode,{...options,loadout:prepared.selection});
     if(!room||generation!==coopGeneration)return false;
@@ -373,8 +379,10 @@ async function joinOnline(options,mode){
       onDisconnect(){clearInputs();closePanels();unlock();online.leaveRoom().catch(error=>ui.events([{type:'notice',text:onlineError(error)}]));},
     });
     coop=client;game=client;
-    await client.connect(room.url||room.invite,{ticket:room.ticket,online:true,mode:mode==='join'?'coop':mode,name:online.info.user.username,invitation:room.invite,difficulty:options.difficulty});
+    await client.connect(room.url||room.invite,{ticket:room.ticket,online:true,mode:mode==='solo'?'solo':'coop',name:online.info.user.username,invitation:room.invite,difficulty:room.difficulty??options.difficulty});
     if(generation!==coopGeneration){client.leave();return false;}
+    Object.assign(client.info,{roomId:room.roomId,visibility:room.visibility??options.visibility??'public'});
+    await online.refreshSocial();
     if(mode==='solo')client.ready(true);
     return true;
   }catch(error){
@@ -384,13 +392,35 @@ async function joinOnline(options,mode){
     const message=onlineError(error);Object.assign(coopStatus,{status:'error',message});ui.events([{type:'notice',text:message}]);return false;
   }finally{if(generation===coopGeneration)coopBusy=false;}
 }
+async function socialAction(action,body){
+  if(!online.info.authenticated||online.info.sessionExpired||game.state.phase!=='hub'||socialWorkflow)return false;
+  try{const result=await online.socialAction(action,body);await online.refreshSocial();return result;}
+  catch(error){ui.events([{type:'notice',text:onlineError(error)}]);return false;}
+}
+async function friendInvite(userId,options={}){
+  if(!online.info.authenticated||online.info.sessionExpired||game.state.phase!=='hub'||socialWorkflow||online.info.busy)return false;
+  socialWorkflow=true;
+  try{
+    if(!coop&&!await joinOnline({...options,visibility:'friends'},'coop'))return false;
+    if(coop?.info.status!=='lobby'||coop.info.mode==='solo'||coop.info.id!==coop.info.hostId)throw new Error('Nur der Teamleiter kann Freunde in eine freie Koop-Lobby einladen.');
+    const result=await online.socialAction('invite',{userId});
+    if(result)ui.events([{type:'notice',text:'Einladung gesendet. Dein Freund kann sie im Freundesmenü annehmen.'}]);
+    return result;
+  }catch(error){ui.events([{type:'notice',text:onlineError(error)}]);return false;}
+  finally{socialWorkflow=false;await online.refreshSocial();}
+}
+async function invitationRespond(invitationId,accept,options={}){
+  if(accept){if(socialWorkflow)return false;return joinOnline({...options,invitationId},'invitation');}
+  return socialAction('invitation',{invitationId,accept:false});
+}
 async function boot(){
   game=localGame=await createGame(read(SAVE_KEY)??read(LEGACY_SAVE_KEY));view=createRenderer(canvas,game.layout);audio=createAudio();
   await audio.ready;
   ui=createUI(root,{start,resume,hub(){if(coop||online.info.room)return leaveCoop();game.returnToHub();closePanels();clearInputs();unlock();persist();},upgrade:kind=>hubGameAction('buyUpgrade',kind),
-    accountAuthenticate:(kind,name,password)=>{if(coop||coopBusy||game.state.phase!=='hub')return false;return online.authenticate(kind,name,password);},
+    accountAuthenticate:async(kind,name,password)=>{if(coop||coopBusy||game.state.phase!=='hub')return false;const result=await online.authenticate(kind,name,password);await online.refreshSocial();return result;},
     accountLogout:()=>{if(coop||coopBusy||game.state.phase!=='hub'||online.info.room)return false;return online.logout();},
     coopHost:options=>joinCoop(options,true),coopJoin:options=>joinCoop(options,false),coopReady:ready=>coop?.ready(ready),coopStart:()=>coop?.start(),coopLeave:leaveCoop,
+    socialRefresh:()=>online.refreshSocial(),friendRequest:username=>socialAction('request',{username}),friendRespond:(userId,accept)=>socialAction('respond',{userId,accept}),friendRemove:userId=>socialAction('remove',{userId}),friendInvite,invitationRespond,
     coopCopyInvite:()=>window.platform?.copyInvite(coop?.info.invite||'').then(()=>ui.events([{type:'notice',text:'Einladung kopiert. Deinem Kollegen schicken und im Spiel einfügen.'}])),
     pasteClipboard:()=>window.platform?.readClipboard?.()??navigator.clipboard?.readText?.()??Promise.resolve(''),
     selectWeapon:id=>hubGameAction('selectWeapon',id),unlockSkill:id=>hubGameAction('unlockSkill',id),
@@ -407,9 +437,9 @@ async function boot(){
     storeItem:id=>homeAction('storeItem',id),storeAll:()=>homeAction('storeAll'),listItem:(id,price,duration)=>homeAction('listItem',id,price,duration),
     cancelListing:id=>homeAction('cancelListing',id),claimMail:id=>homeAction('claimMail',id),claimAll:()=>homeAction('claimAll'),
     settings:settingsChanged,resetSettings:category=>settingsChanged(resetSettingsCategory(settings,category)),rebind,quit(){window.close();}});
-  settingsChanged(settings);ui.update(game.state,{locked:false,fps,settings,mapOpen:false,inventoryOpen:false,aim:false,coop:coopStatus,online:online.info});
+  settingsChanged(settings);ui.update(game.state,{locked:false,fps,settings,mapOpen:false,inventoryOpen:false,aim:false,coop:coopStatus,online:online.info,social:{...online.social,pending:false}});
   // Resolve a saved online session before advancing the separate offline market.
-  online.restore().then(()=>{if(!online.info.authenticated)marketTick();});
+  online.restore().then(()=>{if(!online.info.authenticated)marketTick();else online.refreshSocial();});
   marketTimer=setInterval(marketTick,1000);
   window.platform?.onStatus(value=>{if(value.type==='hosting')coopStatus.message=value.message;else if(value.type==='tunnelLost'){if(coop)coop.info.message=value.message;ui.events([{type:'notice',text:value.message}]);}});
   window.addEventListener('keydown',()=>setInputDevice('keyboard'),true);

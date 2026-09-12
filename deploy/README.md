@@ -41,6 +41,14 @@ Room limit starts at two total rooms, each solo or two-player coop. Monitor actu
 sustain them. A room invitation alone is insufficient: each player also needs
 an authenticated, single-use join ticket. No renderer or GPU runs on the VPS.
 
+Version 1.13 adds persistent friendship edges through an additive SQLite schema
+change. Existing accounts and profiles are preserved. Public lobby discovery only
+shows available coop rooms and never exposes socket credentials. Friends lobbies
+require a confirmed friendship with the current owner. In-game invitations are
+ephemeral, expire after two minutes and do not reserve capacity. The 1.13 runtime
+explicitly accepts 1.12 game clients during rollout because their raid protocol
+and simulation are unchanged; all other versions still require an exact match.
+
 ## Certificates and backups
 
 IP certificates use Let's Encrypt's shortlived profile. Certbot5.4+ is installed

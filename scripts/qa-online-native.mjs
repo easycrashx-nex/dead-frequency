@@ -89,11 +89,11 @@ try{
   assert.equal((await api(host,'/api/me')).room,null);pass('Leaving online solo settles loss and releases account lock');
   const guest=await launch(1);await account(guest);
   for(const client of [host,guest]){await client.page.bringToFront();await client.page.locator('#coop-open').click();}
-  await host.page.bringToFront();await host.page.locator('#coop-connect').click();
+  await host.page.bringToFront();await host.page.locator('#coop-visibility').selectOption('public');await host.page.locator('#coop-create').click();
   await host.page.waitForFunction(()=>__DF.coop?.info.status==='lobby',null,{timeout:60000});
-  await host.page.locator('#coop-share-invite').waitFor({state:'visible'});
-  const invite=await host.page.locator('#coop-share-invite').inputValue();assert.match(invite,/^wss:\/\/91\.98\.64\.49\/coop\?token=[a-f0-9]{64}$/);
-  await guest.page.bringToFront();await guest.page.locator('#coop-mode-join').click();await guest.page.locator('#coop-invite').fill(invite);await guest.page.locator('#coop-connect').click();
+  const roomId=(await api(host,'/api/me')).room.roomId;
+  assert.equal(await host.page.locator('#coop-share-invite').isVisible(),false);
+  await guest.page.bringToFront();await guest.page.locator(`[data-lobby-join="${roomId}"]`).waitFor({timeout:15000});await guest.page.locator(`[data-lobby-join="${roomId}"]`).click();
   for(const client of [host,guest])await client.page.waitForFunction(()=>__DF.coop?.info.players.length===2,null,{timeout:60000});
   pass('Two packaged Windows clients join one server-hosted account-bound Internet lobby');
   for(const client of [host,guest]){await client.page.bringToFront();await client.page.locator('#coop-ready').click();}

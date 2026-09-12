@@ -6,6 +6,8 @@ const ROUTES = new Map([
   ['/api/me', 'GET'], ['/api/auth/register', 'POST'], ['/api/auth/login', 'POST'],
   ['/api/auth/logout', 'POST'], ['/api/action', 'POST'], ['/api/rooms', 'GET'],
   ['/api/rooms/create', 'POST'], ['/api/rooms/join', 'POST'], ['/api/rooms/leave', 'POST'],
+  ['/api/social', 'GET'], ['/api/friends/request', 'POST'], ['/api/friends/respond', 'POST'],
+  ['/api/friends/remove', 'POST'], ['/api/rooms/invite', 'POST'], ['/api/rooms/invitation', 'POST'],
 ]);
 
 // Only this fixed service receives the session. Renderer code never gets its token.

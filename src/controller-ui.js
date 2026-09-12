@@ -30,7 +30,7 @@ export function createControllerUI(root, actions, {onBack=()=>false}={}) {
     return arrows[action] ? `LS ${arrows[action]}` : labels[family]?.[action] || action;
   }
   function scope() {
-    return [overlay,...['account-overlay','utility-overlay','coop-overlay','container-panel','inventory-panel','map-panel','pause-screen','result-screen','hub-screen'].map(id=>root.querySelector(`#${id}`))].find(visible) || null;
+    return [overlay,...['friends-overlay','account-overlay','utility-overlay','coop-overlay','container-panel','inventory-panel','map-panel','pause-screen','result-screen','hub-screen'].map(id=>root.querySelector(`#${id}`))].find(visible) || null;
   }
   function focus(node) {
     if(!enabled(node))return;
@@ -145,6 +145,7 @@ export function createControllerUI(root, actions, {onBack=()=>false}={}) {
   function switchTab(amount) {
     const area=scope(); if(!area || area===overlay)return;
     let list=[...area.querySelectorAll('[data-settings-category]')].filter(enabled);
+    if(!list.length)list=[...area.querySelectorAll('[data-social-tab]')].filter(enabled);
     if(!list.length && focused?.closest('#hub-arsenal'))list=[...area.querySelectorAll('.armory-tabs [data-armory-tab]')].filter(enabled);
     if(!list.length && focused?.closest('.skill-branch-tabs'))list=[...area.querySelectorAll('[data-skill-branch]')].filter(enabled);
     if(!list.length)list=[...area.querySelectorAll('.hub-navigation [data-hub-tab]')].filter(enabled);
