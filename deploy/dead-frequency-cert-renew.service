@@ -1,0 +1,7 @@
+[Unit]
+Description=Renew DEAD FREQUENCY IP certificate
+After=network-online.target nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dead-frequency-certbot/bin/certbot renew --quiet --no-random-sleep-on-renew --deploy-hook /usr/local/sbin/dead-frequency-reload-tls

@@ -36,23 +36,24 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
   const node = id => nodes.get(id);
   const setText = (id, value) => { const n = node(id); if (n.textContent !== String(value)) n.textContent = value; };
   let coop = { status: 'offline', players: [] }, state = null, mode = 'host', previousStatus = 'offline', playerSignature = '', hudSignature = '';
-  let lastRequest = null, returnFocus = null, disposed = false, initialNameApplied = false;
+  let lastRequest = null, returnFocus = null, disposed = false, initialNameApplied = false, pending=false;
 
   function open() {
     if (state?.phase !== 'hub') return;
     returnFocus = document.activeElement; overlay.hidden = false;
     const loadout=resolveLoadout(state.profile,getLoadout());setText('coop-kit',`${loadout.name||'EIGENES LOADOUT'} / ${loadout.weapon?.name||'KEINE WAFFE'} · ${loadout.cost} CR`);
-    (coop.status === 'lobby' ? node('coop-ready') : node('coop-name')).focus({ preventScroll: true });
+    (coop.status === 'lobby' ? node('coop-ready') : node('coop-name').readOnly ? node('coop-connect') : node('coop-name')).focus({ preventScroll: true });
   }
   function close() { overlay.hidden = true; if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true }); }
-  function connect(retry = false) {
+  async function connect(retry = false) {
+    if(pending)return;
     const name = node('coop-name').value.trim() || 'Operator';
     const invite = node('coop-invite').value.trim();
     if (!retry && mode === 'join' && !invite) { notice('Füge zuerst die Einladung deines Mitspielers ein.'); node('coop-invite').focus(); return; }
     const request = retry && lastRequest ? { mode: lastRequest.mode, args: { ...lastRequest.args, ...getLoadout() } } : { mode, args: { name, ...getLoadout(), ...(mode === 'host' ? { internet: node('coop-internet').checked } : { invite }) } };
     lastRequest = request;
     const callback = request.mode === 'host' ? actions.coopHost : actions.coopJoin;
-    if (callback) callback(request.args);
+    if (callback){pending=true;node('coop-connect').disabled=true;try{await callback(request.args);}catch(error){notice(String(error?.message||'Verbindung fehlgeschlagen.'));}finally{pending=false;}}
     else notice('Die Teamverbindung ist gerade nicht verfügbar.');
   }
   function onClick(event) {
@@ -69,7 +70,7 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
       case 'retry': connect(true); break;
       case 'copy': actions.coopCopyInvite?.(); break;
       case 'ready': actions.coopReady?.(!coop.players?.find(p => p.id === coop.id)?.ready); break;
-      case 'start': if (coop.players?.length === 2 && coop.players.every(p => p.ready) && coop.id === coop.hostId) actions.coopStart?.(); break;
+      case 'start': if (coop.players?.length >= (coop.minPlayers||2) && coop.players.every(p => p.ready) && coop.id === coop.hostId) actions.coopStart?.(); break;
       case 'leave': actions.coopLeave?.(); break;
     }
   }
@@ -89,30 +90,36 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
   function update(nextState, info) {
     if (disposed) return;
     state = nextState; coop = info.coop || { status: 'offline', players: [] };
-    const status = coop.status || 'offline', busy = status === 'hosting' || status === 'connecting';
+    const status = coop.status || 'offline', busy = pending || info.online?.busy || status === 'hosting' || status === 'connecting';
+    const accountOnline=!!info.online?.authenticated,solo=coop.mode==='solo',required=coop.minPlayers||(solo?1:2),maximum=coop.maxPlayers||(solo?1:2);
     const inLobby = status === 'lobby', isHost = coop.id && coop.id === coop.hostId;
     const players = coop.players || [], own = players.find(p => p.id === coop.id);
     const shouldOpen = status !== previousStatus && ['hosting','connecting','lobby','error'].includes(status) && state.phase === 'hub';
     if (!initialNameApplied && coop.name) { node('coop-name').value = coop.name; initialNameApplied = true; }
+    node('coop-name').readOnly=accountOnline;node('coop-name').maxLength=accountOnline?24:20;
+    if(accountOnline)node('coop-name').value=info.online.user.username;
+    node('coop-name').previousElementSibling.textContent=accountOnline?'DEIN ONLINE-OPERATOR':'DEIN LOKALER RUFNAME';
+    overlay.querySelector('.coop-options').hidden=accountOnline;
+    setText('coop-title',accountOnline?'Online-Einsatz':'Lokale Koop-Verbindung');
     if (state.phase !== 'hub' || (status === 'offline' && previousStatus !== 'offline')) overlay.hidden = true;
     previousStatus = status;
     access.classList.toggle('connected', status !== 'offline' && status !== 'error');
-    setText('coop-nav-label', inLobby ? `LOBBY ${players.length}/2` : busy ? 'VERBINDE …' : 'KOOP');
+    setText('coop-nav-label', inLobby ? `LOBBY ${players.length}/${maximum}` : busy ? 'VERBINDE …' : accountOnline?'ONLINE-KOOP':'LOKALER KOOP');
     node('coop-entry').hidden = inLobby || busy; node('coop-session').hidden = !inLobby;
     node('coop-connect').disabled = busy;
     setText('coop-status-label', statusText(status));
-    setText('coop-status-message', coop.message || (inLobby ? players.length < 2 ? 'Warte auf deinen Mitspieler. Teile die Einladung.' : 'Euer Team steht. Meldet euch bereit.' : busy ? 'Einen Moment. Dein Team wird verbunden.' : 'Gemeinsam bergen. Gemeinsam extrahieren.'));
+    setText('coop-status-message', coop.message || (inLobby ? solo?'Dein Online-Soloeinsatz wird gestartet.':players.length < required ? 'Warte auf deinen Mitspieler. Teile die Einladung.' : 'Euer Team steht. Meldet euch bereit.' : busy ? 'Einen Moment. Dein Team wird verbunden.' : accountOnline?'Gemeinsamer Server · eigener Online-Fortschritt':'Lokaler Spielstand · direkt mit deinem Mitspieler verbinden'));
     node('coop-connection-status').dataset.status = status;
     node('coop-leave').hidden = !['hosting','connecting','lobby','error'].includes(status);
     setText('coop-leave', busy ? 'VERBINDUNG ABBRECHEN ↗' : 'TEAM VERLASSEN ↗');
     node('coop-retry').hidden = status !== 'error' || !lastRequest;
-    node('coop-share').hidden = !inLobby || !coop.invite;
+    node('coop-share').hidden = !inLobby || !coop.invite || solo;
     if (node('coop-share-invite').value !== (coop.invite || '')) node('coop-share-invite').value = coop.invite || '';
-    setText('coop-player-count', `${players.length} / 2`);
-    const signature = JSON.stringify([players, coop.id, coop.hostId]);
+    setText('coop-player-count', `${players.length} / ${maximum}`);
+    const signature = JSON.stringify([players, coop.id, coop.hostId,maximum]);
     if (signature !== playerSignature) {
       playerSignature = signature;
-      node('coop-players').innerHTML = [0,1].map(i => {
+      node('coop-players').innerHTML = Array.from({length:maximum},(_,i)=>i).map(i => {
         const p = players[i];
         return p ? `<div class="coop-player ${p.ready ? 'is-ready' : ''}"><span class="coop-player-icon">0${i + 1}</span><div><strong>${escapeHTML(p.name)}${p.id === coop.id ? ' <small>DU</small>' : ''}</strong><span>${escapeHTML(p.loadout?.mode==='custom'?'EIGENES LOADOUT':getPresetKit(p.loadout?.presetId||p.kit)?.name||'EINSATZKIT')} · ${escapeHTML(getWeapon(p.weapon)?.name||'EIGENE WAFFE')}${p.id === coop.hostId ? ' / HOST' : ''}</span></div><b>${p.ready ? 'BEREIT' : 'WARTET'}</b></div>` : '<div class="coop-player vacant"><span class="coop-player-icon">+</span><div><strong>DEIN MITSPIELER</strong><span>WARTET AUF EINLADUNG</span></div></div>';
       }).join('');
@@ -120,8 +127,9 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
     node('coop-ready').disabled = !own || !inLobby;
     node('coop-ready').classList.toggle('is-ready', !!own?.ready); node('coop-ready').setAttribute('aria-pressed', String(!!own?.ready));
     setText('coop-ready', own?.ready ? 'BEREIT ✓ / ZURÜCKNEHMEN' : 'BEREIT MELDEN');
-    node('coop-start').hidden = !isHost; node('coop-start').disabled = players.length !== 2 || !players.every(p => p.ready);
-    setText('coop-start-hint', isHost ? players.length < 2 ? 'Der Raid startet, wenn dein Mitspieler da ist und ihr beide bereit seid.' : !players.every(p => p.ready) ? 'Beide Operatoren müssen bereit sein.' : 'Team vollständig. Du kannst den Einsatz starten.' : 'Sobald beide bereit sind, startet der Host euren Raid.');
+    node('coop-start').hidden = !isHost; node('coop-start').disabled = players.length < required || !players.every(p => p.ready);
+    node('coop-start').querySelector('span').textContent=solo?'SOLO-RAID STARTEN':'KOOP-RAID STARTEN';
+    setText('coop-start-hint',solo?'Dieser Einsatz läuft auf dem Server. Das Menü pausiert die Zone nicht.':isHost ? players.length < required ? 'Der Raid startet, wenn dein Mitspieler da ist und ihr beide bereit seid.' : !players.every(p => p.ready) ? 'Beide Operatoren müssen bereit sein.' : 'Team vollständig. Du kannst den Einsatz starten.' : 'Sobald beide bereit sind, startet der Teamleiter euren Raid.');
     if (shouldOpen) open();
     const team = state.multiplayer ? state.teammates || [] : [];
     teamHud.hidden = !team.length || state.phase !== 'raid';
@@ -136,7 +144,7 @@ export function createCoopUI(root, actions, { getLoadout, notice }) {
     const pauseTitle = node('pause-title');
     const title = online ? 'LOKALES MENÜ<span class="orange">.</span>' : 'EINSATZ PAUSIERT<span class="orange">.</span>';
     if (pauseTitle.innerHTML !== title) pauseTitle.innerHTML = title;
-    setText('pause-description', online ? 'Der Koop-Raid läuft weiter. Dein Mitspieler und Gegner bleiben aktiv.' : 'Durchatmen. Die Zone wartet.');
+    setText('pause-description', online ? solo?'Dein Online-Soloeinsatz läuft weiter. Die Zone und Gegner bleiben aktiv.':'Der Koop-Raid läuft weiter. Dein Mitspieler und Gegner bleiben aktiv.' : 'Durchatmen. Die Zone wartet.');
     setText('pause-coordinate', online ? 'DEAD FREQUENCY / SEKTOR 07 / KOOP LIVE' : 'DEAD FREQUENCY / SEKTOR 07 / OFFLINE');
     const build = root.querySelector('.build-label'); if (build) build.textContent = 'SOLO OFFLINE · 2-SPIELER-KOOP';
   }

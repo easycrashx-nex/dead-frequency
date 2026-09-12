@@ -10,6 +10,7 @@ import {sanitizeSettings,bindingAction,rebindSetting,resetSettingsCategory} from
 import {createGamepadInput} from './gamepad.js';
 import {resolveLoadout} from './loadouts.js';
 import {createRuntimeRecovery} from './runtime-recovery.js';
+import {createOnlineClient,createOnlineHub,onlineError} from './online-client.js';
 
 const SAVE_KEY='dead-frequency.profile.v2', LEGACY_SAVE_KEY='dead-frequency.profile.v1', SETTINGS_KEY='dead-frequency.settings.v1';
 const canvas=document.querySelector('#game'),root=document.querySelector('#ui');
@@ -30,9 +31,21 @@ let marketTimer;
 let contextLost=false,frameFailed=false;
 const recovery=createRuntimeRecovery({restart(){persist();settingsChanged({renderScale:.75});location.reload();}});
 let localGame,coop=null,coopBusy=false,coopGeneration=0;
+let onlineHub=null,lastOnlinePoll=0;
+const online=createOnlineClient({request:window.platform?.onlineRequest?.bind(window.platform),
+  onProfile(profile){if(onlineHub)onlineHub.state.profile=structuredClone(profile);},
+  onSession(active){
+    closePanels();clearInputs();unlock();recoil.reset();
+    if(active){onlineHub=createOnlineHub(localGame,online.profile);game=onlineHub;}
+    else{onlineHub=null;game=localGame;game.returnToHub();}
+    lastPhase='';
+  },
+});
 const coopStatus={status:'offline',players:[],name:read('dead-frequency.operator')||'Operator',invite:'',message:''};
 function persist() {
-  try{localStorage.setItem(SAVE_KEY,JSON.stringify(game.getSave()));savingFailed=false;}
+  // Never serialize an online snapshot into the separate offline save.
+  if(!localGame||online.info.authenticated||online.info.restoring||onlineHub)return;
+  try{localStorage.setItem(SAVE_KEY,JSON.stringify(localGame.getSave()));savingFailed=false;}
   catch{if(!savingFailed)ui?.events([{type:'notice',text:'Speicher nicht verfügbar. Fortschritt gilt für diese Sitzung.'}]);savingFailed=true;}
 }
 function clearInputs(resetController=true){
@@ -79,7 +92,9 @@ function resume(){
 }
 function start(options){
   if(!controllerRaidEnabled())return false;
+  if(online.info.busy||online.info.restoring)return false;
   if(coop||coopBusy){ui.events([{type:'notice',text:'Verlasse zuerst die Koop-Lobby, um allein zu spielen.'}]);return false;}
+  if(online.info.authenticated)return joinOnline(options,'solo');
   if(!game.startRaid(options))return false;
   closePanels();clearInputs();recoil.reset();lookYaw=game.state.player.yaw;lookPitch=game.state.player.pitch||0;
   audio.unlock();lock();persist();return true;
@@ -262,34 +277,51 @@ function frame(now){
     audio.update(state,dt);lookDX=lookDY=0;
     fpsTime+=elapsed;if(fpsTime>=.5){fps=Math.round(frames/fpsTime);frames=0;fpsTime=0;}
     uiTime+=dt;
-    if(uiTime>=1/20){ui.update(state,{locked:document.pointerLockElement===canvas||controllerActive(),fps,settings,mapOpen,inventoryOpen,aim,coop:coop?.info||coopStatus,controller:{...controllerState,active:controllerPresent()},inputDevice});uiTime=0;}
+    if(uiTime>=1/20){ui.update(state,{locked:document.pointerLockElement===canvas||controllerActive(),fps,settings,mapOpen,inventoryOpen,aim,coop:coop?.info||coopStatus,online:online.info,controller:{...controllerState,active:controllerPresent()},inputDevice});uiTime=0;}
   }
   }catch(error){frameFailed=true;console.error(error);clearInputs();pause();persist();recovery.show({raid:['raid','paused'].includes(game.state.phase)});}
   raf=requestAnimationFrame(frame);
 }
 let accumulator=0;
-function marketTick(){if(game&&!coop&&!coopBusy&&economy.advanceMarket(game.state.profile))persist();}
+function marketTick(){
+  if(online.info.authenticated){if(game?.state.phase==='hub'&&!coop&&!coopBusy&&!hidden&&Date.now()-lastOnlinePoll>=10000){lastOnlinePoll=Date.now();online.refresh();}return;}
+  if(game&&!coop&&!coopBusy&&!online.info.busy&&economy.advanceMarket(localGame.state.profile))persist();
+}
+async function remoteAction(kind,action,args){
+  try{const result=await online.action(kind,action,args);if(!result)ui.events([{type:'notice',text:'Aktion nicht möglich. Prüfe Guthaben, Auswahl und Voraussetzungen.'}]);return result;}
+  catch(error){ui.events([{type:'notice',text:onlineError(error)}]);return false;}
+}
 function homeAction(action,...args){
   if(game.state.phase!=='hub')return false;
+  if(online.info.busy)return false;
   if(coop||coopBusy){ui.events([{type:'notice',text:'Lager und Markt sind nach dem Verlassen der Koop-Sitzung wieder verfügbar.'}]);return false;}
+  if(online.info.authenticated)return remoteAction('economy',action,args);
   marketTick();const result=economy[action](game.state.profile,...args);persist();
   if(!result)ui.events([{type:'notice',text:'Aktion nicht möglich. Prüfe Auswahl, Preis und freie Angebotsplätze.'}]);
   return result;
 }
 function hubGameAction(action,...args){
   if(game.state.phase!=='hub')return false;
+  if(online.info.busy)return false;
   if(coop||coopBusy){ui.events([{type:'notice',text:'Verlasse zuerst die Koop-Lobby, um Ausrüstung oder Fähigkeiten zu ändern.'}]);return false;}
+  if(online.info.authenticated)return remoteAction('game',action,args);
   const result=game[action](...args);pumpEvents();persist();return result;
 }
 async function leaveCoop(){
+  if(online.info.busy)return false;
   coopGeneration++;
   coopBusy=false;
   const active=coop;coop=null;active?.leave();
-  game=localGame;game.returnToHub();closePanels();clearInputs();unlock();recoil.reset();
-  Object.assign(coopStatus,{status:'offline',players:[],invite:'',message:''});
-  await window.platform?.stopHost();marketTick();persist();
+  game=online.info.authenticated?onlineHub:localGame;game.returnToHub();closePanels();clearInputs();unlock();recoil.reset();
+  Object.assign(coopStatus,{status:'offline',players:[],invite:'',message:'',online:false,mode:'coop',minPlayers:2,maxPlayers:2});
+  if(online.info.authenticated){
+    try{await online.leaveRoom();return true;}catch(error){ui.events([{type:'notice',text:onlineError(error)}]);return false;}
+  }
+  await window.platform?.stopHost();marketTick();persist();return true;
 }
 async function joinCoop(options,hosting){
+  if(online.info.authenticated)return joinOnline(options,hosting?'coop':'join');
+  if(online.info.busy||online.info.restoring)return false;
   if(coop?.info.status==='error'&&game.state.phase==='hub')await leaveCoop();
   if(coopBusy||coop||game.state.phase!=='hub')return;
   if(game.state.profile.intake.length){ui.events([{type:'notice',text:'Zuerst die Beute aus dem letzten Raid einlagern.'}]);return;}
@@ -321,11 +353,43 @@ async function joinCoop(options,hosting){
   }
   finally{if(generation===coopGeneration)coopBusy=false;}
 }
+async function joinOnline(options,mode){
+  if(coop?.info.status==='error'&&game.state.phase==='hub')await leaveCoop();
+  if(coopBusy||coop||online.info.busy||!online.info.authenticated||game.state.phase!=='hub')return false;
+  if(online.info.room){ui.events([{type:'notice',text:'Dein Konto hat noch eine aktive Sitzung. Öffne Konto und verlasse sie zuerst.'}]);return false;}
+  if(game.state.profile.intake.length){ui.events([{type:'notice',text:'Lagere zuerst die Beute aus dem letzten Raid ein.'}]);return false;}
+  const prepared=resolveLoadout(game.state.profile,options);
+  if(!prepared.valid||!prepared.affordable){ui.events([{type:'notice',text:prepared.reason||'Nicht genug Credits für dieses Loadout.'}]);return false;}
+  coopBusy=true;const generation=++coopGeneration;
+  Object.assign(coopStatus,{status:'connecting',message:mode==='solo'?'Online-Soloeinsatz wird vorbereitet …':'Online-Team wird verbunden …',name:online.info.user.username,online:true,mode:mode==='join'?'coop':mode});
+  try{
+    const room=await online.room(mode,{...options,loadout:prepared.selection});
+    if(!room||generation!==coopGeneration)return false;
+    let autoStarted=false;
+    const client=createCoopClient({localGame:onlineHub,
+      onChange(info){if(mode==='solo'&&!autoStarted&&info.status==='lobby'&&info.players?.find(p=>p.id===info.id)?.ready){autoStarted=true;client.start();}},
+      onProfile(profile){online.accept(profile);},
+      onRaid(state){closePanels();clearInputs();recoil.reset();lookYaw=state.player.yaw;lookPitch=state.player.pitch;audio.unlock();lock();},
+      onDisconnect(){clearInputs();closePanels();unlock();online.leaveRoom().catch(error=>ui.events([{type:'notice',text:onlineError(error)}]));},
+    });
+    coop=client;game=client;
+    await client.connect(room.url||room.invite,{ticket:room.ticket,online:true,mode:mode==='join'?'coop':mode,name:online.info.user.username,invitation:room.invite,difficulty:options.difficulty});
+    if(generation!==coopGeneration){client.leave();return false;}
+    if(mode==='solo')client.ready(true);
+    return true;
+  }catch(error){
+    if(generation!==coopGeneration)return false;
+    coop?.leave();coop=null;game=onlineHub;game.returnToHub();
+    try{await online.leaveRoom();}catch{}
+    const message=onlineError(error);Object.assign(coopStatus,{status:'error',message});ui.events([{type:'notice',text:message}]);return false;
+  }finally{if(generation===coopGeneration)coopBusy=false;}
+}
 async function boot(){
   game=localGame=await createGame(read(SAVE_KEY)??read(LEGACY_SAVE_KEY));view=createRenderer(canvas,game.layout);audio=createAudio();
-  marketTick();marketTimer=setInterval(marketTick,1000);
   await audio.ready;
-  ui=createUI(root,{start,resume,hub(){if(coop){leaveCoop();return;}game.returnToHub();closePanels();clearInputs();unlock();persist();},upgrade(kind){const ok=game.buyUpgrade(kind);pumpEvents();persist();return ok;},
+  ui=createUI(root,{start,resume,hub(){if(coop||online.info.room)return leaveCoop();game.returnToHub();closePanels();clearInputs();unlock();persist();},upgrade:kind=>hubGameAction('buyUpgrade',kind),
+    accountAuthenticate:(kind,name,password)=>{if(coop||coopBusy||game.state.phase!=='hub')return false;return online.authenticate(kind,name,password);},
+    accountLogout:()=>{if(coop||coopBusy||game.state.phase!=='hub'||online.info.room)return false;return online.logout();},
     coopHost:options=>joinCoop(options,true),coopJoin:options=>joinCoop(options,false),coopReady:ready=>coop?.ready(ready),coopStart:()=>coop?.start(),coopLeave:leaveCoop,
     coopCopyInvite:()=>window.platform?.copyInvite(coop?.info.invite||'').then(()=>ui.events([{type:'notice',text:'Einladung kopiert. Deinem Kollegen schicken und im Spiel einfügen.'}])),
     pasteClipboard:()=>window.platform?.readClipboard?.()??navigator.clipboard?.readText?.()??Promise.resolve(''),
@@ -343,7 +407,10 @@ async function boot(){
     storeItem:id=>homeAction('storeItem',id),storeAll:()=>homeAction('storeAll'),listItem:(id,price,duration)=>homeAction('listItem',id,price,duration),
     cancelListing:id=>homeAction('cancelListing',id),claimMail:id=>homeAction('claimMail',id),claimAll:()=>homeAction('claimAll'),
     settings:settingsChanged,resetSettings:category=>settingsChanged(resetSettingsCategory(settings,category)),rebind,quit(){window.close();}});
-  settingsChanged(settings);ui.update(game.state,{locked:false,fps,settings,mapOpen:false,inventoryOpen:false,aim:false,coop:coopStatus});
+  settingsChanged(settings);ui.update(game.state,{locked:false,fps,settings,mapOpen:false,inventoryOpen:false,aim:false,coop:coopStatus,online:online.info});
+  // Resolve a saved online session before advancing the separate offline market.
+  online.restore().then(()=>{if(!online.info.authenticated)marketTick();});
+  marketTimer=setInterval(marketTick,1000);
   window.platform?.onStatus(value=>{if(value.type==='hosting')coopStatus.message=value.message;else if(value.type==='tunnelLost'){if(coop)coop.info.message=value.message;ui.events([{type:'notice',text:value.message}]);}});
   window.addEventListener('keydown',()=>setInputDevice('keyboard'),true);
   document.addEventListener('keydown',onKeyDown);document.addEventListener('keyup',onKeyUp);

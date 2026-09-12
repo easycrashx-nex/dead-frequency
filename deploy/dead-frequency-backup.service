@@ -1,0 +1,13 @@
+[Unit]
+Description=Verified daily DEAD FREQUENCY account database backup
+After=dead-frequency.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/dead-frequency-backup
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/backups/dead-frequency /var/lib/dead-frequency
+ProtectHome=true

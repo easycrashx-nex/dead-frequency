@@ -33,7 +33,8 @@ export function createProgressionUI(container, actions) {
     if(byId.get(selectedId).branch!==id)selectedId=SKILL_NODES.find(node=>node.branch===id&&!node.requires.length).id;
     renderDetail();
   }
-  function onClick(event){const branch=event.target.closest('[data-skill-branch]'),node=event.target.closest('[data-skill-node]');if(branch)selectBranch(branch.dataset.skillBranch);else if(node){selectedId=node.dataset.skillNode;renderDetail();}else if(event.target.closest('#unlock-skill')&&!locked&&canUnlockSkill(profile,selectedId))actions.unlockSkill?.(selectedId);}
+  let pending=false;
+  async function onClick(event){const branch=event.target.closest('[data-skill-branch]'),node=event.target.closest('[data-skill-node]');if(branch)selectBranch(branch.dataset.skillBranch);else if(node){selectedId=node.dataset.skillNode;renderDetail();}else if(event.target.closest('#unlock-skill')&&!locked&&!pending&&canUnlockSkill(profile,selectedId)){pending=true;container.querySelector('#unlock-skill').disabled=true;try{await actions.unlockSkill?.(selectedId);}finally{pending=false;signature='';}}}
   function onKey(event){const tab=event.target.closest('[data-skill-branch]');if(!tab||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const index=branchButtons.indexOf(tab),next=event.key==='Home'?0:event.key==='End'?branchButtons.length-1:(index+(event.key==='ArrowRight'?1:-1)+branchButtons.length)%branchButtons.length;selectBranch(branchButtons[next].dataset.skillBranch);branchButtons[next].focus();}
   container.addEventListener('click',onClick);container.addEventListener('keydown',onKey);
   return {update(nextProfile,context={}){profile=nextProfile;locked=!!context.locked;const progress=getProgression(profile),next=JSON.stringify([progress,locked]);if(next===signature)return;signature=next;

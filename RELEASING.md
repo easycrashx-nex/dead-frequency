@@ -4,8 +4,8 @@ Der Launcher bezieht ausschließlich stabile Releases aus `easycrashx-nex/dead-f
 
 1. `package.json` auf eine höhere Version setzen. Beide Mitspieler benötigen dieselbe Version; der Koop-Client übernimmt sie beim Build automatisch.
 2. `pnpm install --frozen-lockfile`, `pnpm prepare:tunnel`, `pnpm test`, `pnpm build`, `pnpm package` ausführen.
-3. Die neue Windows-Ausgabe mit `node scripts/qa-coop-native.mjs` prüfen. Der Test verwendet zwei isolierte Windows-Instanzen und benötigt Internet. Die übrigen gezielten Prüfungen passend zur Änderung ausführen.
-4. `python scripts/release.py --qa-report ../qa-coop-native-<VERSION>/result.json` erzeugt das vollständige Windows-ZIP, den Quellcode und `SHA256SUMS.txt`.
+3. Die neue Windows-Ausgabe mit `node scripts/qa-online-native.mjs` gegen den aktualisierten dedizierten Server prüfen. Er verwendet zwei isolierte Windows-Instanzen und private QA-Accounts. Zugangsdaten in `accounts.private.json` bleiben ausschließlich im ignorierten QA-Ordner. Der lokale Koop-Regressionslauf ist `node scripts/qa-coop-native.mjs`. Die übrigen gezielten Prüfungen passend zur Änderung ausführen.
+4. `python scripts/release.py --qa-report ../qa-online-native-<VERSION>/result.json` erzeugt das vollständige Windows-ZIP, den Quellcode und `SHA256SUMS.txt`. Bei einem ausschließlich lokalen Koop-Release stattdessen den passenden `qa-coop-native`-Bericht angeben.
 5. Geprüfte Quelldateien committen und pushen. Auf genau diesen Commit ein stabiles Release `v<VERSION>` erstellen; dabei `DEAD-FREQUENCY-Windows.zip`, `DEAD-FREQUENCY-Quellcode.zip`, `SHA256SUMS.txt` und `ANLEITUNG.md` hochladen. Die Releasebeschreibung über `gh release create --notes-file <Datei>` übergeben.
 6. Release erst veröffentlichen, wenn alle Assets vollständig hochgeladen sind. Das öffentliche Downloadpaket mit dem Updater erneut prüfen.
 

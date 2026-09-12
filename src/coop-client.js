@@ -27,7 +27,7 @@ export function createCoopClient({localGame,onChange=()=>{},onRaid=()=>{},onProf
     let message;try{message=JSON.parse(data);}catch{return;}
     lastMessage=performance.now();
     if(message.type==='welcome'){change({id:message.id,hostId:message.hostId,status:'lobby',message:''});}
-    else if(message.type==='lobby'){change({players:message.players,hostId:message.hostId,status:state.phase==='hub'?'lobby':info.status});}
+    else if(message.type==='lobby'){change({players:message.players,hostId:message.hostId,mode:message.mode||info.mode,minPlayers:message.minPlayers||2,maxPlayers:message.maxPlayers||2,difficulty:message.difficulty||info.difficulty,status:state.phase==='hub'?'lobby':info.status});}
     else if(message.type==='error'){change({message:message.message,...(!info.id?{status:'error'}:{})});events.push({type:'notice',text:message.message});}
     else if(message.type==='closed'){disconnect(message.message||'Der Host hat die Sitzung beendet.');}
     else if(message.type==='snapshot'){
@@ -39,24 +39,25 @@ export function createCoopClient({localGame,onChange=()=>{},onRaid=()=>{},onProf
       }
       target={x:incoming.player.x,y:incoming.player.y,z:incoming.player.z};
       if(['raid','paused'].includes(oldPhase)&&incoming.phase==='raid')Object.assign(incoming.player,{x:oldPlayer.x,y:oldPlayer.y,z:oldPlayer.z,yaw:oldPlayer.yaw,pitch:oldPlayer.pitch});
-      state=incoming;state.multiplayer=true;
+      state=incoming;state.multiplayer=true;state.online=!!info.online;
       if(paused&&state.phase==='raid')state.phase='paused';
       if(!['raid','paused'].includes(oldPhase)&&state.phase==='raid'){paused=false;change({status:'raid',message:''});onRaid(state);}
       if(Array.isArray(message.events))events.push(...message.events);
       localGame.state.profile=structuredClone(state.profile);
-      if(oldPhase!==state.phase)onProfile();
+      if(oldPhase!==state.phase)onProfile(state.profile);
       if(!['raid','paused','hub'].includes(state.phase))change({status:'raid'});
     }
     else if(message.type==='pong'&&Number.isFinite(message.time))info.ping=Math.round(performance.now()-message.time);
   }
-  async function connect(invite,{name,profile,kit,weapon,loadout,invitation=invite,difficulty='normal'}={}){
+  async function connect(invite,{name,profile,kit,weapon,loadout,ticket,online=false,mode='coop',invitation=invite,difficulty='normal'}={}){
     const url=parseInvite(invite);closed=false;state=structuredClone(localGame.state);state.multiplayer=true;
+    if(online&&(!ticket||new URL(url).origin!=='wss://91.98.64.49'))throw new Error('Ungültige Online-Einsatzverbindung. Erstelle die Sitzung erneut.');
     state.teammates=[];lastSnapshot=-1;events=[];paused=false;sequence=0;pendingJump=pendingFirePressed=false;
-    change({status:'connecting',name:String(name||'Operator').trim().slice(0,20),invite:invitation,players:[],message:'Verbindung wird aufgebaut …',difficulty});
+    change({status:'connecting',name:String(name||'Operator').trim().slice(0,24),invite:invitation,players:[],id:null,hostId:null,message:'Verbindung wird aufgebaut …',difficulty,online,mode,minPlayers:mode==='solo'?1:2,maxPlayers:mode==='solo'?1:2});
     await new Promise((resolve,reject)=>{
       socket=new WebSocket(url);let welcomed=false;
       const timer=setTimeout(()=>{reject(new Error('Keine Antwort vom Host. Prüfe, ob die Einladung noch aktiv ist.'));socket.close();},20000);
-      socket.addEventListener('open',()=>send({type:'join',protocol:1,version:packageInfo.version,name:info.name,profile,kit,weapon,loadout}));
+      socket.addEventListener('open',()=>send(online?{type:'join',protocol:1,version:packageInfo.version,ticket}:{type:'join',protocol:1,version:packageInfo.version,name:info.name,profile,kit,weapon,loadout}));
       socket.addEventListener('message',event=>{
         receive(event.data);
         if(info.id&&!welcomed){welcomed=true;clearTimeout(timer);resolve();}

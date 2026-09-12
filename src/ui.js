@@ -8,6 +8,7 @@ import { createArmoryUI, weaponSilhouette } from './armory-ui.js';
 import { createProgressionUI } from './progression-ui.js';
 import { getWeapon } from './weapons.js';
 import { resolveLoadout, GEAR_SLOTS } from './loadouts.js';
+import {createOnlineUI} from './online-ui.js';
 import { getProgression, getSkillEffects } from './progression.js';
 import { BINDING_ACTIONS, defaultSettings, keyLabel } from './settings.js';
 import { RAID_SECONDS } from './simulation.js';
@@ -111,8 +112,8 @@ export function createUI(root, actions) {
   let hubTab = 'deploy', selectedMarketItem = '', lastHomeTick = 0;
   const homeSignatures = new Map();
   let abandonArmed = false, resultExitArmed = false;
-  let coopInfo = {};
-  const hostPartnerActive = () => !!state?.multiplayer && !!coopInfo.id && coopInfo.id === coopInfo.hostId && state.teammates?.some(p => ['raid', 'paused'].includes(p.phase));
+  let coopInfo = {},onlineInfo = {},economyBusy=false;
+  const hostPartnerActive = () => !!state?.multiplayer && !state?.online && !!coopInfo.id && coopInfo.id === coopInfo.hostId && state.teammates?.some(p => ['raid', 'paused'].includes(p.phase));
   let noticeTimer;
   let hitTimer;
   let damageTimer;
@@ -122,7 +123,7 @@ export function createUI(root, actions) {
   const mapContext = mapCanvas.getContext('2d');
   drawDeploymentMap(el('deployment-map'));
   const currentLoadout = () => resolveLoadout(state?.profile || {});
-  const loadoutLocked = () => !!state?.multiplayer || ['hosting','connecting','lobby'].includes(coopInfo.status);
+  const loadoutLocked = () => !!state?.multiplayer || !!onlineInfo.busy || !!onlineInfo.restoring || !!onlineInfo.room || ['hosting','connecting','lobby'].includes(coopInfo.status);
   const armoryUI = createArmoryUI(nodes['hub-arsenal'], actions);
   const progressionUI = createProgressionUI(nodes['hub-skills'], actions);
   const settingsUI = createSettingsUI(nodes['settings-content'], actions);
@@ -256,12 +257,13 @@ export function createUI(root, actions) {
     nodes['market-price'].value=item ? marketQuote(item,homeNow()) : '';
     updateMarketForm();
   }
-  function economyAction(action,...args) {
-    const result=actions[action]?.(...args);
-    lastHomeTick=0;
-    return result;
+  async function economyAction(action,...args) {
+    if(economyBusy)return false;
+    economyBusy=true;
+    try{return await actions[action]?.(...args);}
+    finally{economyBusy=false;lastHomeTick=0;}
   }
-  const onClick = event => {
+  const onClick = async event => {
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
     if (button.dataset.difficulty) return !loadoutLocked() && selectDifficulty(button.dataset.difficulty);
@@ -281,18 +283,18 @@ export function createUI(root, actions) {
         const loadout=currentLoadout();
         if(!loadout.valid){notice(loadout.reason);selectHubTab('arsenal');armoryUI.open('loadout');return;}
         if((state?.profile?.credits||0)<loadout.cost){notice(`Für diesen Einsatz werden ${number(loadout.cost)} CR benötigt. Das Notfall-Kit im Arsenal ist kostenlos.`);return;}
-        closePanels();actions.start({difficulty:selectedDifficulty,loadout:state.profile.loadout});break;
+        closePanels();await actions.start({difficulty:selectedDifficulty,loadout:state.profile.loadout});break;
       }
       case 'arsenal-kits': selectHubTab('arsenal');armoryUI.open('kits');break;
       case 'arsenal-loadout': selectHubTab('arsenal');armoryUI.open('loadout');break;
       case 'resume': closePanels(); actions.resume(); break;
       case 'hub':
         if (hostPartnerActive() && !resultExitArmed) { resultExitArmed = true; setText('result-hub-label', 'TEAM BEENDEN BESTÄTIGEN'); setText('result-storage-note', 'Mitspieler noch im Einsatz – Team wirklich beenden? Erneut klicken beendet auch seinen Raid.'); return; }
-        closePanels(); actions.hub(); selectHubTab(state?.profile?.intake?.length?'storage':'deploy'); break;
+        closePanels(); await actions.hub(); selectHubTab(state?.profile?.intake?.length?'storage':'deploy'); break;
       case 'store-all': economyAction('storeAll'); break;
       case 'claim-all': economyAction('claimAll'); break;
       case 'quote-price': { const item=state?.profile?.stash?.find(item=>String(item.id)===selectedMarketItem); if(item)nodes['market-price'].value=marketQuote(item,homeNow()); updateMarketForm(); break; }
-      case 'list-item': if(!nodes['create-listing'].disabled) { const result=economyAction('listItem',selectedMarketItem,Number(nodes['market-price'].value),Number(nodes['market-duration'].value)); if(result!==false){selectedMarketItem='';nodes['market-price'].value='';} } break;
+      case 'list-item': if(!nodes['create-listing'].disabled) { const result=await economyAction('listItem',selectedMarketItem,Number(nodes['market-price'].value),Number(nodes['market-duration'].value)); if(result!==false){selectedMarketItem='';nodes['market-price'].value='';} } break;
       case 'close-field': closePanels(); actions.closeFieldPanel?.(); break;
       case 'close-container': actions.closeContainer?.(); break;
       case 'take-all-container': if (state?.activeContainerId) actions.takeAllContainerItems?.(state.activeContainerId); break;
@@ -308,6 +310,7 @@ export function createUI(root, actions) {
   };
   const onKey = event => {
     if (controllerUI.handleKey(event)) return;
+    if (onlineUI.key(event)) return;
     if (utility === 'settings' && settingsUI.handleKey(event)) return;
     if (event.key === 'Escape' && utility) { event.stopImmediatePropagation(); event.preventDefault(); showUtility(null); }
     if (event.key === 'Tab' && utility) {
@@ -492,6 +495,7 @@ export function createUI(root, actions) {
   function update(nextState, info = {}) {
     state = nextState;
     coopInfo = info.coop || {};
+    onlineInfo = info.online || {};
     const phase = state.phase;
     if (phase !== currentPhase) {
       currentPhase = phase;
@@ -505,7 +509,7 @@ export function createUI(root, actions) {
     }
     coopUI.update(state, info);
     if (state.multiplayer && phase === 'paused' && !abandonArmed) {
-      setText('abandon-note', info.coop?.id === info.coop?.hostId ? 'Als Host beendest du auch den Raid deines Mitspielers. Mitgeführte Beute geht verloren.' : 'Dein Mitspieler bleibt im Raid. Deine mitgeführte Beute geht verloren.');
+      setText('abandon-note', info.coop?.mode==='solo'?'Dein Online-Einsatz wird beendet. Mitgeführte Beute geht verloren.':!state.online&&info.coop?.id === info.coop?.hostId ? 'Als Host beendest du auch den Raid deines Mitspielers. Mitgeführte Beute geht verloren.' : 'Dein Mitspieler bleibt im Raid. Deine mitgeführte Beute geht verloren.');
     }
     show('map-team-legend', !!state.multiplayer);
     if (typeof info.mapOpen === 'boolean' && info.mapOpen !== lastExternalMap) { lastExternalMap = info.mapOpen; if (info.mapOpen) panel = 'map'; else if (panel === 'map') panel = null; }
@@ -533,6 +537,8 @@ export function createUI(root, actions) {
     if (phase === 'hub') renderHome();
     setText('hub-credits', number(profile.credits));
     const lockedLoadout=loadoutLocked(),loadout=currentLoadout(),equipped=loadout.weapon,progress=getProgression(profile),effects=getSkillEffects(profile);
+    nodes['start-raid'].disabled=!!onlineInfo.busy||!!onlineInfo.restoring;
+    if(phase==='hub'&&!profile.intake?.length)setText('start-label',onlineInfo.busy||onlineInfo.restoring?'BITTE WARTEN …':onlineInfo.authenticated?'ONLINE-SOLO STARTEN':'LOKALEN RAID STARTEN');
     armoryUI.update(profile,{locked:lockedLoadout,visible:phase==='hub'&&hubTab==='arsenal'&&!utility&&!!root.querySelector('#coop-overlay')?.hidden});progressionUI.update(profile,{locked:lockedLoadout});
     for(const button of root.querySelectorAll('[data-difficulty]'))button.disabled=lockedLoadout;
     nodes['deployment-mode-preset'].classList.toggle('selected',profile.loadout?.mode!=='custom');nodes['deployment-mode-custom'].classList.toggle('selected',profile.loadout?.mode==='custom');
@@ -594,10 +600,12 @@ export function createUI(root, actions) {
       setText('result-xp', `+${number(result.xpEarned)} XP · LEVEL ${progress.level}`);
       setText('result-total', `${number(result.success ? result.total : 0)} CR`);
       setText('result-storage-note',result.success ? 'Deine Gegenstände warten unter Lager → Anlieferung. Der Warenwert wurde nicht als Guthaben ausgezahlt.' : 'Dein bereits eingelagerter Bestand und bestehende Marktangebote bleiben erhalten.');
-      setText('result-hub-label', state.multiplayer ? resultExitArmed && hostPartnerActive() ? 'TEAM BEENDEN BESTÄTIGEN' : 'ZUR BASIS / TEAM VERLASSEN' : 'ZURÜCK ZUR BASIS');
+      setText('result-hub-label', state.multiplayer && coopInfo.mode!=='solo' ? resultExitArmed && hostPartnerActive() ? 'TEAM BEENDEN BESTÄTIGEN' : 'ZUR BASIS / TEAM VERLASSEN' : 'ZURÜCK ZUR BASIS');
       if (hostPartnerActive()) setText('result-storage-note', resultExitArmed ? 'Mitspieler noch im Einsatz – Team wirklich beenden? Erneut klicken beendet auch seinen Raid.' : 'Dein Mitspieler ist noch im Einsatz. Wenn du als Host das Team verlässt, endet auch sein Raid.');
       nodes['result-screen'].classList.toggle('failure', !result.success);
     }
+    onlineUI.update(onlineInfo,{phase});
+    if(onlineInfo.authenticated)setText('connection-label',coopInfo.status==='error'?'ONLINE / VERBINDUNG GETRENNT':coopInfo.mode==='solo'&&state.multiplayer?'ONLINE-SOLOEINSATZ':state.multiplayer?'ONLINE-TEAM':'ONLINE-OPERATOR');
     controllerUI.update(info, settings);
   }
 
@@ -626,14 +634,16 @@ export function createUI(root, actions) {
     if (panel === 'map') drawMap();
     if (panel === 'inventory') renderInventory();
   }
-  function closePanels() { controllerUI.closeKeyboard(); panel = null; show('map-panel', false); show('inventory-panel', false); showUtility(null); }
+  function closePanels() { controllerUI.closeKeyboard(); onlineUI.close(); panel = null; show('map-panel', false); show('inventory-panel', false); showUtility(null); }
   const coopUI = createCoopUI(root, actions, { getLoadout: () => ({ loadout:state?.profile?.loadout,difficulty:selectedDifficulty }), notice });
+  const onlineUI = createOnlineUI(root,actions,{notice});
   const controllerUI = createControllerUI(root, actions, { onBack() {
+    if (onlineUI.isOpen()) return onlineUI.close();
     if (settingsUI.isCapturingBinding()) { settingsUI.cancelCapture(); return true; }
     if (utility) { showUtility(null); return true; }
     if (!root.querySelector('#coop-overlay')?.hidden) { coopUI.close(); return true; }
     return false;
   } });
   selectDifficulty('normal'); selectHubTab('deploy');
-  return { update, events, togglePanel, closePanels, controllerNavigate: (input, dt) => controllerUI.navigate(input, dt), isUtilityOpen: () => !!utility || controllerUI.isKeyboardOpen(), isCapturingBinding: () => settingsUI.isCapturingBinding(), closeUtility: () => controllerUI.closeKeyboard() || showUtility(null), dispose() { controllerUI.dispose(); armoryUI.dispose(); progressionUI.dispose(); settingsUI.dispose(); coopUI.dispose(); root.removeEventListener('click',onClick); root.removeEventListener('input',onInput); document.removeEventListener('keydown',onKey,true); clearTimeout(noticeTimer); clearTimeout(hitTimer); clearTimeout(damageTimer); for (const timer of timeoutIds) clearTimeout(timer); root.innerHTML = ''; } };
+  return { update, events, togglePanel, closePanels, controllerNavigate: (input, dt) => controllerUI.navigate(input, dt), isUtilityOpen: () => !!utility || controllerUI.isKeyboardOpen() || onlineUI.isOpen(), isCapturingBinding: () => settingsUI.isCapturingBinding(), closeUtility: () => controllerUI.closeKeyboard() || onlineUI.close() || showUtility(null), dispose() { controllerUI.dispose(); onlineUI.dispose(); armoryUI.dispose(); progressionUI.dispose(); settingsUI.dispose(); coopUI.dispose(); root.removeEventListener('click',onClick); root.removeEventListener('input',onInput); document.removeEventListener('keydown',onKey,true); clearTimeout(noticeTimer); clearTimeout(hitTimer); clearTimeout(damageTimer); for (const timer of timeoutIds) clearTimeout(timer); root.innerHTML = ''; } };
 }

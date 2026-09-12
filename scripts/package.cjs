@@ -17,7 +17,7 @@ async function main(){
   await fs.mkdir(stage,{recursive:true});
   await fs.mkdir(output,{recursive:true});
   await fs.cp(path.join(project,'dist'),path.join(stage,'dist'),{recursive:true});
-  for(const name of ['electron.cjs','preload.cjs','platform.cjs'])await fs.copyFile(path.join(project,name),path.join(stage,name));
+  for(const name of ['electron.cjs','preload.cjs','platform.cjs','online-platform.cjs'])await fs.copyFile(path.join(project,name),path.join(stage,name));
   for(const name of ['server','launcher'])await fs.cp(path.join(project,name),path.join(stage,name),{recursive:true});
   await fs.mkdir(path.join(stage,'src'),{recursive:true});
   for(const name of ['simulation.js','enemy-ai.js','enemies.js','layout.js','terrain.js','world-layout.js','loot-catalog.js','weapons.js','loadouts.js','progression.js','economy.js','coop-session.js'])await fs.copyFile(path.join(project,'src',name),path.join(stage,'src',name));

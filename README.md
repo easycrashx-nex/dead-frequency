@@ -1,6 +1,6 @@
-# DEAD FREQUENCY 1.11.0
+# DEAD FREQUENCY 1.12.0
 
-Ein Hardcore-Extraction-Shooter aus der Ego-Perspektive für Windows x64: allein offline oder zu zweit im Koop. Durchsuche den **1.500 × 1.500 Meter** großen Sektor 07 mit Bergen, Fluss, Brücken und begehbaren Ortschaften. Sichere Beute und bringe deine eigene Ausrüstung lebend zurück.
+Ein Hardcore-Extraction-Shooter aus der Ego-Perspektive für Windows x64: mit Online-Account allein oder zu zweit auf dem dedizierten Server, außerdem mit separatem lokalen Offline-Spielstand. Durchsuche den **1.500 × 1.500 Meter** großen Sektor 07 mit Bergen, Fluss, Brücken und begehbaren Ortschaften. Sichere Beute und bringe deine eigene Ausrüstung lebend zurück.
 
 Die Welt umfasst 73 begehbare Gebäude, davon 46 mehrgeschossig, sechs ummauerte Ortschaften, drei Brücken, 28 Fahrzeuge und 151 logisch platzierte Kisten. Alle Häuser haben echte Eingänge; obere Stockwerke erreichst du über Treppen. Im Hauptmenü zeigt ein düsterer 3D-Ausrüstungsraum deinen Operator mit dem gewählten Loadout. Waffenwerte und Kaufknopf bleiben im Shop sichtbar, während du im Katalog blätterst.
 
@@ -8,23 +8,33 @@ Die Welt umfasst 73 begehbare Gebäude, davon 46 mehrgeschossig, sechs ummauerte
 
 ## Spielen
 
-Das Windows-ZIP einmal vollständig entpacken und `DEAD FREQUENCY.exe` starten. Den gesamten Programmordner zusammenlassen. Zuerst prüft der Launcher automatisch GitHub auf Updates, danach öffnet sich das Spiel. Kein Konto und keine manuelle Installation erforderlich. Du kannst mit Maus und Tastatur oder einem unterstützten Controller spielen; Hardwarebeschleunigung und WebGL2 werden benötigt.
+Das Windows-ZIP einmal vollständig entpacken und `DEAD FREQUENCY.exe` starten. Den gesamten Programmordner zusammenlassen. Zuerst prüft der Launcher automatisch GitHub auf Updates, danach öffnet sich das Spiel. Für lokales Spielen ist kein Konto erforderlich. Du kannst mit Maus und Tastatur oder einem unterstützten Controller spielen; Hardwarebeschleunigung und WebGL2 werden benötigt.
+
+## Online-Account
+
+Oben rechts **KONTO / ANMELDEN → KONTO ERSTELLEN** öffnen. Einen Rufnamen mit 3–24 Buchstaben, Zahlen, Unterstrich oder Bindestrich und ein Passwort mit 10–128 Zeichen wählen. Danach zeigt das Menü **ONLINE-OPERATOR**. Die Verbindung zu `https://91.98.64.49` ist bereits eingerichtet. Dein Passwort wird nicht auf dem PC gespeichert; die Anmeldung bleibt über eine mit Windows verschlüsselte Sitzung erhalten.
+
+Geld, Lager, Skills, Loadouts, Marktangebote und Postfach liegen auf dem Server. Käufe und Raid-Ergebnisse werden dort geprüft. Auch **ONLINE-SOLO STARTEN** führt einen echten Server-Raid aus. Online läuft die Welt während Pausen und Fensterwechseln weiter. Bei Verbindungsabbruch gilt der eigene Raid als verloren; ein Mitspieler kann weiterkämpfen. Ein Serverneustart beendet noch laufende Raids; bereits eingesetzte Ausrüstung wird dabei nicht zurückerstattet.
+
+Neue Online-Accounts beginnen mit einem eigenen Profil. Dein bisheriges lokales Profil bleibt erhalten und ist nach **ABMELDEN & LOKAL SPIELEN** wieder verfügbar. Es wird kein lokaler Spielstand ungeprüft in das Online-System hochgeladen. Der vorhandene Markt mit zeitabhängigen Preisen, probabilistischen Käufern und Rückgaben ins Postfach läuft jetzt für Online-Accounts nach der Serverzeit; direkte Käufe zwischen Spielern sind noch nicht enthalten.
+
+Es gibt noch keine Wiederherstellung per E-Mail. Falls du dein Passwort vergisst, kann der Serveradministrator es nach Zuordnung deines Accounts zurücksetzen. Hinweise für den Betrieb stehen unter [deploy/README.md](deploy/README.md).
 
 ## Mit einem Freund spielen
 
-1. Beide starten dieselbe aktuelle Windows-Version und wählen ihr Kit in der Basis. Vorherige Extraktionsbeute zuerst einlagern.
-2. Der Host öffnet **KOOP**, gibt seinen Rufnamen ein und klickt **TEAM ERSTELLEN**. Die Internetoption ist bereits eingeschaltet.
+1. Beide starten dieselbe aktuelle Windows-Version, melden sich für Online-Koop mit einem eigenen Account an und wählen ihr Kit in der Basis. Vorherige Extraktionsbeute zuerst einlagern.
+2. Der Host öffnet **ONLINE-KOOP** und klickt **TEAM ERSTELLEN**. Der eigene Account bestimmt den Rufnamen; der Server betreibt das Team.
 3. Sobald die Verbindung bereit ist, **KOPIEREN** drücken und die Einladung dem Freund schicken.
-4. Der Freund öffnet **KOOP → TEAM BEITRETEN**, fügt die Einladung ein und verbindet sich.
+4. Der Freund öffnet **ONLINE-KOOP → TEAM BEITRETEN**, fügt die Einladung ein und verbindet sich.
 5. Beide klicken **BEREIT MELDEN**; der Host klickt **KOOP-RAID STARTEN**. Falls das Spiel die Maus noch nicht übernommen hat, **FORTSETZEN** drücken.
 
 Beide sehen dieselben Gegner und dieselbe Beute. Jeder Gegenstand einer Kiste kann nur einmal entnommen werden. Abgeworfene Rucksackgegenstände kann der Partner aufnehmen. Gesundheit, Munition, Ausdauer, Waffen, Skills und Extraktionsrucksäcke bleiben getrennt. Es gibt kein Friendly Fire. Jeder fordert seine eigene Extraktion an und bleibt acht Sekunden in der Zone (mit Logistik-Meisterschaft sieben). Der blaue Operator mit seiner gewählten Waffe und die Teamanzeige zeigen deinen Mitspieler. Waffen und Skills vor dem Verbinden auswählen; in der Lobby ist die Ausrüstung gesperrt.
 
-**Im Koop läuft die Welt bei geöffnetem Menü oder Fensterwechsel weiter.** Bei einem Verbindungsabbruch scheidet der getrennte Spieler aus; seine ungesicherte Beute kann der Partner bergen. Wenn der Host das Team beendet oder die Anwendung schließt, endet die Verbindung für beide. Nach seiner eigenen Extraktion sollte der Host warten, bis der Kollege ebenfalls draußen ist. Beute aus einer bereits abgeschlossenen Extraktion bleibt erhalten.
+**Im Koop läuft die Welt bei geöffnetem Menü oder Fensterwechsel weiter.** Bei einem Verbindungsabbruch scheidet der getrennte Spieler aus; seine ungesicherte Beute kann der Partner bergen. Online betreibt der dedizierte Server den Raid unabhängig von beiden PCs: Auch wenn der Teamgründer geht, kann der Partner weiterspielen. Beute aus einer bereits abgeschlossenen Extraktion bleibt erhalten.
 
 Beim ersten tödlichen Treffer im Koop wirst du **verwundet** und verblutest nach 60 Sekunden. Dein stehender Partner kann dich innerhalb von 2,2 Metern bei freier Sicht mit **E halten** beziehungsweise **Y / △ halten** wiederbeleben. Dafür muss er sechs Sekunden ununterbrochen helfen und ein Medkit besitzen; dieses wird erst bei erfolgreicher Hilfe verbraucht. Loslassen, zu große Entfernung oder eingehender Schaden unterbrechen die Hilfe. Du kehrst mit 35 Lebenspunkten zurück. Ein zweiter tödlicher Treffer, Verbluten oder zwei gleichzeitig verwundete Spieler beenden die Rettungsmöglichkeit. Vollständig tote Spieler können nicht wiederbelebt werden. Im Solo-Raid gibt es keine Selbstwiederbelebung.
 
-Die Internet-Einladung läuft über den mitgelieferten Cloudflare-Tunnel, benötigt keine Portfreigabe und gilt nur für die aktuelle Hostsitzung. Der Host-PC berechnet den Raid. [Cloudflare Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/) sind ein kostenloser Dienst ohne Verfügbarkeitsgarantie; bei einer Störung kann eine neue Einladung helfen. Unter **Verbindungsoptionen** lässt sich Internet ausschalten, um direkt im selben LAN/VPN zu spielen. Dann muss die Windows-Firewall die Spielverbindung im verwendeten privaten Netzwerk zulassen. Einladungen nur dem Mitspieler geben.
+Ohne Anmeldung bleibt der bisherige lokale Koop-Modus verfügbar. Dort berechnet der Host-PC den Raid; sein Beenden trennt beide Spieler. Die Internet-Einladung verwendet dann den mitgelieferten [Cloudflare-Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/). Unter **Verbindungsoptionen** lässt sich Internet ausschalten, um direkt im selben LAN/VPN zu spielen. Dann muss die Windows-Firewall die Verbindung im privaten Netzwerk zulassen. Einladungen nur dem Mitspieler geben. Der Online-Modus verwendet den eingerichteten Spielserver und benötigt keinen Tunnel auf deinem PC.
 
 ## Automatische Updates
 
@@ -176,11 +186,11 @@ Seit Version 1.7.1 wächst das Guthaben langsamer: Neue Beutefunde sind 35 % wen
 | Pause / Maus freigeben | Escape |
 | Vollbild umschalten (Windows-App) | F11 |
 
-Im Solo-Modus pausiert ein Fensterwechsel den Raid. Im Koop öffnet sich ein lokales Menü, während die gemeinsame Welt weiterläuft. Im Menü stehen Grafikqualität, Lautstärke und Mausempfindlichkeit zur Verfügung.
+Im Offline-Solo-Modus pausiert ein Fensterwechsel den Raid. Online und im Koop öffnet sich ein lokales Menü, während die gemeinsame Welt weiterläuft. Im Menü stehen Grafikqualität, Lautstärke und Mausempfindlichkeit zur Verfügung.
 
 ## Entwicklung
 
-Node.js 22 oder neuer und pnpm verwenden. Die Einzelspieler-Inhalte laufen lokal. Internet wird für Abhängigkeiten, den erstmaligen Bezug der fest versionierten Tunnel-Komponente, Koop über das Internet und Updates benötigt.
+Node.js 22.13 oder neuer und pnpm verwenden. Offline-Solo läuft lokal; Online-Solo und Online-Koop verwenden den dedizierten Server. Internet wird außerdem für Abhängigkeiten, den erstmaligen Bezug der fest versionierten Tunnel-Komponente und Updates benötigt.
 
 ```text
 pnpm install --frozen-lockfile
@@ -219,7 +229,7 @@ pnpm package
 - `platform.cjs` / `preload.cjs`: schmale Desktop-Schnittstelle, Host-Lebensdauer und Internet-Tunnel.
 - `launcher/`: automatische GitHub-Prüfung, verifizierter Download, sichere Archivextraktion und Versionsauswahl.
 
-Eine 1.500 × 1.500 Meter große Karte mit vollständig begehbaren Gebäuden, sechs festen Einsatzkits, eigenem Loadout, 32 Waffen, 36 Aufsätzen, 24 Ausrüstungsteilen, zwei Schwierigkeiten und 24 permanenten Skills. Solo gegen KI oder privater Koop für genau zwei Spieler. Lager und Markt bleiben pro Spieler lokal; es gibt keinen gemeinsamen öffentlichen Handelsmarkt oder öffentliches Matchmaking. Modelle und Texturen werden lokal erzeugt. Die Sounds verwenden mitgelieferte Aufnahmen: echte M45- und AK-47-Schüsse als bearbeitete Klangbasis der Waffen, Airsoft-Nachlademechanik, Schritte auf hartem Boden und Wind.
+Eine 1.500 × 1.500 Meter große Karte mit vollständig begehbaren Gebäuden, sechs festen Einsatzkits, eigenem Loadout, 32 Waffen, 36 Aufsätzen, 24 Ausrüstungsteilen, zwei Schwierigkeiten und 24 permanenten Skills. Solo gegen KI oder privater Koop für genau zwei Spieler. Online liegen Lager und Markt auf dem Server; das separate Offline-Profil bleibt lokal. Es gibt keinen gemeinsamen öffentlichen Handelsmarkt oder öffentliches Matchmaking. Modelle und Texturen werden lokal erzeugt. Die Sounds verwenden mitgelieferte Aufnahmen: echte M45- und AK-47-Schüsse als bearbeitete Klangbasis der Waffen, Airsoft-Nachlademechanik, Schritte auf hartem Boden und Wind.
 
 Version 1.1.0 ersetzt die synthetischen Schüsse und Schritte. Schussvarianten wiederholen sich nicht unmittelbar; die beiden Waffen haben unterschiedliche Klangquellen. Gegnerklänge folgen Entfernung, Blickrichtung und Hindernissen. Schritte hängen von tatsächlicher Bewegung ab, Ducken ist leiser, Sprinten kräftiger. Pause und Tod brechen geplante Nachladegeräusche ab. Der Mixer begrenzt gleichzeitig aktive Stimmen und Spitzenpegel. `node scripts/qa-audio.mjs` prüft die echte Stereo-Ausgabe gegen den laufenden Vite-Server.
 

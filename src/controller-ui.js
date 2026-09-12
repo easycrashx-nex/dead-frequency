@@ -30,7 +30,7 @@ export function createControllerUI(root, actions, {onBack=()=>false}={}) {
     return arrows[action] ? `LS ${arrows[action]}` : labels[family]?.[action] || action;
   }
   function scope() {
-    return [overlay,...['utility-overlay','coop-overlay','container-panel','inventory-panel','map-panel','pause-screen','result-screen','hub-screen'].map(id=>root.querySelector(`#${id}`))].find(visible) || null;
+    return [overlay,...['account-overlay','utility-overlay','coop-overlay','container-panel','inventory-panel','map-panel','pause-screen','result-screen','hub-screen'].map(id=>root.querySelector(`#${id}`))].find(visible) || null;
   }
   function focus(node) {
     if(!enabled(node))return;
@@ -57,7 +57,7 @@ export function createControllerUI(root, actions, {onBack=()=>false}={}) {
   }
   function closeKeyboard() {
     if(overlay.hidden)return false;
-    const target=keyboardTarget; overlay.hidden=true; keyboardTarget=null; keyboardToken++; direction='';
+    const target=keyboardTarget; overlay.hidden=true; keyboardTarget=null; keyboardToken++; direction='';value.value='';value.type='text';
     if(enabled(target))focus(target); else ensureFocus();
     return true;
   }
@@ -76,7 +76,7 @@ export function createControllerUI(root, actions, {onBack=()=>false}={}) {
     keyboardTarget=target; keyboardToken++; uppercase=false;
     const label=target.labels?.[0]?.textContent?.trim() || target.getAttribute('aria-label') || target.placeholder || 'Eingabe';
     text(query('controller-keyboard-title'),label.replace(/\s+/g,' ').slice(0,70));
-    value.value=target.value; value.maxLength=target.maxLength>0?target.maxLength:2048;
+    value.type=target.type==='password'?'password':'text';value.value=target.value; value.maxLength=target.maxLength>0?target.maxLength:2048;
     value.inputMode=target.type==='number'?'numeric':'text'; text(error,'');
     buildKeys(target.type==='number'); overlay.hidden=false;
     query('controller-keyboard-paste').disabled=typeof actions.pasteClipboard!=='function';

@@ -1,0 +1,33 @@
+[Unit]
+Description=DEAD FREQUENCY accounts and dedicated raids
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dead-frequency
+Group=dead-frequency
+WorkingDirectory=/opt/dead-frequency/current
+EnvironmentFile=/etc/dead-frequency.env
+ExecStart=/usr/bin/node server/start.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+UMask=0077
+StateDirectory=dead-frequency
+StateDirectoryMode=0750
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=2500M
+TasksMax=128
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

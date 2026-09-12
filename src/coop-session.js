@@ -28,7 +28,8 @@ export function sanitizeCoopInput(raw, player) {
 
 // Two server-owned controllers share enemies, containers and dynamic ground drops.
 // Only this coordinator advances AI. Clients never provide position or damage.
-export function createCoopSession({ seed } = {}) {
+export function createCoopSession({ seed, minPlayers = 2, maxPlayers = 2, onRaidStart = () => {}, onPlayerFinished = () => {} } = {}) {
+  if (![1, 2].includes(maxPlayers) || !Number.isInteger(minPlayers) || minPlayers < 1 || minPlayers > maxPlayers) throw new Error('Ungültige Spielerzahl.');
   const players = new Map();
   let hostId = null, phase = 'lobby', nextId = 1, tick = 0, time = 0, disposed = false;
   let primary = null, actions = [], relayComplete = false;
@@ -68,6 +69,11 @@ export function createCoopSession({ seed } = {}) {
   function collectEvents() {
     for (const source of players.values()) {
       if (!source.game) continue;
+      if (!source.settled && ['dead', 'extracted'].includes(source.game.state.phase)) {
+        // Durable servers persist before any result/profile is acknowledged to a client.
+        onPlayerFinished(source.id, copy(source.game.state.profile), source.game.state.phase);
+        source.settled = true;
+      }
       for (const event of source.game.drainEvents()) {
         queue(source.id, event);
         if (event.type === 'death') {
@@ -85,9 +91,9 @@ export function createCoopSession({ seed } = {}) {
     }
   }
 
-  async function join({ name, profile, kit, weapon, loadout } = {}) {
+  async function join({ name, profile, kit, weapon, loadout, host = false } = {}) {
     if (disposed || phase !== 'lobby') throw new Error('Dieser Raid hat bereits begonnen.');
-    if (players.size >= 2) throw new Error('Die Koop-Lobby ist voll (2 Spieler).');
+    if (players.size >= maxPlayers) throw new Error(`Die Koop-Lobby ist voll (${maxPlayers} Spieler).`);
     const clean = validateProfile(profile);
     if (clean.intake.length) throw new Error('Zuerst die zurückgebrachte Beute zuhause einlagern.');
     const resolved = resolveLoadout(clean, { loadout, kit, weapon });
@@ -98,9 +104,10 @@ export function createCoopSession({ seed } = {}) {
       ready: false, loadout: copy(resolved.selection), kit: resolved.selection.presetId, weapon: resolved.weapon.id, connected: true, game: null, events: [], input: null, lastSeq: -1, lastInputAt: time,
       jumpQueued: false, jumpHeld: false, fireQueued: false, fireHeld: false, lastActionAt: -1 };
     players.set(id, player); // Reserve the slot before asynchronous WASM initialization.
-    hostId ??= id;
+    if (host) hostId = id;
+    else hostId ??= id;
     try {
-      player.game = await createGame(clean, { externalAI: true, playerId: id, loadoutLocked: true,allowDowned:true });
+      player.game = await createGame(clean, { externalAI: true, playerId: id, loadoutLocked: true,allowDowned:maxPlayers > 1 });
       if (disposed || !players.has(id)) { player.game.dispose(); throw new Error('Sitzung wurde geschlossen.'); }
       player.input = neutral(player.game.state.player);
       return id;
@@ -124,7 +131,7 @@ export function createCoopSession({ seed } = {}) {
   function start(id, { difficulty = 'normal', seed: requestedSeed = seed } = {}) {
     if (disposed || phase !== 'lobby') throw new Error('Der Raid wurde bereits gestartet.');
     if (id !== hostId) throw new Error('Nur der Host kann den Raid starten.');
-    if (players.size !== 2 || [...players.values()].some(p => !p.connected || !p.game || !p.ready)) throw new Error('Beide Spieler müssen bereit sein.');
+    if (players.size < minPlayers || [...players.values()].some(p => !p.connected || !p.game || !p.ready)) throw new Error(minPlayers === 2 ? 'Beide Spieler müssen bereit sein.' : 'Alle Spieler müssen bereit sein.');
     if (!['normal', 'hard'].includes(difficulty)) throw new Error('Unbekannter Schwierigkeitsgrad.');
     // Validate everyone before consuming any participant's credits or equipment.
     for (const p of players.values()) {
@@ -140,6 +147,14 @@ export function createCoopSession({ seed } = {}) {
       p.game.teleport(SPAWN.x + index * 2.2, SPAWN.z + index * .8);
       p.input = neutral(p.game.state.player); p.jumpQueued = p.jumpHeld = p.fireQueued = p.fireHeld = false; p.lastInputAt = time;
       index++;
+    }
+    try {
+      onRaidStart([...players.values()].map(p => ({ id: p.id, profile: copy(p.game.state.profile) })));
+    } catch (error) {
+      // A failed durable commit cannot leave a playable, unpaid raid behind.
+      phase = 'finished';
+      for (const p of players.values()) { p.settled = true; p.game.endRaid('Einsatz konnte nicht gespeichert werden'); }
+      throw error;
     }
     phase = 'raid'; collectEvents(); return true;
   }
@@ -254,7 +269,7 @@ export function createCoopSession({ seed } = {}) {
     return { type: 'snapshot', seq: tick, ack: player.lastSeq, state, events: copy(events) };
   }
   function lobby() {
-    return { type: 'lobby', hostId, phase, players: [...players.values()].filter(p => p.connected && p.game).map(p => ({ id: p.id, name: p.name, ready: p.ready, kit: p.kit, weapon: p.weapon, loadoutMode: p.loadout.mode })) };
+    return { type: 'lobby', hostId, phase, mode: maxPlayers === 1 ? 'solo' : 'coop', minPlayers, maxPlayers, players: [...players.values()].filter(p => p.connected && p.game).map(p => ({ id: p.id, name: p.name, ready: p.ready, kit: p.kit, weapon: p.weapon, loadoutMode: p.loadout.mode })) };
   }
   return { join, ready, start, input, action, update, leave, snapshot, lobby, players,
     get hostId() { return hostId; }, get phase() { return phase; },

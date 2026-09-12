@@ -146,16 +146,18 @@ export function createLoadoutUI(container, actions, {weaponSilhouette}) {
     const active=resolveLoadout(profile);text('armory-equipped',active.selection?.mode==='custom'?'EIGENES LOADOUT':PRESET_KITS.find(kit=>kit.id===active.selection?.presetId)?.name||'SCOUT');text('armory-cost',`${num(active.cost)} CR BEIM RAIDSTART`);el('armory-lock-note').hidden=!context.locked;
     if(tab==='kits')renderKits();if(tab==='loadout')renderLoadout();if(tab==='editor')renderEditor();if(tab==='shop')renderShop();
   }
-  function onInput(event) {
+  let pendingAction=false;
+  async function act(action,...args){if(pendingAction||context.locked)return false;pendingAction=true;try{return await actions[action]?.(...args);}finally{pendingAction=false;signature='';}}
+  async function onInput(event) {
     const node=event.target;
-    if(node.dataset.equipSlot){if(!context.locked)actions.equipLoadout?.(node.dataset.equipSlot,node.value||null);renderLoadout();}
-    else if(node.id==='custom-medkits'){if(!context.locked)actions.setLoadoutMedkits?.(Number(node.value));renderLoadout();}
+    if(node.dataset.equipSlot){if(await act('equipLoadout',node.dataset.equipSlot,node.value||null)===false)renderLoadout();}
+    else if(node.id==='custom-medkits'){if(await act('setLoadoutMedkits',Number(node.value))===false)renderLoadout();}
     else if(node.id==='owned-kind')renderLoadout();
     else if(node.id==='editor-weapon'){editorWeaponId=node.value;draftAttachment='';renderEditor();syncPreview();}
     else if(node.id==='editor-attachment'){draftAttachment=node.value;renderEditor();syncPreview();}
     else if(['shop-search','shop-kind','shop-category','shop-compatible-only'].includes(node.id))renderShop(node.id==='shop-kind');
   }
-  function onClick(event) {
+  async function onClick(event) {
     const button=event.target.closest('button');if(!button||button.disabled)return;
     if(button.dataset.armoryTab){changeTab(button.dataset.armoryTab);return;}
     if(button.dataset.shopItem){shopId=button.dataset.shopItem;renderShop();return;}
@@ -166,13 +168,13 @@ export function createLoadoutUI(container, actions, {weaponSilhouette}) {
     if(button.id==='preview-right')return preview?.rotate(.3);
     if(button.id==='preview-reset')return preview?.reset();
     if(button.id==='shop-compatible'){el('shop-kind').value='attachment';el('shop-search').value='';el('shop-compatible-only').checked=true;changeTab('shop');el('shop-category').value=slotName(attachmentSlot);renderShop();return;}
-    if(context.locked)return;
-    if(button.dataset.presetKit)actions.selectLoadout?.({mode:'preset',presetId:button.dataset.presetKit});
-    if(button.id==='use-custom-loadout')actions.selectLoadout?.({mode:'custom'});
-    if(button.id==='equip-editor-weapon')actions.equipLoadout?.('weapon',editorWeaponId);
-    if(button.id==='purchase-equipment'&&shopId)actions.purchaseEquipment?.(shopId);
-    if(button.id==='mount-attachment'){actions.mountAttachment?.(editorWeaponId,attachmentSlot,draftAttachment);draftAttachment='';}
-    if(button.id==='unmount-attachment'){actions.mountAttachment?.(editorWeaponId,attachmentSlot,null);draftAttachment='';}
+    if(context.locked||pendingAction)return;
+    if(button.dataset.presetKit)await act('selectLoadout',{mode:'preset',presetId:button.dataset.presetKit});
+    if(button.id==='use-custom-loadout')await act('selectLoadout',{mode:'custom'});
+    if(button.id==='equip-editor-weapon')await act('equipLoadout','weapon',editorWeaponId);
+    if(button.id==='purchase-equipment'&&shopId)await act('purchaseEquipment',shopId);
+    if(button.id==='mount-attachment'&&await act('mountAttachment',editorWeaponId,attachmentSlot,draftAttachment)!==false)draftAttachment='';
+    if(button.id==='unmount-attachment'&&await act('mountAttachment',editorWeaponId,attachmentSlot,null)!==false)draftAttachment='';
   }
   container.addEventListener('input',onInput);container.addEventListener('click',onClick);
   return {update(nextProfile,nextContext={}){profile=nextProfile||{};context=nextContext;const next=JSON.stringify([profile.loadout,profile.stash,profile.credits,context.locked]);if(signature!==next){signature=next;render();}syncPreview();},open(next='kits'){changeTab(next);},dispose(){preview?.dispose();container.removeEventListener('input',onInput);container.removeEventListener('click',onClick);}};

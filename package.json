@@ -1,6 +1,6 @@
 {
   "name": "dead-frequency",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "private": true,
   "type": "module",
   "description": "DEAD FREQUENCY - Solo and cooperative extraction shooter",
@@ -9,6 +9,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "test": "node --test tests/*.test.js",
+    "server": "node server/start.js",
     "desktop": "electron .",
     "package": "node scripts/package.cjs",
     "prepare:tunnel": "node scripts/fetch-tunnel.mjs"
